@@ -1,4 +1,4 @@
-from motpy.rfs.poisson import PoissonPointProcess
+from motpy.rfs.poisson import Poisson
 from motpy.rfs.bernoulli import MultiBernoulli
 from motpy.kalman import KalmanFilter
 from typing import List, Tuple
@@ -17,7 +17,7 @@ class PMBMFilter:
                r_min: float,
                r_min_estimate: float,
                ):
-    self.poisson = PoissonPointProcess(birth_log_weights=np.log(birth_weights),
+    self.poisson = Poisson(birth_log_weights=np.log(birth_weights),
                                        birth_states=birth_states)
     self.mbm = []
 
@@ -31,7 +31,7 @@ class PMBMFilter:
   def predict(self,
               state_estimator: KalmanFilter,
               ps: float,
-              dt: float) -> Tuple[PoissonPointProcess, List[MultiBernoulli]]:
+              dt: float) -> Tuple[Poisson, List[MultiBernoulli]]:
     pred_ppp = self.poisson.predict(
         state_estimator=state_estimator, ps=ps, dt=dt)
 
@@ -45,7 +45,7 @@ class PMBMFilter:
   def update(self,
              measurements: List[np.ndarray],
              state_estimator: KalmanFilter,
-             pd: float) -> Tuple[PoissonPointProcess, List[MultiBernoulli]]:
+             pd: float) -> Tuple[Poisson, List[MultiBernoulli]]:
 
     meas_dim = state_estimator.measurement_model.ndim
     gate = EllipsoidalGate(pg=self.pg, ndim=meas_dim)

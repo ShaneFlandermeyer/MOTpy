@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 from motpy.rfs.bernoulli import MultiBernoulli
-from motpy.rfs.poisson import PoissonPointProcess
+from motpy.rfs.poisson import Poisson
 from motpy.distributions.gaussian import GaussianState
 from motpy.rfs.pmbm import PMBMFilter
 from motpy.kalman import ExtendedKalmanFilter

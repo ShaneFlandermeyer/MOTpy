@@ -28,7 +28,7 @@ def normalize_log_weights(log_w: np.ndarray) -> Tuple[np.ndarray, float]:
   return log_w, log_sum_w
 
 
-class PoissonPointProcess:
+class Poisson:
   """
   Class to hold all poisson distributions. Methods include birth, prediction, merge, prune, recycle.
   """
@@ -58,7 +58,7 @@ class PoissonPointProcess:
   def predict(self,
               state_estimator: KalmanFilter,
               ps: float,
-              dt: float) -> PoissonPointProcess:
+              dt: float) -> Poisson:
     # Predict existing PPP density
     pred_weights = np.array(self.log_weights) + np.log(ps)
     pred_states = []
@@ -66,7 +66,7 @@ class PoissonPointProcess:
       pred_states.append(state_estimator.predict(state=state, dt=dt))
 
     # Incorporate PPP birth intensity into PPP intensity
-    pred_ppp = PoissonPointProcess(
+    pred_ppp = Poisson(
         birth_log_weights=np.concatenate(
             (pred_weights, self.birth_log_weights)),
         birth_states=pred_states + self.birth_states,

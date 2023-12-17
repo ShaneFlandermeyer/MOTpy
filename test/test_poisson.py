@@ -3,7 +3,7 @@ import pytest
 
 from motpy.distributions.gaussian import GaussianState
 from motpy.kalman import ExtendedKalmanFilter
-from motpy.rfs.poisson import PoissonPointProcess
+from motpy.rfs.poisson import Poisson
 
 
 class ConstantTurnModel:
@@ -83,7 +83,7 @@ def test_predict():
       for _ in range(4)
   ]
 
-  ppp = PoissonPointProcess(
+  ppp = Poisson(
       birth_log_weights=birth_weights, birth_states=birth_states)
   # Use custom states and weights for testing
   ppp.states = []
@@ -120,7 +120,7 @@ def test_detected_update():
           sigma_r=5, sigma_b=np.pi/180, s=np.array([300, 400]))
   )
 
-  ppp = PoissonPointProcess(birth_log_weights=None, birth_states=None)
+  ppp = Poisson(birth_log_weights=None, birth_states=None)
   ppp.states.append(GaussianState(mean=np.array([0, 0, 5, 0, np.pi/180]),
                                   covar=np.eye(5)))
   ppp.states.append(GaussianState(mean=np.array([20, 20, -20, 0, np.pi/90]),
