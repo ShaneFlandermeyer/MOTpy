@@ -1,3 +1,4 @@
+import copy
 from typing import List, Tuple
 
 import numpy as np
@@ -16,9 +17,9 @@ class TOMBP:
   def __init__(self,
                birth_weights: np.ndarray,
                birth_states: List[np.ndarray],
-               w_min: float,
-               r_min: float,
-               r_estimate_threshold: float,
+               w_min: float = None,
+               r_min: float = None,
+               r_estimate_threshold: float = None,
                ):
     log_weights = np.log(birth_weights) if birth_weights is not None else None
     self.poisson = Poisson(birth_log_weights=log_weights,
@@ -27,6 +28,7 @@ class TOMBP:
 
     self.w_min = w_min
     self.r_min = r_min
+    self.r_estimate_threshold = r_estimate_threshold
 
   def predict(self,
               state_estimator: KalmanFilter,
@@ -65,7 +67,7 @@ class TOMBP:
 
     # Create a new track for each measurement by updating PPP with measurement
     r_new = np.empty(len(measurements))
-    state_new = np.empty(len(measurements), dtype=object)
+    state_new = []
     w_new = np.empty(len(measurements))
     for i, z in enumerate(measurements):
       bern, log_w_new = self.poisson.update(
@@ -76,7 +78,7 @@ class TOMBP:
           state_estimator=state_estimator,
           clutter_intensity=clutter_intensity,
       )
-      state_new[i] = bern.state
+      state_new.append(bern.state)
       r_new[i] = bern.r
       w_new[i] = np.exp(log_w_new)
 
@@ -92,18 +94,27 @@ class TOMBP:
       xi = np.array([h.state.mean for h in state_hypos[i]])
       Pi = np.array([h.state.covar for h in state_hypos[i]])
 
-      bern.r = np.sum(ri * p_upd[i])
-      weights = p_upd[i] * ri / bern.r
-      mean, covar = mix_gaussians(means=xi, covars=Pi, weights=weights)
-      bern.state = GaussianState(mean=mean, covar=covar)
+      mix_r = np.sum(ri * p_upd[i])
+      mix_weights = p_upd[i] * ri / mix_r
+      mean, covar = mix_gaussians(means=xi, covars=Pi, weights=mix_weights)
+      mix_state = GaussianState(mean=mean, covar=covar)
+      self.mb.r[i] = mix_r
+      self.mb.states[i] = mix_state
 
     # Form new tracks
     for i in range(len(measurements)):
       bern = Bernoulli(r=r_new[i] * p_new[i], state=state_new[i])
       self.mb.append(bern)
 
-    # TODO: Reduction
+
+    # Bernoulli recycling
+    if self.r_min is not None:
+      self.mb, self.poisson = self.recycle(r_min=self.r_min)
+    # PPP pruning
+    if self.w_min is not None:
+      self.poisson = self.poisson.prune(threshold=self.r_min)
     
+    raise NotImplementedError
 
   @staticmethod
   def spa(w_upd: np.ndarray, w_new: np.ndarray, eps: float = 1e-4
@@ -153,3 +164,23 @@ class TOMBP:
     p_new = w_new / (w_new + np.sum(mu_ab, axis=0))
 
     return p_upd, p_new
+
+  def recycle(self, r_min: float) -> Tuple[MultiBernoulli, Poisson]:
+    poisson = copy.deepcopy(self.poisson)
+    mb = copy.deepcopy(self.mb)
+    
+    for bern in self.mb:
+      if bern.r < r_min:
+        log_w = np.log(bern.r)
+        state = bern.state
+        
+        poisson.log_weights = np.concatenate(
+            (self.poisson.log_weights, log_w))
+        poisson.states.append(state)
+        
+        mb.remove(bern)
+
+    return mb, poisson
+
+    # TODO: Poisson pruning
+    raise NotImplementedError

@@ -68,12 +68,12 @@ def test_predict():
 
   # MBM component
   pmbm.mbm.append(MultiBernoulli(
-      rs=np.full(3, 0.1419),
+      r=np.full(3, 0.1419),
       states=[GaussianState(
           mean=np.array([0.4218, 0.9157, 0.7922, 0.9595, 0.6557]),
           covar=np.eye(5)) for _ in range(3)]))
   pmbm.mbm.append(MultiBernoulli(
-      rs=np.full(2, 0.0357),
+      r=np.full(2, 0.0357),
       states=[GaussianState(
           mean=np.array([0.8491, 0.9340, 0.6787, 0.7577, 0.7431]),
           covar=np.eye(5)) for _ in range(2)]))

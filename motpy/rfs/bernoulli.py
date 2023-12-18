@@ -135,6 +135,7 @@ class MultiBernoulli():
     return len(self.r)
 
   def __getitem__(self, i: int) -> Bernoulli:
+    # TODO: This creates a COPY of the Bernoulli component. This object should instead use a list of Bernoulli objects and index accordingly.
     return Bernoulli(r=self.r[i], state=self.states[i])
 
   def predict(self,
@@ -164,6 +165,10 @@ class MultiBernoulli():
 
     return MultiBernoulli(r=pred_rs, states=pred_states)
 
-  def append(self, bern: Bernoulli):
+  def append(self, bern: Bernoulli) -> None:
     self.r = np.append(self.r, bern.r)
     self.states.append(bern.state)
+
+  def remove(self, i: int) -> None:
+    self.r = np.delete(self.r, i)
+    self.states.pop(i)

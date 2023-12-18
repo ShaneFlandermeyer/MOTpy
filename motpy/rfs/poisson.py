@@ -1,4 +1,5 @@
 from __future__ import annotations
+import copy
 import numpy as np
 from typing import List, Tuple
 
@@ -55,6 +56,27 @@ class Poisson:
   def __iter__(self):
     return zip(self.log_weights, self.states)
 
+  def append(self, weight: float, state: GaussianState):
+    """
+    Append a new Gaussian state and its corresponding weight to the Poisson process.
+
+    The weight is converted to logarithmic scale before being appended.
+
+    Parameters
+    ----------
+    weight : float
+        The weight corresponding to the state. This is converted to a logarithmic scale for internal storage.
+    state : GaussianState
+        The Gaussian state to be appended.
+
+    Returns
+    -------
+    None
+    """
+    log_weight = np.log(weight)
+    self.log_weights.append(log_weight)
+    self.states.append(state)
+
   def predict(self,
               state_estimator: KalmanFilter,
               ps: float,
@@ -83,7 +105,7 @@ class Poisson:
              ) -> Tuple[Bernoulli, float]:
     eps = 1e-15
     pd += eps
-    
+
     # If a measurement is associated to a PPP component, we create a new Bernoulli whose existence probability depends on likelihood of measurement
     state_up = []
     weight_up = []
@@ -111,3 +133,13 @@ class Poisson:
                                 weights=np.exp(norm_log_w_up))
     bern = Bernoulli(r=r, state=GaussianState(mean=mean, covar=covar))
     return bern, sum_log_w_total
+
+  def prune(self, threshold: float) -> Poisson:
+    pruned = copy.deepcopy(self)
+    # Prune components with existence probability below threshold
+    keep = np.array(self.log_weights) > np.log(threshold)
+    pruned.log_weights = self.log_weights[keep]
+    pruned.states = [self.states[i]
+                     for i in range(len(self.states)) if keep[i]]
+
+    return pruned
