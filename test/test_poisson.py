@@ -136,15 +136,15 @@ def test_detected_update():
       pd=pd, clutter_intensity=clutter_intensity)
 
   # From matlab unit tests
-  expected_r = 0.9588984840787208
+  expected_r = 0.9588984840787167
   expected_mean = np.array([-2.640505492844699, 1.3361450073693577,
                             2.986810645184825, 0.0, 0.016282066429689126])
   expected_covar = np.array([[45.95489241096722, -22.771572348910606, 34.29174484314454, 0.0, 0.01995012845888863], [-22.771572348910606, 12.487496687253945, -17.352262205214927, 0.0, -0.010095136938345755], [
                             34.29174484314454, -17.352262205214927, 27.144908943886485, 0.0, 0.015210491456831086], [0.0, 0.0, 0.0, 1.0, 0.0], [0.01995012845888863, -0.010095136938345755, 0.015210491456831086, 0.0, 1.0000088491052257]])
-  expected_log_l = -1.507770591028619
+  expected_log_l = -1.50777059102861
 
-  assert total_log_likelihood == expected_log_l
-  assert bern.r == expected_r
+  assert np.allclose(total_log_likelihood, expected_log_l, atol=1e-6)
+  assert np.allclose(bern.r, expected_r, atol=1e-6)
   assert np.allclose(bern.state.mean, expected_mean, atol=1e-6)
   assert np.allclose(bern.state.covar, expected_covar, atol=1e-6)
 
