@@ -47,7 +47,8 @@ class TOMBP:
              measurements: List[np.ndarray],
              state_estimator: KalmanFilter,
              pd: float,
-             clutter_intensity: float = 1e-10) -> Tuple[MultiBernoulli, Poisson]:
+             clutter_intensity: float = 0
+             ) -> Tuple[MultiBernoulli, Poisson]:
 
     # Update existing tracks
     w_upd = np.empty((len(self.mb), len(measurements)+1))
@@ -98,14 +99,13 @@ class TOMBP:
       mix_weights = p_upd[i] * ri / mix_r
       mean, covar = mix_gaussians(means=xi, covars=Pi, weights=mix_weights)
       mix_state = GaussianState(mean=mean, covar=covar)
-      self.mb.r[i] = mix_r
-      self.mb.states[i] = mix_state
+      self.mb[i].r = mix_r
+      self.mb[i].state = mix_state
 
     # Form new tracks
     for i in range(len(measurements)):
       bern = Bernoulli(r=r_new[i] * p_new[i], state=state_new[i])
       self.mb.append(bern)
-
 
     # Bernoulli recycling
     if self.r_min is not None:
@@ -113,8 +113,6 @@ class TOMBP:
     # PPP pruning
     if self.w_min is not None:
       self.poisson = self.poisson.prune(threshold=self.r_min)
-    
-    raise NotImplementedError
 
   @staticmethod
   def spa(w_upd: np.ndarray, w_new: np.ndarray, eps: float = 1e-4
@@ -168,19 +166,16 @@ class TOMBP:
   def recycle(self, r_min: float) -> Tuple[MultiBernoulli, Poisson]:
     poisson = copy.deepcopy(self.poisson)
     mb = copy.deepcopy(self.mb)
-    
+
     for bern in self.mb:
       if bern.r < r_min:
         log_w = np.log(bern.r)
         state = bern.state
-        
+
         poisson.log_weights = np.concatenate(
             (self.poisson.log_weights, log_w))
         poisson.states.append(state)
-        
+
         mb.remove(bern)
 
     return mb, poisson
-
-    # TODO: Poisson pruning
-    raise NotImplementedError

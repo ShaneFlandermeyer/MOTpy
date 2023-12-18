@@ -6,8 +6,8 @@ from motpy.kalman import KalmanFilter
 from motpy.models.measurement import LinearMeasurementModel
 import copy
 
-def test_predict():
-  raise NotImplementedError
+# def test_predict():
+#   tomb = TOMBP(birth_weights=)
 
 
 def test_update():
