@@ -67,5 +67,7 @@ def likelihood(z: np.ndarray,
                H: np.ndarray,
                R: np.ndarray,
                ) -> float:
+  z = np.atleast_2d(z)
+  z_pred = z_pred.flatten()
   S = H @ P_pred @ H.T + R
   return multivariate_normal.pdf(z, z_pred, S)

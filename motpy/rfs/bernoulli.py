@@ -13,6 +13,11 @@ class Bernoulli():
     self.r = r
     self.state = state
 
+  def __repr__(self) -> str:
+    return f"""Bernoulli(
+      r={self.r}
+      state={self.state})"""
+
   def predict(self,
               state_estimator: KalmanFilter,
               ps: float,
@@ -20,8 +25,6 @@ class Bernoulli():
               ) -> Bernoulli:
     """
     Performs prediction step for a Bernoulli component
-
-    # TODO: Handle death
 
     Parameters
     ----------
@@ -79,11 +82,11 @@ class Bernoulli():
     posterior = Bernoulli(r=r_post, state=state_post)
     return posterior
 
-  def likelihood(self,
-                 pd: float,
-                 measurements: List[np.ndarray] = None,
-                 state_estimator: KalmanFilter = None,
-                 ) -> float:
+  def log_likelihood(self,
+                     pd: float,
+                     measurements: List[np.ndarray] = None,
+                     state_estimator: KalmanFilter = None,
+                     ) -> float:
     """
     Compute the LOG likelihood of a measurement given the predicted state
 
@@ -101,24 +104,25 @@ class Bernoulli():
     float
         _description_
     """
+    eps = 1e-15
     if measurements is None:
-      log_likelihood = np.log(1 - self.r + self.r * (1 - pd))
+      log_likelihood = np.log(1 - self.r + self.r * (1 - pd) + eps)
     else:
-      zs = np.array(measurements).reshape(-1, len(measurements))
+      zs = np.array(measurements)
       log_likelihood = np.log(self.r * pd * state_estimator.likelihood(
-          measurement=zs, predicted_state=self.state))
+          measurement=zs, predicted_state=self.state) + eps)
 
     return log_likelihood
 
 
 class MultiBernoulli():
   def __init__(self,
-               rs: np.ndarray,
-               states: List[GaussianState],
+               r: np.ndarray = None,
+               states: List[GaussianState] = None,
                weight: float = None,
                ) -> None:
-    self.r = np.array(rs)
-    self.states = states
+    self.r = np.array(r) if r is not None else np.array([])
+    self.states = states if states is not None else []
     self.weight = weight
 
   def __repr__(self) -> str:
@@ -126,6 +130,12 @@ class MultiBernoulli():
       weight={self.weight}
       rs={np.array(self.r).tolist()}
       states={self.states})"""
+
+  def __len__(self) -> int:
+    return len(self.r)
+
+  def __getitem__(self, i: int) -> Bernoulli:
+    return Bernoulli(r=self.r[i], state=self.states[i])
 
   def predict(self,
               state_estimator: KalmanFilter,
@@ -152,5 +162,8 @@ class MultiBernoulli():
       pred_states.append(pred_bern.state)
       pred_rs[i] = pred_bern.r
 
-    pred = MultiBernoulli(rs=pred_rs, states=pred_states)
-    return pred
+    return MultiBernoulli(r=pred_rs, states=pred_states)
+
+  def append(self, bern: Bernoulli):
+    self.r = np.append(self.r, bern.r)
+    self.states.append(bern.state)

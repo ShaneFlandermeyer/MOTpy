@@ -142,5 +142,6 @@ class KalmanFilter():
     # Compute the updated state and covariance
     x_post = x_pred + K @ y
     P_post = P_pred - K @ S @ K.T
+    P_post = (P_post + P_post.T) / 2
 
     return x_post, P_post, S, K, z_pred

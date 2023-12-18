@@ -81,6 +81,9 @@ class Poisson:
              state_estimator: KalmanFilter,
              clutter_intensity: float,
              ) -> Tuple[Bernoulli, float]:
+    eps = 1e-15
+    pd += eps
+    
     # If a measurement is associated to a PPP component, we create a new Bernoulli whose existence probability depends on likelihood of measurement
     state_up = []
     weight_up = []
@@ -91,8 +94,8 @@ class Poisson:
       state_up.append(state_estimator.update(measurement=measurement,
                                              predicted_state=self.states[i]))
       likelihood = state_estimator.likelihood(
-          measurement=measurement.reshape((1, -1)),
-          predicted_state=self.states[i])
+          measurement=measurement,
+          predicted_state=self.states[i]) + eps
       weight_up.append(self.log_weights[i] + np.log(pd) + np.log(likelihood))
     weight_up = np.array(weight_up)
 

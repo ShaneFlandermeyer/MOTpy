@@ -117,7 +117,7 @@ def test_undetected_likelihood():
   r = 0.9058
   bern = Bernoulli(r=r,
                    state=GaussianState(mean=np.ones(4), covar=np.eye(4)))
-  l = bern.likelihood(pd=pd, measurements=None)
+  l = bern.log_likelihood(pd=pd, measurements=None)
 
   assert l == -1.3392400264406643
 
@@ -129,7 +129,7 @@ def test_detected_likelihood():
   kf = KalmanFilter(transition_model=None, measurement_model=measurement_model)
 
   measurements = np.ones(2)
-  l = bern.likelihood(pd=pd, measurements=measurements, state_estimator=kf)
+  l = bern.log_likelihood(pd=pd, measurements=measurements, state_estimator=kf)
 
   assert l == -2.8348963264948552
 
