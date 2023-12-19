@@ -82,7 +82,7 @@ class TOMBP:
     in_gate_ppp = np.zeros((len(self.poisson), len(measurements)), dtype=bool)
     for i, state in enumerate(self.poisson.states):
       _, valid_inds = state_estimator.gate(measurements=measurements,
-                                           predicted_state=bern.state,
+                                           predicted_state=state,
                                            pg=self.pg)
       in_gate_ppp[i, valid_inds] = True
 
