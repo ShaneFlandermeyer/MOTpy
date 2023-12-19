@@ -65,10 +65,13 @@ class TOMBP:
       w_upd[i, 0] = 1 - bern.r + bern.r * (1 - pd)
 
       # Gate measurements
-      S = state_estimator.update(
-          measurement=None, predicted_state=bern.state).metadata['S']
+      empty_update = state_estimator.update(
+          measurement=None, predicted_state=bern.state)
+      S = empty_update.metadata['S']
+      z_pred = empty_update.metadata['z_pred']
+
       valid_meas, valid_inds = gate(measurements=measurements,
-                                    predicted_measurement=bern.state.mean,
+                                    predicted_measurement=z_pred,
                                     innovation_covar=S)
       in_gate_mb[i, valid_inds] = True
 
@@ -80,21 +83,35 @@ class TOMBP:
         state_hypos[i, j] = bern.update(
             measurement=z, pd=pd, state_estimator=state_estimator)
 
+    
+
+    # Gate Poisson components
+    in_gate_ppp = np.zeros((len(self.poisson), len(measurements)), dtype=bool)
+    for i, state in enumerate(self.poisson.states):
+      empty_update = state_estimator.update(
+          measurement=None, predicted_state=state)
+      S = empty_update.metadata['S']
+      z_pred = empty_update.metadata['z_pred']
+
+      _, valid_inds = gate(measurements=measurements,
+                           predicted_measurement=z_pred,
+                           innovation_covar=S)
+      in_gate_ppp[i, valid_inds] = True
+
     # Create a new track for each measurement by updating PPP with measurement
-    r_new = np.empty(len(measurements))
     state_new = []
-    w_new = np.empty(len(measurements))
+    r_new = np.zeros(len(measurements))
+    w_new = np.zeros(len(measurements))
     for i, z in enumerate(measurements):
       bern, log_w_new = self.poisson.update(
           measurement=z,
           pd=pd,
-          # TODO: Add gating
-          in_gate=np.ones(len(self.poisson), dtype=bool),
+          in_gate=in_gate_ppp[:, i],
           state_estimator=state_estimator,
           clutter_intensity=clutter_intensity,
       )
-      state_new.append(bern.state)
-      r_new[i] = bern.r
+      state_new.append(bern.state if bern is not None else None) 
+      r_new[i] = bern.r if bern is not None else 0
       w_new[i] = np.exp(log_w_new)
 
     # Undetected PPP update
@@ -122,6 +139,8 @@ class TOMBP:
 
     # Form new tracks
     for i in range(len(measurements)):
+      if r_new[i] == 0:
+        continue
       bern = Bernoulli(r=r_new[i] * p_new[i], state=state_new[i])
       self.mb.append(bern)
 
@@ -130,7 +149,7 @@ class TOMBP:
       self.mb, self.poisson = self.recycle(r_min=self.r_min)
     # PPP pruning
     if self.w_min is not None:
-      self.poisson = self.poisson.prune(threshold=self.r_min)
+      self.poisson = self.poisson.prune(threshold=self.w_min)
 
   @staticmethod
   def spa(w_upd: np.ndarray, w_new: np.ndarray, eps: float = 1e-4
@@ -168,8 +187,9 @@ class TOMBP:
 
       w_muba = w_upd[:, 1:] * mu_ba
       mu_ab = w_upd[:, 1:] / (w_upd[:, 0][:, np.newaxis] +
-                              np.sum(w_muba, axis=1, keepdims=True) - w_muba)
-      mu_ba = 1 / (w_new + np.sum(mu_ab, axis=0, keepdims=True) - mu_ab)
+                              np.sum(w_muba, axis=1, keepdims=True) - w_muba + 1e-15)
+      mu_ba = 1 / (w_new + np.sum(mu_ab, axis=0,
+                   keepdims=True) - mu_ab + 1e-15)
 
       delta = np.max(np.abs(mu_ba - mu_ba_old))
 

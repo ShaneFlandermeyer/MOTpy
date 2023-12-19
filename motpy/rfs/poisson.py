@@ -109,17 +109,21 @@ class Poisson:
     clutter_intensity += eps
     
     # Get PPP components in gate
+    n_in_gate = np.count_nonzero(in_gate)
+    if n_in_gate == 0:
+      # No measurements in gate
+      return None, np.log(eps)
+
     gate_states = [s for i, s in enumerate(self.states) if in_gate[i]]
     gate_log_ws = [w for i, w in enumerate(self.log_weights) if in_gate[i]]
-    n_in_gate = len(gate_states)
-    
+
     # If a measurement is associated to a PPP component, we create a new Bernoulli whose existence probability depends on likelihood of measurement
     state_up = []
     weight_up = np.empty(n_in_gate)
     for i in range(n_in_gate):
       state = gate_states[i]
       log_w = gate_log_ws[i]
-      
+
       # Update state and likelihoods for PPP components with measurement in gate
       state_up.append(state_estimator.update(measurement=measurement,
                                              predicted_state=state))
