@@ -65,14 +65,9 @@ class TOMBP:
       w_upd[i, 0] = 1 - bern.r + bern.r * (1 - pd)
 
       # Gate measurements
-      empty_update = state_estimator.update(
-          measurement=None, predicted_state=bern.state)
-      S = empty_update.metadata['S']
-      z_pred = empty_update.metadata['z_pred']
-
-      valid_meas, valid_inds = gate(measurements=measurements,
-                                    predicted_measurement=z_pred,
-                                    innovation_covar=S)
+      valid_meas, valid_inds = state_estimator.gate(measurements=measurements,
+                                                    predicted_state=bern.state,
+                                                    pg=self.pg)
       in_gate_mb[i, valid_inds] = True
 
       # Create hypotheses from measurement updates
@@ -83,19 +78,12 @@ class TOMBP:
         state_hypos[i, j] = bern.update(
             measurement=z, pd=pd, state_estimator=state_estimator)
 
-    
-
     # Gate Poisson components
     in_gate_ppp = np.zeros((len(self.poisson), len(measurements)), dtype=bool)
     for i, state in enumerate(self.poisson.states):
-      empty_update = state_estimator.update(
-          measurement=None, predicted_state=state)
-      S = empty_update.metadata['S']
-      z_pred = empty_update.metadata['z_pred']
-
-      _, valid_inds = gate(measurements=measurements,
-                           predicted_measurement=z_pred,
-                           innovation_covar=S)
+      _, valid_inds = state_estimator.gate(measurements=measurements,
+                                           predicted_state=bern.state,
+                                           pg=self.pg)
       in_gate_ppp[i, valid_inds] = True
 
     # Create a new track for each measurement by updating PPP with measurement
@@ -110,7 +98,7 @@ class TOMBP:
           state_estimator=state_estimator,
           clutter_intensity=clutter_intensity,
       )
-      state_new.append(bern.state if bern is not None else None) 
+      state_new.append(bern.state if bern is not None else None)
       r_new[i] = bern.r if bern is not None else 0
       w_new[i] = np.exp(log_w_new)
 

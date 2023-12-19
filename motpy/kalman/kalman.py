@@ -5,6 +5,7 @@ from motpy.models.measurement.base import MeasurementModel
 from motpy.models.transition.base import TransitionModel
 from motpy.distributions.gaussian import GaussianState
 import motpy.distributions.gaussian as gaussian
+from motpy.gate import EllipsoidalGate
 
 
 class KalmanFilter():
@@ -39,6 +40,38 @@ class KalmanFilter():
     )
     return GaussianState(mean=x_post, covar=P_post,
                          metadata=dict(S=S, K=K, z_pred=z_pred))
+
+  def gate(self,
+           measurements: np.ndarray,
+           predicted_state: GaussianState,
+           pg: float = 0.999,
+           ) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Gate measurements using the predicted state
+
+    Parameters
+    ----------
+    measurements : np.ndarray
+        Measurements
+    predicted_state : GaussianState
+        Predicted state
+    pg : float
+        Gate probability
+
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray]
+        Measurements in the gate and their indices
+    """
+    x, P = predicted_state.mean, predicted_state.covar
+    gate = EllipsoidalGate(pg=pg, ndim=measurements[0].size)
+    H = self.measurement_model.matrix()
+    R = self.measurement_model.covar()
+    z_pred = self.measurement_model(x, noise=False)
+    S = H @ P @ H.T + R
+    return gate(measurements=measurements,
+                predicted_measurement=z_pred,
+                innovation_covar=S)
 
   def likelihood(
       self,
