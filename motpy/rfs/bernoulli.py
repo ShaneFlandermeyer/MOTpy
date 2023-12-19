@@ -165,5 +165,5 @@ class MultiBernoulli():
   def append(self, bern: Bernoulli) -> None:
     self.bernoullis.append(bern)
 
-  def remove(self, i: int) -> None:
-    self.bernoullis.pop(i)
+  def remove(self, bern: Bernoulli) -> None:
+    self.bernoullis.remove(bern)

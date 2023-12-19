@@ -16,8 +16,10 @@ def test_update():
   states = [GaussianState(mean=np.array([0, 0]), covar=np.eye(2)),
             GaussianState(mean=np.array([1, 1]), covar=np.eye(2))]
 
-  tomb = TOMBP(birth_weights=np.array([0.01, 0.01]), birth_states=copy.deepcopy(states),
-               w_min=None, r_min=None, r_estimate_threshold=None, pg=0.999)
+  tomb = TOMBP(birth_weights=np.array([0.01, 0.01]), 
+               birth_states=copy.deepcopy(states),
+               w_min=1e-4, r_min=0.1, 
+               r_estimate_threshold=None, pg=0.999)
   # Add MB components
   tomb.mb.append(Bernoulli(r=0.5, state=copy.deepcopy(states[0])))
   tomb.mb.append(Bernoulli(r=0.5, state=copy.deepcopy(states[1])))

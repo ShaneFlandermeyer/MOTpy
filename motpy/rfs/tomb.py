@@ -193,15 +193,14 @@ class TOMBP:
     poisson = copy.deepcopy(self.poisson)
     mb = copy.deepcopy(self.mb)
 
-    for bern in self.mb:
-      if bern.r < r_min:
-        log_w = np.log(bern.r)
-        state = bern.state
-
-        poisson.log_weights = np.concatenate(
-            (self.poisson.log_weights, log_w))
-        poisson.states.append(state)
-
-        mb.remove(bern)
+    bad_berns = [bern for bern in mb if bern.r < r_min]
+    for bern in bad_berns:
+      log_w = np.log(bern.r)
+      state = bern.state
+      
+      poisson.log_weights = np.concatenate((poisson.log_weights, [log_w]))
+      poisson.states.append(state)
+      
+      mb.remove(bern)
 
     return mb, poisson
