@@ -7,6 +7,7 @@ from motpy.distributions.gaussian import GaussianState, mix_gaussians
 from motpy.kalman import KalmanFilter
 from motpy.rfs.bernoulli import Bernoulli, MultiBernoulli
 from motpy.rfs.poisson import Poisson
+from motpy.gate import EllipsoidalGate
 
 
 class TOMBP:
@@ -17,6 +18,7 @@ class TOMBP:
   def __init__(self,
                birth_weights: np.ndarray,
                birth_states: List[np.ndarray],
+               pg: float = None,
                w_min: float = None,
                r_min: float = None,
                r_estimate_threshold: float = None,
@@ -26,6 +28,7 @@ class TOMBP:
                            birth_states=birth_states)
     self.mb = MultiBernoulli()
 
+    self.pg = pg
     self.w_min = w_min
     self.r_min = r_min
     self.r_estimate_threshold = r_estimate_threshold
@@ -49,20 +52,31 @@ class TOMBP:
              pd: float,
              clutter_intensity: float = 0
              ) -> Tuple[MultiBernoulli, Poisson]:
+    ndim_meas = measurements[0].size
+    gate = EllipsoidalGate(pg=self.pg, ndim=ndim_meas)
 
     # Update existing tracks
-    w_upd = np.empty((len(self.mb), len(measurements)+1))
     state_hypos = np.empty((len(self.mb), len(measurements)+1), dtype=object)
+    w_upd = np.zeros((len(self.mb), len(measurements)+1))
+    in_gate_mb = np.zeros((len(self.mb), len(measurements)), dtype=bool)
     for i, bern in enumerate(self.mb):
       # Missed detection hypothesis
       state_hypos[i, 0] = bern.update(measurement=None, pd=pd)
       w_upd[i, 0] = 1 - bern.r + bern.r * (1 - pd)
 
+      # Gate measurements
+      S = state_estimator.update(
+          measurement=None, predicted_state=bern.state).metadata['S']
+      valid_meas, valid_inds = gate(measurements=measurements,
+                                    predicted_measurement=bern.state.mean,
+                                    innovation_covar=S)
+      in_gate_mb[i, valid_inds] = True
+
       # Create hypotheses from measurement updates
       likelihoods = np.exp(bern.log_likelihood(
-          measurements=measurements, pd=pd, state_estimator=state_estimator))
-      w_upd[i, 1:] = bern.r * pd * likelihoods
-      for j, z in enumerate(measurements, 1):
+          measurements=valid_meas, pd=pd, state_estimator=state_estimator))
+      w_upd[i, valid_inds+1] = bern.r * pd * likelihoods
+      for j, z in zip(valid_inds+1, valid_meas):
         state_hypos[i, j] = bern.update(
             measurement=z, pd=pd, state_estimator=state_estimator)
 
@@ -90,15 +104,19 @@ class TOMBP:
     p_upd, p_new = self.spa(w_upd=w_upd, w_new=w_new)
 
     # Update existing tracks using marginal probs
+    valid_mb = np.concatenate(
+        (np.ones((len(self.mb), 1), dtype=bool), in_gate_mb), axis=1)
     for i, bern in enumerate(self.mb):
-      ri = np.array([h.r for h in state_hypos[i]])
-      xi = np.array([h.state.mean for h in state_hypos[i]])
-      Pi = np.array([h.state.covar for h in state_hypos[i]])
+      valid = valid_mb[i]
+      ri = np.array([h.r for h in state_hypos[i, valid]])
+      xi = np.array([h.state.mean for h in state_hypos[i, valid]])
+      Pi = np.array([h.state.covar for h in state_hypos[i, valid]])
 
-      mix_r = np.sum(ri * p_upd[i])
-      mix_weights = p_upd[i] * ri / mix_r
+      mix_r = np.sum(ri * p_upd[i, valid])
+      mix_weights = p_upd[i, valid] * ri / mix_r
       mean, covar = mix_gaussians(means=xi, covars=Pi, weights=mix_weights)
       mix_state = GaussianState(mean=mean, covar=covar)
+
       self.mb[i].r = mix_r
       self.mb[i].state = mix_state
 

@@ -104,9 +104,9 @@ class KalmanFilter():
   @staticmethod
   def kf_update(x_pred: np.ndarray,
                 P_pred: np.ndarray,
-                z: np.ndarray,
                 H: np.ndarray,
-                R: np.ndarray) -> Tuple[np.ndarray]:
+                R: np.ndarray,
+                z: np.ndarray) -> Tuple[np.ndarray]:
     """
     Kalman filter update step
 
@@ -131,16 +131,17 @@ class KalmanFilter():
     Tuple[np.ndarray]
         Updated state and covariance
     """
-    # Compute the residual
-    z_pred = H @ x_pred
-    y = z - z_pred
-
-    # Compute the Kalman gain and system uncertainty
+    # Compute the Kalman gain and innovation covar
     S = H @ P_pred @ H.T + R
     K = P_pred @ H.T @ np.linalg.inv(S)
+    z_pred = H @ x_pred
 
     # Compute the updated state and covariance
-    x_post = x_pred + K @ y
+    if z is None:
+      x_post = None
+    else:
+      y = z - z_pred
+      x_post = x_pred + K @ y
     P_post = P_pred - K @ S @ K.T
     P_post = (P_post + P_post.T) / 2
 

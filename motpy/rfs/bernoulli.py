@@ -117,26 +117,26 @@ class Bernoulli():
 
 class MultiBernoulli():
   def __init__(self,
-               r: np.ndarray = None,
+               rs: np.ndarray = None,
                states: List[GaussianState] = None,
                weight: float = None,
                ) -> None:
-    self.r = np.array(r) if r is not None else np.array([])
-    self.states = states if states is not None else []
+    self.bernoullis = []
+    if rs is not None and states is not None:
+      for r, state in zip(rs, states):
+        self.bernoullis.append(Bernoulli(r=r, state=state))
     self.weight = weight
 
   def __repr__(self) -> str:
     return f"""MultiBernoulli(
       weight={self.weight}
-      rs={np.array(self.r).tolist()}
-      states={self.states})"""
+      bernoullis={self.bernoullis})"""
 
   def __len__(self) -> int:
-    return len(self.r)
+    return len(self.bernoullis)
 
   def __getitem__(self, i: int) -> Bernoulli:
-    # TODO: This creates a COPY of the Bernoulli component. This object should instead use a list of Bernoulli objects and index accordingly.
-    return Bernoulli(r=self.r[i], state=self.states[i])
+    return self.bernoullis[i]
 
   def predict(self,
               state_estimator: KalmanFilter,
@@ -155,20 +155,15 @@ class MultiBernoulli():
     dt : float
         Prediction timestep
     """
-    pred_states = []
-    pred_rs = np.empty_like(self.r)
-    for i, (r, state) in enumerate(zip(self.r, self.states)):
-      pred_bern = Bernoulli(r=r, state=state).predict(
+    pred_mb = MultiBernoulli()
+    for bern in self.bernoullis:
+      pred_bern = bern.predict(
           state_estimator=state_estimator, ps=ps, dt=dt)
-      pred_states.append(pred_bern.state)
-      pred_rs[i] = pred_bern.r
-
-    return MultiBernoulli(r=pred_rs, states=pred_states)
+      pred_mb.append(pred_bern)
+    return pred_mb
 
   def append(self, bern: Bernoulli) -> None:
-    self.r = np.append(self.r, bern.r)
-    self.states.append(bern.state)
+    self.bernoullis.append(bern)
 
   def remove(self, i: int) -> None:
-    self.r = np.delete(self.r, i)
-    self.states.pop(i)
+    self.bernoullis.pop(i)

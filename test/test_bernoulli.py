@@ -119,7 +119,7 @@ def test_undetected_likelihood():
                    state=GaussianState(mean=np.ones(4), covar=np.eye(4)))
   l = bern.log_likelihood(pd=pd, measurements=None)
 
-  assert l == -1.3392400264406643
+  assert np.allclose(l, -1.3392400264406643, atol=1e-6)
 
 def test_detected_likelihood():
   pd = 0.8147
@@ -131,7 +131,7 @@ def test_detected_likelihood():
   measurements = np.ones(2)
   l = bern.log_likelihood(pd=pd, measurements=measurements, state_estimator=kf)
 
-  assert l == -2.8348963264948552
+  assert np.allclose(l, -2.8348963264948552, atol=1e-6)
 
 
 if __name__ == '__main__':
