@@ -43,8 +43,8 @@ class Poisson:
         birth_log_weights) if birth_log_weights is not None else np.array([])
     self.birth_states = list(birth_states) if birth_states is not None else []
 
-    self.log_weights = self.birth_log_weights
-    self.states = self.birth_states
+    self.log_weights = copy.deepcopy(self.birth_log_weights)
+    self.states = copy.deepcopy(self.birth_states)
 
   def __repr__(self):
     return f"PoissonPointProcess(log_weights={np.array(self.log_weights).tolist()}, states={self.states})"
@@ -88,11 +88,10 @@ class Poisson:
       pred_states.append(state_estimator.predict(state=state, dt=dt))
 
     # Incorporate PPP birth intensity into PPP intensity
-    pred_ppp = Poisson(
-        birth_log_weights=np.concatenate(
-            (pred_weights, self.birth_log_weights)),
-        birth_states=pred_states + self.birth_states,
-    )
+    pred_ppp = copy.deepcopy(self)
+    pred_ppp.log_weights = np.concatenate(
+        (pred_weights, self.birth_log_weights))
+    pred_ppp.states = pred_states + self.birth_states
 
     return pred_ppp
 
@@ -107,7 +106,7 @@ class Poisson:
     eps = 1e-15
     pd += eps
     clutter_intensity += eps
-    
+
     # Get PPP components in gate
     n_in_gate = np.count_nonzero(in_gate)
     if n_in_gate == 0:

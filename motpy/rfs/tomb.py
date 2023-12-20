@@ -52,9 +52,6 @@ class TOMBP:
              pd: float,
              clutter_intensity: float = 0
              ) -> Tuple[MultiBernoulli, Poisson]:
-    ndim_meas = measurements[0].size
-    gate = EllipsoidalGate(pg=self.pg, ndim=ndim_meas)
-
     # Update existing tracks
     state_hypos = np.empty((len(self.mb), len(measurements)+1), dtype=object)
     w_upd = np.zeros((len(self.mb), len(measurements)+1))
@@ -62,7 +59,7 @@ class TOMBP:
     for i, bern in enumerate(self.mb):
       # Missed detection hypothesis
       state_hypos[i, 0] = bern.update(measurement=None, pd=pd)
-      w_upd[i, 0] = 1 - bern.r + bern.r * (1 - pd)
+      w_upd[i, 0] = (1 - bern.r) + bern.r * (1 - pd)
 
       # Gate measurements
       valid_meas, valid_inds = state_estimator.gate(measurements=measurements,

@@ -25,9 +25,11 @@ class LinearMeasurementModel(MeasurementModel):
                x: List[np.ndarray],
                noise: bool = False) -> List[np.ndarray]:
     xarr = np.atleast_2d(x)
-    out = xarr[:, self.measured_dims] if self.measured_dims is not None else x
+    n_measurements = xarr.shape[0]
+    
+    out = x if self.measured_dims is None else xarr[:, self.measured_dims]
     if noise:
-      noise = self.sample_noise(size=len(x))
+      noise = self.sample_noise(size=n_measurements)
       out = out.astype(noise.dtype) + noise.reshape(out.shape)
     return list(out) if xarr.shape[0] > 1 else out[0]
 
