@@ -46,7 +46,6 @@ class TOMBP:
 
       # Get birth parameters from model
       nb = len(lambdab)
-      lambdab_threshold = 1e-4
 
       # Interpret length of inputs
       n = len(r)
@@ -79,7 +78,7 @@ class TOMBP:
           Pu[:, :, nu + k] = Pb[:, :, k]
 
       # Not shown in paper--truncate low weight components
-      ss = lambdau > lambdab_threshold
+      ss = lambdau > self.w_min
       lambdau = lambdau[ss]
       xu = xu[:, ss]
       Pu = Pu[:, :, ss]
@@ -202,52 +201,50 @@ class TOMBP:
     P = P[:, :, ss]
 
     return r, x, P
-
-  def lbp(self, wupd, wnew):
+  
+  @staticmethod
+  def spa(wupd: np.ndarray, wnew: np.ndarray, eps: float = 1e-4
+          ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    LOOPY BELIEF PROPAGATION APPROXIMATION OF MARGINAL ASSOCIATION PROBABILITIES
-    Input:
-    wupd(i,j+1) is PDA likelihood for track i/measurment j 
-    wupd(i,1) is miss likelihood for target i
-    wnew(j) is false alarm/new target intensity for measurement j
-    Output:
-    Estimates of marginal association probabilities in similar format.
+    Compute marginal association probabilities using the Sum-Product Algorithm, allowing for a time-varying number of objects.
+
+    Parameters
+    ----------
+    w_upd : np.ndarray
+        Single-object association weights for existing objects
+    w_new : np.ndarray
+        Single-object association weights for potential new objects
+    eps : float, optional
+        Termination error threshold, by default 1e-4
+
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray]
+        - p_upd : np.ndarray
+            Marginal association probabilities for existing objects
+        - p_new : np.ndarray
+            Marginal association probabilities for new objects
     """
 
     n, mp1 = wupd.shape
     m = mp1 - 1
 
-    eps_conv_threshold = 1e-4
+    mu_ba = np.ones((n, m))
+    mu_ba_old = np.zeros((n, m))
+    mu_ab = np.zeros((n, m))
 
-    mu = np.ones((n, m))  # mu_ba
-    mu_old = np.zeros((n, m))
-    nu = np.zeros((n, m))  # mu_ab
+    while np.max(np.abs(mu_ba - mu_ba_old)) > eps:
+      mu_ba_old = mu_ba
 
-    pupd = np.zeros((n, mp1))
-    pnew = np.zeros(m)
+      w_muba = wupd[:, 1:] * mu_ba
+      mu_ab = wupd[:, 1:] / (wupd[:, 0][:, np.newaxis] +
+                              np.sum(w_muba, axis=1, keepdims=True) - w_muba)
+      mu_ba = 1 / (wnew + np.sum(mu_ab, axis=0, keepdims=True) - mu_ab)
 
-    # Run LBP iteration
-    if n > 0 and m > 0:
-      while np.max(np.abs(mu - mu_old)) > eps_conv_threshold:
-        mu_old = copy.deepcopy(mu)
+    # Compute marginal association probabilities
+    mu_ba = np.concatenate((np.ones((n, 1)), mu_ba), axis=1)
+    p_upd = wupd * mu_ba / (np.sum(wupd * mu_ba, axis=1, keepdims=True))
 
-        for i in range(n):
-          prd = wupd[i, 1:] * mu[i, :]
-          s = wupd[i, 0] + np.sum(prd)
-          nu[i, :] = wupd[i, 1:] / (s - prd)
+    p_new = wnew / (wnew + np.sum(mu_ab, axis=0))
 
-        for j in range(m):
-          s = wnew[j] + np.sum(nu[:, j])
-          mu[:, j] = 1. / (s - nu[:, j])
-          
-    # Calculate outputs--for existing tracks then for new tracks
-    for i in range(n):
-      s = wupd[i, 0] + np.sum(wupd[i, 1:] * mu[i, :])
-      pupd[i, 0] = wupd[i, 0] / s
-      pupd[i, 1:] = wupd[i, 1:] * mu[i, :] / s
-
-    for j in range(m):
-      s = wnew[j] + np.sum(nu[:, j])
-      pnew[j] = wnew[j] / s
-
-    return pupd, pnew
+    return p_upd, p_new

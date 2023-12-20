@@ -183,16 +183,13 @@ class TOMBP:
     mu_ba = np.ones((n, m))
     mu_ab = np.zeros((n, m))
 
-    delta = np.inf
-    while delta > eps:
+    while np.max(np.abs(mu_ba - mu_ba_old)) > eps:
       mu_ba_old = mu_ba
 
       w_muba = w_upd[:, 1:] * mu_ba
       mu_ab = w_upd[:, 1:] / (w_upd[:, 0][:, np.newaxis] +
                               np.sum(w_muba, axis=1, keepdims=True) - w_muba)
       mu_ba = 1 / (w_new + np.sum(mu_ab, axis=0, keepdims=True) - mu_ab)
-
-      delta = np.max(np.abs(mu_ba - mu_ba_old))
 
     # Compute marginal association probabilities
     mu_ba = np.concatenate((np.ones((n, 1)), mu_ba), axis=1)
