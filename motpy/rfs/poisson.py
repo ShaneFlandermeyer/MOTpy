@@ -43,8 +43,8 @@ class Poisson:
         birth_log_weights) if birth_log_weights is not None else np.array([])
     self.birth_states = list(birth_states) if birth_states is not None else []
 
-    self.log_weights = copy.deepcopy(self.birth_log_weights)
-    self.states = copy.deepcopy(self.birth_states)
+    self.log_weights = np.array([])
+    self.states = []
 
   def __repr__(self):
     return f"PoissonPointProcess(log_weights={np.array(self.log_weights).tolist()}, states={self.states})"
@@ -80,7 +80,8 @@ class Poisson:
   def predict(self,
               state_estimator: KalmanFilter,
               ps: float,
-              dt: float) -> Poisson:
+              dt: float,
+              threshold: float = None) -> Poisson:
     # Predict existing PPP density
     pred_weights = np.array(self.log_weights) + np.log(ps)
     pred_states = []
@@ -93,6 +94,9 @@ class Poisson:
         (pred_weights, self.birth_log_weights))
     pred_ppp.states = pred_states + self.birth_states
 
+    if threshold is not None:
+      pred_ppp = pred_ppp.prune(threshold=threshold)
+
     return pred_ppp
 
   def update(self,
@@ -104,13 +108,16 @@ class Poisson:
              ) -> Tuple[Bernoulli, float]:
     # Prevent log(0) warnings
     eps = 1e-15
-    pd += eps
     clutter_intensity += eps
 
     # Get PPP components in gate
     n_in_gate = np.count_nonzero(in_gate)
     if n_in_gate == 0:
       # No measurements in gate
+      return None, np.log(eps)
+
+    if pd == 0:
+      # No measurements to update
       return None, np.log(eps)
 
     gate_states = [s for i, s in enumerate(self.states) if in_gate[i]]
@@ -133,8 +140,11 @@ class Poisson:
 
     # Create a new Bernoulli component based on updated weights
     norm_log_w_up, sum_log_w_up = normalize_log_weights(weight_up)
-    _, sum_log_w_total = normalize_log_weights(np.concatenate(
-        (weight_up, np.log([clutter_intensity]))))
+    if clutter_intensity > 0:
+      _, sum_log_w_total = normalize_log_weights(np.concatenate(
+          (weight_up, np.log([clutter_intensity]))))
+    else:
+      sum_log_w_total = sum_log_w_up
     r = np.exp(sum_log_w_up - sum_log_w_total)
 
     # Compute the state using moment matching across all PPP components

@@ -42,7 +42,7 @@ class TOMBP:
 
     # Predict PPP intensity and incorporate birth into PPP
     pred_poisson = self.poisson.predict(
-        state_estimator=state_estimator, ps=ps, dt=dt)
+        state_estimator=state_estimator, ps=ps, dt=dt, threshold=self.w_min)
 
     return pred_mb, pred_poisson
 
@@ -52,20 +52,25 @@ class TOMBP:
              pd: float,
              clutter_intensity: float = 0
              ) -> Tuple[MultiBernoulli, Poisson]:
+    if len(measurements) == 0:
+      return self.mb, self.poisson
+
     # Update existing tracks
     state_hypos = np.empty((len(self.mb), len(measurements)+1), dtype=object)
     w_upd = np.zeros((len(self.mb), len(measurements)+1))
     in_gate_mb = np.zeros((len(self.mb), len(measurements)), dtype=bool)
     for i, bern in enumerate(self.mb):
       # Missed detection hypothesis
-      state_hypos[i, 0] = bern.update(measurement=None, pd=pd)
       w_upd[i, 0] = (1 - bern.r) + bern.r * (1 - pd)
+      state_hypos[i, 0] = bern.update(measurement=None, pd=pd)
 
       # Gate measurements
       valid_meas, valid_inds = state_estimator.gate(measurements=measurements,
                                                     predicted_state=bern.state,
                                                     pg=self.pg)
       in_gate_mb[i, valid_inds] = True
+      if len(valid_inds) == 0:
+        continue
 
       # Create hypotheses from measurement updates
       likelihoods = np.exp(bern.log_likelihood(
@@ -103,35 +108,47 @@ class TOMBP:
     self.poisson.log_weights += np.log(1 - pd)
 
     # Use SPA to compute marginal association probabilities
-    p_upd, p_new = self.spa(w_upd=w_upd, w_new=w_new)
+    if len(self.mb) == 0:
+      p_upd = np.zeros((0, len(measurements)+1))
+      p_new = np.ones(len(measurements))
+    else:
+      p_upd, p_new = self.spa(w_upd=w_upd, w_new=w_new)
 
-    # Update existing tracks using marginal probs
+    # Form continuing tracks
     valid_mb = np.concatenate(
         (np.ones((len(self.mb), 1), dtype=bool), in_gate_mb), axis=1)
     for i, bern in enumerate(self.mb):
       valid = valid_mb[i]
-      ri = np.array([h.r for h in state_hypos[i, valid]])
-      xi = np.array([h.state.mean for h in state_hypos[i, valid]])
-      Pi = np.array([h.state.covar for h in state_hypos[i, valid]])
+      r_upd = np.array([h.r for h in state_hypos[i, valid]])
+      x_upd = np.array([h.state.mean for h in state_hypos[i, valid]])
+      P_upd = np.array([h.state.covar for h in state_hypos[i, valid]])
 
-      mix_r = np.sum(ri * p_upd[i, valid])
-      mix_weights = p_upd[i, valid] * ri / mix_r
-      mean, covar = mix_gaussians(means=xi, covars=Pi, weights=mix_weights)
-      mix_state = GaussianState(mean=mean, covar=covar)
+      pr = p_upd[i, valid] * r_upd
+      r = np.sum(pr)
+      x = np.sum(pr[:, np.newaxis] * x_upd, axis=0) / r
 
-      self.mb[i].r = mix_r
-      self.mb[i].state = mix_state
+      P = np.zeros_like(P_upd[0])
+      for j in range(len(x_upd)):
+        v = x - x_upd[j]
+        P += pr[j] * (P_upd[j] + np.outer(v, v))
+      P /= r
+
+      self.mb[i].r = r
+      self.mb[i].state = GaussianState(mean=x, covar=P)
 
     # Form new tracks
     for i in range(len(measurements)):
-      if r_new[i] == 0:
-        continue
       bern = Bernoulli(r=r_new[i] * p_new[i], state=state_new[i])
       self.mb.append(bern)
 
-    # Bernoulli recycling
-    if self.r_min is not None:
-      self.mb, self.poisson = self.recycle(r_min=self.r_min)
+    # Throw away bernoullis below threshold
+    rs = np.array([bern.r for bern in self.mb if bern.r > self.r_min])
+    states = [bern.state for bern in self.mb if bern.r > self.r_min]
+    self.mb = MultiBernoulli(rs=rs, states=states)
+
+    # # Bernoulli recycling
+    # if self.r_min is not None:
+    #   self.mb, self.poisson = self.recycle(r_min=self.r_min)
     # PPP pruning
     if self.w_min is not None:
       self.poisson = self.poisson.prune(threshold=self.w_min)
@@ -172,9 +189,8 @@ class TOMBP:
 
       w_muba = w_upd[:, 1:] * mu_ba
       mu_ab = w_upd[:, 1:] / (w_upd[:, 0][:, np.newaxis] +
-                              np.sum(w_muba, axis=1, keepdims=True) - w_muba + 1e-15)
-      mu_ba = 1 / (w_new + np.sum(mu_ab, axis=0,
-                   keepdims=True) - mu_ab + 1e-15)
+                              np.sum(w_muba, axis=1, keepdims=True) - w_muba)
+      mu_ba = 1 / (w_new + np.sum(mu_ab, axis=0, keepdims=True) - mu_ab)
 
       delta = np.max(np.abs(mu_ba - mu_ba_old))
 
@@ -194,10 +210,59 @@ class TOMBP:
     for bern in bad_berns:
       log_w = np.log(bern.r)
       state = bern.state
-      
+
       poisson.log_weights = np.concatenate((poisson.log_weights, [log_w]))
       poisson.states.append(state)
-      
+
       mb.remove(bern)
 
     return mb, poisson
+
+
+def lbp(w_upd, w_new):
+  """
+  LOOPY BELIEF PROPAGATION APPROXIMATION OF MARGINAL ASSOCIATION PROBABILITIES
+  Input:
+  wupd(i,j+1) is PDA likelihood for track i/measurment j 
+  wupd(i,1) is miss likelihood for target i
+  wnew(j) is false alarm/new target intensity for measurement j
+  Output:
+  Estimates of marginal association probabilities in similar format.
+  """
+
+  n, mp1 = w_upd.shape
+  m = mp1 - 1
+
+  eps_conv_threshold = 1e-4
+
+  mu = np.ones((n, m))  # mu_ba
+  mu_old = np.zeros((n, m))
+  nu = np.zeros((n, m))  # mu_ab
+
+  pupd = np.zeros((n, mp1))
+  pnew = np.zeros(m)
+
+  # Run LBP iteration
+  while np.max(np.abs(mu - mu_old)) > eps_conv_threshold:
+    mu_old = copy.deepcopy(mu)
+
+    for i in range(n):
+      prd = w_upd[i, 1:] * mu[i, :]
+      s = w_upd[i, 0] + np.sum(prd)
+      nu[i, :] = w_upd[i, 1:] / (s - prd)
+
+    for j in range(m):
+      s = w_new[j] + np.sum(nu[:, j])
+      mu[:, j] = 1. / (s - nu[:, j])
+
+  # Calculate outputs--for existing tracks then for new tracks
+  for i in range(n):
+    s = w_upd[i, 0] + np.sum(w_upd[i, 1:] * mu[i, :])
+    pupd[i, 0] = w_upd[i, 0] / s
+    pupd[i, 1:] = w_upd[i, 1:] * mu[i, :] / s
+
+  for j in range(m):
+    s = w_new[j] + np.sum(nu[:, j])
+    pnew[j] = w_new[j] / s
+
+  return pupd, pnew
