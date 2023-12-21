@@ -1,5 +1,5 @@
 from motpy.rfs.bernoulli import Bernoulli
-from motpy.rfs.tomb_matlab import TOMBP
+from motpy.rfs.tomb import TOMBP
 import pytest
 import numpy as np
 from motpy.distributions.gaussian import GaussianState
