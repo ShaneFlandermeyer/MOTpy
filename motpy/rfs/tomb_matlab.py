@@ -19,10 +19,9 @@ class TOMBP:
                r_min: float = None,
                r_estimate_threshold: float = None,
                ):
-    log_weights = np.log(birth_weights) if birth_weights is not None else None
-    self.poisson = Poisson(birth_weights=log_weights,
+    self.poisson = Poisson(birth_weights=birth_weights,
                            birth_states=birth_states)
-    self.mb = MultiBernoulli()
+    self.mb = []
 
     self.pg = pg
     self.w_min = w_min
@@ -30,7 +29,7 @@ class TOMBP:
     self.r_estimate_threshold = r_estimate_threshold
 
   # TODO: Replace model with internal stuff
-  def predict(self, r, x, P, lambdau, xu, Pu, F, Q, Ps, lambdab, xb, Pb):
+  def predict(self, state_estimator, dt, Ps):
     """
     PREDICT MULTI-BERNOULLI AND POISSON COMPONENTS
     Input:
@@ -43,47 +42,22 @@ class TOMBP:
     Output:
     Predicted components in same format as input
     """
-
-    # Get birth parameters from model
-    nb = len(lambdab)
-
-    # Interpret length of inputs
-    n = len(r)
-    nu = len(lambdau)
-
     # Implement prediction algorithm
 
     # Predict existing tracks
-    for i in range(n):
-      r[i] = Ps * r[i]
-      x[:, i] = F @ x[:, i]
-      P[:, :, i] = F @ P[:, :, i] @ F.T + Q
+    pred_mb = copy.deepcopy(self.mb)
+    for i, bern in enumerate(self.mb):
+      pred_mb[i] = bern.predict(state_estimator=state_estimator, ps=Ps, dt=dt)
 
     # Predict existing PPP intensity
-    for k in range(nu):
-      lambdau[k] = Ps * lambdau[k]
-      xu[:, k] = F @ xu[:, k]
-      Pu[:, :, k] = F @ Pu[:, :, k] @ F.T + Q
-
-    # Incorporate birth intensity into PPP
-
-    # Allocate memory
-    lambdau = np.concatenate((lambdau, np.zeros(nb)))
-    xu = np.hstack((xu, np.zeros((xu.shape[0], nb))))
-    Pu = np.concatenate((Pu, np.zeros((Pu.shape[0], Pu.shape[1], nb))), axis=2)
-
-    for k in range(nb):
-      lambdau[nu + k] = lambdab[k]
-      xu[:, nu + k] = xb[:, k]
-      Pu[:, :, nu + k] = Pb[:, :, k]
+    pred_poisson = self.poisson.predict(state_estimator=state_estimator,
+                                        ps=Ps,
+                                        dt=dt)
 
     # Not shown in paper--truncate low weight components
-    ss = lambdau > self.w_min
-    lambdau = lambdau[ss]
-    xu = xu[:, ss]
-    Pu = Pu[:, :, ss]
+    pred_poisson = pred_poisson.prune(threshold=self.w_min)
 
-    return r, x, P, lambdau, xu, Pu
+    return pred_mb, pred_poisson
 
   def update(self, lambdau, xu, Pu, r, x, P, z, Pd, H, R, lambda_fa):
     # Extract parameters from model

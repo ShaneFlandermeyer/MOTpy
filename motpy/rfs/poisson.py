@@ -79,8 +79,7 @@ class Poisson:
   def predict(self,
               state_estimator: KalmanFilter,
               ps: float,
-              dt: float,
-              threshold: float = None) -> Poisson:
+              dt: float) -> Poisson:
     # Predict existing PPP density
     pred_weights = self.weights * ps
     pred_states = []
@@ -92,9 +91,6 @@ class Poisson:
     pred_ppp.weights = np.concatenate(
         (pred_weights, self.birth_weights))
     pred_ppp.states = pred_states + self.birth_states
-
-    if threshold is not None:
-      pred_ppp = pred_ppp.prune(threshold=threshold)
 
     return pred_ppp
 
