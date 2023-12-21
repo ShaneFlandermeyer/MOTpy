@@ -132,27 +132,12 @@ def test_scenario():
     # Predict
     tomb.mb, tomb.poisson = tomb.predict(state_estimator=kf, dt=dt, Ps=0.999)
 
-    lambdau = tomb.poisson.weights
-    xu = np.array([state.mean for state in tomb.poisson.states]
-                  ).swapaxes(0, -1)
-    Pu = np.array([state.covar for state in tomb.poisson.states]
-                  ).swapaxes(0, -1)
-    r = np.array([bern.r for bern in tomb.mb])
-    x = np.array([bern.state.mean for bern in tomb.mb]).swapaxes(0, -1)
-    P = np.array([bern.state.covar for bern in tomb.mb]).swapaxes(0, -1)
-
-    lambdau, xu, Pu, r, x, P = tomb.update(
-        lambdau=lambdau, xu=xu, Pu=Pu, r=r, x=x, P=P, z=np.array(Z[k]).T, Pd=pd, H=linear.matrix(), R=linear.covar(), lambda_fa=lambda_c/volume)
-
-    tomb.poisson.weights = lambdau
-    tomb.poisson.states = [GaussianState(
-        mean=xu[:, i], covar=Pu[:, :, i]) for i in range(len(lambdau))]
-    tomb.mb = [Bernoulli(r=r[i], state=GaussianState(
-        mean=x[:, i], covar=P[:, :, i])) for i in range(len(r))]
-
-    print(np.max(r))
-    print(len(lambdau))
-    print(len(r))
+    tomb.mb, tomb.poisson = tomb.update(
+        z=np.array(Z[k]).T, Pd=pd, H=linear.matrix(), R=linear.covar(), lambda_fa=lambda_c/volume)
+    
+    print(np.max([bern.r for bern in tomb.mb]))
+    print(len(tomb.mb))
+    print(len(tomb.poisson))
 
     # Update
     # TODO: Convert to matlab version

@@ -50,16 +50,24 @@ class TOMBP:
       pred_mb[i] = bern.predict(state_estimator=state_estimator, ps=Ps, dt=dt)
 
     # Predict existing PPP intensity
-    pred_poisson = self.poisson.predict(state_estimator=state_estimator,
-                                        ps=Ps,
-                                        dt=dt)
+    pred_poisson = self.poisson.predict(
+        state_estimator=state_estimator, ps=Ps, dt=dt)
 
     # Not shown in paper--truncate low weight components
     pred_poisson = pred_poisson.prune(threshold=self.w_min)
 
     return pred_mb, pred_poisson
 
-  def update(self, lambdau, xu, Pu, r, x, P, z, Pd, H, R, lambda_fa):
+  def update(self, z, Pd, H, R, lambda_fa):
+    lambdau = self.poisson.weights
+    xu = np.array([state.mean for state in self.poisson.states]
+                  ).swapaxes(0, -1)
+    Pu = np.array([state.covar for state in self.poisson.states]
+                  ).swapaxes(0, -1)
+    r = np.array([bern.r for bern in self.mb])
+    x = np.array([bern.state.mean for bern in self.mb]).swapaxes(0, -1)
+    P = np.array([bern.state.covar for bern in self.mb]).swapaxes(0, -1)
+
     # Extract parameters from model
     lambdab_threshold = 1e-4
 
@@ -146,47 +154,47 @@ class TOMBP:
     else:
       pupd, pnew = self.spa(wupd=wupd, wnew=wnew)
 
-    r, x, P = self.tomb(pupd=pupd, rupd=rupd, xupd=xupd, Pupd=Pupd, pnew=pnew,
+    mb_upd = self.tomb(pupd=pupd, rupd=rupd, xupd=xupd, Pupd=Pupd, pnew=pnew,
                         rnew=rnew, xnew=xnew, Pnew=Pnew)
+    
 
-    return lambdau, xu, Pu, r, x, P
+    poisson_upd = Poisson(birth_weights=self.poisson.birth_weights,
+                          birth_states=self.poisson.birth_states)
+    poisson_upd.weights = lambdau
+    poisson_upd.states = [GaussianState(
+        mean=xu[:, i], covar=Pu[:, :, i]) for i in range(len(lambdau))]
+
+    return mb_upd, poisson_upd
 
   def tomb(self, pupd, rupd, xupd, Pupd, pnew, rnew, xnew, Pnew):
-    r_threshold = 1e-4
-
-    # Infer sizes
-    nold, mp1 = pupd.shape
-    stateDimensions = xnew.shape[0]
-    m = mp1 - 1
-    n = nold + m
-
-    # Allocate memory
-    r = np.zeros(n)
-    x = np.zeros((stateDimensions, n))
-    P = np.zeros((stateDimensions, stateDimensions, n))
-
+    
     # Form continuing tracks
-    for i in range(nold):
+    tomb_mb = []
+    for i in range(len(self.mb)):
       pr = pupd[i, :] * rupd[i, :]
-      r[i] = np.sum(pr)
-      pr = pr / r[i]
-      x[:, i] = np.dot(xupd[:, i, :].squeeze(), pr)
-      for j in range(mp1):
-        v = x[:, i] - xupd[:, i, j]
-        P[:, :, i] = P[:, :, i] + pr[j] * (Pupd[:, :, i, j] + np.outer(v, v))
+      r = np.sum(pr)
+      pr = pr / r
+      x = np.dot(xupd[:, i, :].squeeze(), pr)
+      P = np.zeros_like(Pupd[:, :, i, 0])
+      for j in range(len(pr)):
+        v = x - xupd[:, i, j]
+        P = P + pr[j] * (Pupd[:, :, i, j] + np.outer(v, v))
+        
+      new_bern = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))
+      tomb_mb.append(new_bern)
 
     # Form new tracks (already single hypothesis)
-    r[nold:] = pnew * rnew
-    x[:, nold:] = xnew
-    P[:, :, nold:] = Pnew
-
+    for j in range(len(pnew)):
+        r = pnew[j] * rnew[j]
+        x = xnew[:, j]
+        P = Pnew[:, :, j]
+        new_bern = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))
+        tomb_mb.append(new_bern)
+        
     # Truncate tracks with low probability of existence (not shown in algorithm)
-    ss = r > r_threshold
-    r = r[ss]
-    x = x[:, ss]
-    P = P[:, :, ss]
+    tomb_mb = [bern for bern in tomb_mb if bern.r >= self.r_min]
 
-    return r, x, P
+    return tomb_mb
 
   @staticmethod
   def spa(wupd: np.ndarray, wnew: np.ndarray, eps: float = 1e-4
