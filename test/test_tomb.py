@@ -113,13 +113,13 @@ def test_scenario():
                r_min=1e-4,
                r_estimate_threshold=0.5)
   tomb.poisson.states.append(tomb.poisson.birth_states[0])
-  tomb.poisson.log_weights = np.append(tomb.poisson.log_weights, np.log(10))
+  tomb.poisson.weights = np.append(tomb.poisson.weights, 10)
 
   # TODO: Hard-coded variables
   r = np.array([])
   x = np.zeros((4, 0))
   P = np.zeros((4, 4, 0))
-  lambdau = np.exp(tomb.poisson.log_weights)
+  lambdau = tomb.poisson.weights
   xu = np.array([state.mean for state in tomb.poisson.states]).swapaxes(0, -1)
   Pu = np.array([state.covar for state in tomb.poisson.states]).swapaxes(0, -1)
   xb = np.array(
@@ -131,7 +131,7 @@ def test_scenario():
   for k in range(n_steps):
     # Predict
     r, x, P, lambdau, xu, Pu = tomb.predict(r=r, x=x, P=P, lambdau=lambdau, xu=xu, Pu=Pu, F=cv.matrix(dt=dt), Q=cv.covar(dt=dt), Ps=0.999, lambdab=np.exp(
-        tomb.poisson.birth_log_weights), xb=xb, Pb=Pb)
+        tomb.poisson.birth_weights), xb=xb, Pb=Pb)
 
     lambdau, xu, Pu, r, x, P = tomb.update(
         lambdau=lambdau, xu=xu, Pu=Pu, r=r, x=x, P=P, z=np.array(Z[k]).T, Pd=pd, H=linear.matrix(), R=linear.covar(), lambda_fa=lambda_c/volume)

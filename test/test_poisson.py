@@ -84,7 +84,7 @@ def test_predict():
   ]
 
   ppp = Poisson(
-      birth_log_weights=birth_weights, birth_states=birth_states)
+      birth_weights=birth_weights, birth_states=birth_states)
   # Use custom states and weights for testing
   ppp.states = []
   ppp.states.append(GaussianState(mean=np.array([0, 0, 5, 0, np.pi/180]),
@@ -93,7 +93,7 @@ def test_predict():
                                   covar=np.eye(5)))
   ppp.states.append(GaussianState(mean=np.array([-20, 10, -10, 0, np.pi/360]),
                                   covar=np.eye(5)))
-  ppp.log_weights = np.array([-0.6035, -0.0434, -0.0357])
+  ppp.weights = np.array([-0.6035, -0.0434, -0.0357])
 
   ppp = ppp.predict(state_estimator=ekf, ps=ps, dt=T)
 
@@ -105,7 +105,7 @@ def test_predict():
                              [1,  0, 2, 0, 0.],
                              [0,  5, 0, 2, 1.],
                              [0,  0, 0, 1, 1.00030462]])
-  assert np.allclose(ppp.log_weights, expected_weights, atol=1e-4)
+  assert np.allclose(ppp.weights, expected_weights, atol=1e-4)
   assert np.allclose(ppp.states[0].mean, expected_mean, atol=1e-4)
   assert np.allclose(ppp.states[0].covar, expected_covar, atol=1e-4)
   assert len(ppp.states) == 7
@@ -120,14 +120,14 @@ def test_detected_update():
           sigma_r=5, sigma_b=np.pi/180, s=np.array([300, 400]))
   )
 
-  ppp = Poisson(birth_log_weights=None, birth_states=None)
+  ppp = Poisson(birth_weights=None, birth_states=None)
   ppp.states.append(GaussianState(mean=np.array([0, 0, 5, 0, np.pi/180]),
                                   covar=np.eye(5)))
   ppp.states.append(GaussianState(mean=np.array([20, 20, -20, 0, np.pi/90]),
                                   covar=np.eye(5)))
   ppp.states.append(GaussianState(mean=np.array([-20, 10, -10, 0, np.pi/360]),
                                   covar=np.eye(5)))
-  ppp.log_weights = np.array([-2.0637, -0.0906, -0.4583])
+  ppp.weights = np.array([-2.0637, -0.0906, -0.4583])
 
   in_gate = np.array([True, False, True])
   z = ekf.measurement_model(ppp.states[0].mean)

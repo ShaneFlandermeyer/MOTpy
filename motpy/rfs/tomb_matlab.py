@@ -20,7 +20,7 @@ class TOMBP:
                r_estimate_threshold: float = None,
                ):
     log_weights = np.log(birth_weights) if birth_weights is not None else None
-    self.poisson = Poisson(birth_log_weights=log_weights,
+    self.poisson = Poisson(birth_weights=log_weights,
                            birth_states=birth_states)
     self.mb = MultiBernoulli()
 

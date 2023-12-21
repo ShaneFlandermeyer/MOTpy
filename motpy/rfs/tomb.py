@@ -23,8 +23,7 @@ class TOMBP:
                r_min: float = None,
                r_estimate_threshold: float = None,
                ):
-    log_weights = np.log(birth_weights) if birth_weights is not None else None
-    self.poisson = Poisson(birth_log_weights=log_weights,
+    self.poisson = Poisson(birth_weights=birth_weights,
                            birth_states=birth_states)
     self.mb = MultiBernoulli()
 
@@ -105,7 +104,7 @@ class TOMBP:
       w_new[i] = np.exp(log_w_new)
 
     # Undetected PPP update
-    self.poisson.log_weights += np.log(1 - pd)
+    self.poisson.weights += np.log(1 - pd)
 
     # Use SPA to compute marginal association probabilities
     if len(self.mb) == 0:
@@ -208,7 +207,7 @@ class TOMBP:
       log_w = np.log(bern.r)
       state = bern.state
 
-      poisson.log_weights = np.concatenate((poisson.log_weights, [log_w]))
+      poisson.weights = np.concatenate((poisson.weights, [log_w]))
       poisson.states.append(state)
 
       mb.remove(bern)

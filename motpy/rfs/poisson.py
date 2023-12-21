@@ -36,25 +36,25 @@ class Poisson:
 
   def __init__(
       self,
-      birth_log_weights: List[float] = None,
+      birth_weights: List[float] = None,
       birth_states: List[GaussianState] = None,
   ):
-    self.birth_log_weights = np.array(
-        birth_log_weights) if birth_log_weights is not None else np.array([])
+    self.birth_weights = np.array(
+        birth_weights) if birth_weights is not None else np.array([])
     self.birth_states = list(birth_states) if birth_states is not None else []
 
-    self.log_weights = np.array([])
+    self.weights = np.array([])
     self.states = []
 
   def __repr__(self):
-    return f"PoissonPointProcess(log_weights={np.array(self.log_weights).tolist()}, states={self.states})"
+    return f"PoissonPointProcess(log_weights={np.array(self.weights).tolist()}, states={self.states})"
 
   def __len__(self):
-    assert len(self.log_weights) == len(self.states)
-    return len(self.log_weights)
+    assert len(self.weights) == len(self.states)
+    return len(self.weights)
 
   def __iter__(self):
-    return zip(self.log_weights, self.states)
+    return zip(self.weights, self.states)
 
   def append(self, weight: float, state: GaussianState):
     """
@@ -73,8 +73,7 @@ class Poisson:
     -------
     None
     """
-    log_weight = np.log(weight)
-    self.log_weights.append(log_weight)
+    self.weights.append(weight)
     self.states.append(state)
 
   def predict(self,
@@ -83,15 +82,15 @@ class Poisson:
               dt: float,
               threshold: float = None) -> Poisson:
     # Predict existing PPP density
-    pred_weights = np.array(self.log_weights) + np.log(ps)
+    pred_weights = self.weights * ps
     pred_states = []
     for state in self.states:
       pred_states.append(state_estimator.predict(state=state, dt=dt))
 
     # Incorporate PPP birth intensity into PPP intensity
     pred_ppp = copy.deepcopy(self)
-    pred_ppp.log_weights = np.concatenate(
-        (pred_weights, self.birth_log_weights))
+    pred_ppp.weights = np.concatenate(
+        (pred_weights, self.birth_weights))
     pred_ppp.states = pred_states + self.birth_states
 
     if threshold is not None:
@@ -106,6 +105,7 @@ class Poisson:
              state_estimator: KalmanFilter,
              clutter_intensity: float,
              ) -> Tuple[Bernoulli, float]:
+    raise NotImplementedError
     # Prevent log(0) warnings
     eps = 1e-15
     clutter_intensity += eps
@@ -121,7 +121,7 @@ class Poisson:
       return None, np.log(eps)
 
     gate_states = [s for i, s in enumerate(self.states) if in_gate[i]]
-    gate_log_ws = [w for i, w in enumerate(self.log_weights) if in_gate[i]]
+    gate_log_ws = [w for i, w in enumerate(self.weights) if in_gate[i]]
 
     # If a measurement is associated to a PPP component, we create a new Bernoulli whose existence probability depends on likelihood of measurement
     state_up = []
@@ -157,8 +157,8 @@ class Poisson:
   def prune(self, threshold: float) -> Poisson:
     pruned = copy.deepcopy(self)
     # Prune components with existence probability below threshold
-    keep = np.array(self.log_weights) > np.log(threshold)
-    pruned.log_weights = self.log_weights[keep]
+    keep = self.weights > threshold
+    pruned.weights = self.weights[keep]
     pruned.states = [self.states[i]
                      for i in range(len(self.states)) if keep[i]]
 
