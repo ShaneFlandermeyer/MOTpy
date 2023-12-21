@@ -133,19 +133,14 @@ def test_scenario():
     r, x, P, lambdau, xu, Pu = tomb.predict(r=r, x=x, P=P, lambdau=lambdau, xu=xu, Pu=Pu, F=cv.matrix(dt=dt), Q=cv.covar(dt=dt), Ps=0.999, lambdab=np.exp(
         tomb.poisson.birth_log_weights), xb=xb, Pb=Pb)
 
-    lambdau, xu, Pu, wupd, rupd, xupd, Pupd, wnew, rnew, xnew, Pnew = tomb.update(
+    lambdau, xu, Pu, r, x, P = tomb.update(
         lambdau=lambdau, xu=xu, Pu=Pu, r=r, x=x, P=P, z=np.array(Z[k]).T, Pd=pd, H=linear.matrix(), R=linear.covar(), lambda_fa=lambda_c/volume)
 
-    if wupd.size == 0:
-      pupd = np.empty_like(wupd)
-      pnew = np.ones_like(wnew)
-    else:
-      pupd, pnew = tomb.spa(wupd=wupd, wnew=wnew)
-
-    r, x, P = tomb.tomb(pupd=pupd, rupd=rupd, xupd=xupd, Pupd=Pupd, pnew=pnew,
-                        rnew=rnew, xnew=xnew, Pnew=Pnew)
+    
     
     print(np.max(r))
+    print(len(lambdau))
+    print(len(r))
 
     # Update
     # TODO: Convert to matlab version
