@@ -133,8 +133,8 @@ def test_scenario():
     tomb.mb, tomb.poisson = tomb.predict(state_estimator=kf, dt=dt, Ps=0.999)
 
     tomb.mb, tomb.poisson = tomb.update(
-        z=np.array(Z[k]).T, Pd=pd, H=linear.matrix(), R=linear.covar(), lambda_fa=lambda_c/volume)
-    
+        z=np.array(Z[k]).T, Pd=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
+
     print(np.max([bern.r for bern in tomb.mb]))
     print(len(tomb.mb))
     print(len(tomb.poisson))
