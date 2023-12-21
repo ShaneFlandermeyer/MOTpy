@@ -57,8 +57,7 @@ class TOMBP:
 
     return pred_mb, pred_poisson
 
-  def update(self, z, Pd, state_estimator, lambda_fa):
-
+  def update(self, z: List[np.ndarray], Pd: float, state_estimator: KalmanFilter, lambda_fa: float):
     n = len(self.mb)
     nu = len(self.poisson)
     m = len(z)
@@ -66,19 +65,27 @@ class TOMBP:
     # Update existing tracks
     wupd = np.zeros((n, m + 1))
     mb_hypos = np.empty((n, m + 1), dtype=object)
+    in_gate_mb = np.zeros((n, m), dtype=bool)
     for i, bern in enumerate(self.mb):
       # Create missed detection hypothesis
       wupd[i, 0] = 1 - bern.r + bern.r * (1 - Pd)
       mb_hypos[i, 0] = bern.update(measurement=None, pd=Pd)
 
       # Create hypotheses with measurement updates
-      l = state_estimator.likelihood(
-          measurement=z, predicted_state=bern.state)
-      for j in range(m):
+
+      valid_meas, valid_inds = state_estimator.gate(
+          measurements=z, predicted_state=bern.state, pg=self.pg)
+      in_gate_mb[i, valid_inds] = True
+      l = np.zeros(len(z))
+      if len(valid_inds) > 0:
+        l[valid_inds] = state_estimator.likelihood(
+            measurement=valid_meas, predicted_state=bern.state)
+      for j in valid_inds:
         wupd[i, j + 1] = bern.r * Pd * l[j]
         mb_hypos[i, j+1] = bern.update(
             pd=Pd, measurement=z[j], state_estimator=state_estimator)
 
+    # TODO: Do gating
     wnew = np.zeros(m)
     new_berns = []
     for j in range(m):
@@ -104,26 +111,31 @@ class TOMBP:
       pupd, pnew = self.spa(wupd=wupd, wnew=wnew)
 
     mb_upd = self.tomb(pupd=pupd, mb_hypos=mb_hypos, pnew=pnew,
-                       new_berns=new_berns)
+                       new_berns=new_berns, in_gate_mb=in_gate_mb)
 
     return mb_upd, poisson_upd
 
-  def tomb(self, pupd, mb_hypos, pnew, new_berns):
+  def tomb(self, pupd: np.ndarray, mb_hypos: np.ndarray, pnew: np.ndarray, new_berns: List[Bernoulli], in_gate_mb: np.ndarray):
+    
+    # Add false alarm hypotheses as valid
+    valid_hypos = np.concatenate(
+      (np.ones((len(self.mb), 1), dtype=bool), in_gate_mb), axis=1)
 
     # Form continuing tracks
     tomb_mb = []
     for i in range(len(self.mb)):
-      rupd = np.array([bern.r for bern in mb_hypos[i, :]])
-      xupd = [bern.state.mean for bern in mb_hypos[i, :]]
-      Pupd = [bern.state.covar for bern in mb_hypos[i, :]]
+      valid = valid_hypos[i]
+      rupd = np.array([bern.r for bern in mb_hypos[i, valid]])
+      xupd = [bern.state.mean for bern in mb_hypos[i, valid]]
+      Pupd = [bern.state.covar for bern in mb_hypos[i, valid]]
 
-      pr = pupd[i, :] * rupd
+      pr = pupd[i, valid] * rupd
       r = np.sum(pr)
       pr = pr / r
       x, P = mix_gaussians(means=xupd, covars=Pupd, weights=pr)
 
-      new_bern = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))
-      tomb_mb.append(new_bern)
+      bern_upd = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))
+      tomb_mb.append(bern_upd)
 
     # Form new tracks (already single hypothesis)
     for j in range(len(new_berns)):

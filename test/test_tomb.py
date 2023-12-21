@@ -94,7 +94,7 @@ def test_scenario():
                birth_states=[GaussianState(
                    mean=np.array([0, 0, 0, 0]),
                    covar=np.diag([100, 1, 100, 1])**2)],
-               pg=1,
+               pg=0.99,
                w_min=1e-4,
                r_min=1e-4,
                r_estimate_threshold=0.5)
@@ -103,7 +103,7 @@ def test_scenario():
 
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
-  for k in range(25):
+  for k in range(100):
     # Predict
     tomb.mb, tomb.poisson = tomb.predict(state_estimator=kf, dt=dt, Ps=0.999)
 
