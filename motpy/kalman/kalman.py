@@ -30,7 +30,8 @@ class KalmanFilter():
 
   def update(self,
              measurement: np.ndarray,
-             predicted_state: GaussianState) -> Tuple[np.ndarray, np.ndarray]:
+             predicted_state: GaussianState,
+             ) -> Tuple[np.ndarray, np.ndarray]:
     x_post, P_post, S, K, z_pred = self.kf_update(
         x_pred=predicted_state.mean,
         P_pred=predicted_state.covar,
@@ -63,11 +64,11 @@ class KalmanFilter():
     Tuple[np.ndarray, np.ndarray]
         Measurements in the gate and their indices
     """
+    gate = EllipsoidalGate(pg=pg, ndim=self.measurement_model.ndim)
     x, P = predicted_state.mean, predicted_state.covar
-    gate = EllipsoidalGate(pg=pg, ndim=measurements[0].size)
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
-    z_pred = self.measurement_model(x, noise=False)
+    z_pred = H @ x
     S = H @ P @ H.T + R
     return gate(measurements=measurements,
                 predicted_measurement=z_pred,
@@ -113,8 +114,6 @@ class KalmanFilter():
     """
     Kalman predict step
 
-    See: https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python/  blob/master/06-Multivariate-Kalman-Filters.ipynb
-
     Parameters
     ----------
     x : np.ndarray
@@ -139,13 +138,10 @@ class KalmanFilter():
                 P_pred: np.ndarray,
                 H: np.ndarray,
                 R: np.ndarray,
-                z: np.ndarray) -> Tuple[np.ndarray]:
+                z: np.ndarray,
+                ) -> Tuple[np.ndarray]:
     """
     Kalman filter update step
-
-    See: 
-    - https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python/blob/master/06-Multivariate-Kalman-Filters.ipynb
-    - https://stonesoup.readthedocs.io/en/v0.1b5/stonesoup.updater.html?highlight=kalman#module-stonesoup.updater.kalman
 
     Parameters
     ----------

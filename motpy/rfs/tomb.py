@@ -71,9 +71,15 @@ class TOMBP:
       wupd[i, 0] = 1 - bern.r + bern.r * (1 - Pd)
       mb_hypos[i, 0] = bern.update(measurement=None, pd=Pd)
 
-      valid_meas, valid_inds = state_estimator.gate(
-          measurements=z, predicted_state=bern.state, pg=self.pg)
-      in_gate_mb[i, valid_inds] = True
+      # Gate measurements
+      if self.pg < 1:
+        valid_meas, valid_inds = state_estimator.gate(
+            measurements=z, predicted_state=bern.state, pg=self.pg)
+        in_gate_mb[i, valid_inds] = True
+      else:
+        valid_meas = z
+        valid_inds = np.arange(m)
+        in_gate_mb[i, :] = True
 
       # Create hypotheses with measurement updates
       l = np.zeros(len(z))
@@ -86,11 +92,14 @@ class TOMBP:
             pd=Pd, measurement=z[j], state_estimator=state_estimator)
 
     # Gate measurements with PPP intensity
-    in_gate_poisson = np.zeros((nu, m), dtype=bool)
-    for k, state in enumerate(self.poisson.states):
-      valid_meas, valid_inds = state_estimator.gate(
-          measurements=z, predicted_state=state, pg=self.pg)
-      in_gate_poisson[k, valid_inds] = True
+    if self.pg < 1:
+      in_gate_poisson = np.zeros((nu, m), dtype=bool)
+      for k, state in enumerate(self.poisson.states):
+        valid_meas, valid_inds = state_estimator.gate(
+            measurements=z, predicted_state=state, pg=self.pg)
+        in_gate_poisson[k, valid_inds] = True
+    else:
+      in_gate_poisson = np.ones((nu, m), dtype=bool)
 
     # Create a new track for each measurement by updating PPP with measurement
     wnew = []
