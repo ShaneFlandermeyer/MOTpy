@@ -96,12 +96,6 @@ def test_scenario():
   measlog = io.loadmat('test/measlog.mat')['measlog']
   for meas_k in measlog:
     Z.append(list(meas_k[0].T))
-  # # Convert paths to n_steps x 2 array
-  # paths_array = np.zeros((n_steps, 2))
-  # for i in range(n_steps):
-  #   paths_array[i] = [paths[0][i][[0, 2]], paths[1][i][[0, 2]]]
-  # savemat('paths.mat', {'paths': paths_array})
-  # savemat('measurements.mat', {'measurements': Z})
 
   # Initialize TOMB filter
   tomb = TOMBP(birth_weights=[0.05],
@@ -115,58 +109,29 @@ def test_scenario():
   tomb.poisson.states.append(tomb.poisson.birth_states[0])
   tomb.poisson.weights = np.append(tomb.poisson.weights, 10)
 
-  # TODO: Hard-coded variables
-  r = np.array([])
-  x = np.zeros((4, 0))
-  P = np.zeros((4, 4, 0))
-  lambdau = tomb.poisson.weights
-  xu = np.array([state.mean for state in tomb.poisson.states]).swapaxes(0, -1)
-  Pu = np.array([state.covar for state in tomb.poisson.states]).swapaxes(0, -1)
-  xb = np.array(
-      [state.mean for state in tomb.poisson.birth_states]).swapaxes(0, -1)
-  Pb = np.array(
-      [state.covar for state in tomb.poisson.birth_states]).swapaxes(0, -1)
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
-  for k in range(n_steps):
+  for k in range(25):
     # Predict
     tomb.mb, tomb.poisson = tomb.predict(state_estimator=kf, dt=dt, Ps=0.999)
 
     tomb.mb, tomb.poisson = tomb.update(
-        z=np.array(Z[k]).T, Pd=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
+        z=Z[k], Pd=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
 
     print(np.max([bern.r for bern in tomb.mb]))
     print(len(tomb.mb))
     print(len(tomb.poisson))
 
-    # Update
-    # TODO: Convert to matlab version
-    # tomb.update(measurements=Z[k],
-    #             state_estimator=kf,
-    #             pd=pd,
-    #             clutter_intensity=lambda_c/volume)
-
-    # Print MB components with r > 0.5
-    # print(len(tomb.mb))
-    # max_r = 0
-    # for i, bern in enumerate(tomb.mb):
-    #   max_r = max(max_r, bern.r)
-    #   if bern.r > tomb.r_estimate_threshold:
-    #     print(f"MB component {i} has r = {bern.r}")
-    # print(max_r)
-    # print(len(tomb.poisson))
-    # print(f"Number of MB components: {len(tomb.mb)}")
-    # print(f"Number of PPP components: {len(tomb.poisson)}")
 
   # Plot paths
-  plt.figure()
-  for path in paths:
-    plt.plot([x[0] for x in path], [x[2] for x in path])
-  # Plot measurements
-  for k in range(n_steps):
-    for z in Z[k]:
-      plt.plot(z[0], z[1], 'rx')
-  plt.show()
+  # plt.figure()
+  # for path in paths:
+  #   plt.plot([x[0] for x in path], [x[2] for x in path])
+  # # Plot measurements
+  # for k in range(n_steps):
+  #   for z in Z[k]:
+  #     plt.plot(z[0], z[1], 'rx')
+  # plt.show()
 
   raise NotImplementedError
 

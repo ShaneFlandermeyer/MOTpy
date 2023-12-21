@@ -101,54 +101,46 @@ class Poisson:
              state_estimator: KalmanFilter,
              clutter_intensity: float,
              ) -> Tuple[Bernoulli, float]:
-    raise NotImplementedError
-    # Prevent log(0) warnings
-    eps = 1e-15
-    clutter_intensity += eps
 
     # Get PPP components in gate
     n_in_gate = np.count_nonzero(in_gate)
     if n_in_gate == 0:
       # No measurements in gate
-      return None, np.log(eps)
+      return None, 0
 
     if pd == 0:
       # No measurements to update
-      return None, np.log(eps)
+      return None, 0
 
     gate_states = [s for i, s in enumerate(self.states) if in_gate[i]]
-    gate_log_ws = [w for i, w in enumerate(self.weights) if in_gate[i]]
+    gate_weights = [w for i, w in enumerate(self.weights) if in_gate[i]]
 
     # If a measurement is associated to a PPP component, we create a new Bernoulli whose existence probability depends on likelihood of measurement
     state_up = []
     weight_up = np.empty(n_in_gate)
     for i in range(n_in_gate):
       state = gate_states[i]
-      log_w = gate_log_ws[i]
+      w = gate_weights[i]
 
       # Update state and likelihoods for PPP components with measurement in gate
       state_up.append(state_estimator.update(measurement=measurement,
                                              predicted_state=state))
-      likelihood = state_estimator.likelihood(
-          measurement=measurement,
-          predicted_state=state) + eps
-      weight_up[i] = log_w + np.log(pd) + np.log(likelihood)
+      l = state_estimator.likelihood(measurement=measurement,
+                                     predicted_state=state)
+      weight_up[i] = w * pd * l
 
     # Create a new Bernoulli component based on updated weights
-    norm_log_w_up, sum_log_w_up = normalize_log_weights(weight_up)
-    if clutter_intensity > 0:
-      _, sum_log_w_total = normalize_log_weights(np.concatenate(
-          (weight_up, np.log([clutter_intensity]))))
-    else:
-      sum_log_w_total = sum_log_w_up
-    r = np.exp(sum_log_w_up - sum_log_w_total)
+    sum_w_up = np.sum(weight_up)
+    norm_w_up = weight_up / sum_w_up
+    sum_w_total = sum_w_up + clutter_intensity
+    r = sum_w_up / sum_w_total
 
     # Compute the state using moment matching across all PPP components
     mean, covar = mix_gaussians(means=[state.mean for state in state_up],
                                 covars=[state.covar for state in state_up],
-                                weights=np.exp(norm_log_w_up))
+                                weights=norm_w_up)
     bern = Bernoulli(r=r, state=GaussianState(mean=mean, covar=covar))
-    return bern, sum_log_w_total
+    return bern, sum_w_total
 
   def prune(self, threshold: float) -> Poisson:
     pruned = copy.deepcopy(self)

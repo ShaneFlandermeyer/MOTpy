@@ -59,78 +59,48 @@ class TOMBP:
     return pred_mb, pred_poisson
 
   def update(self, z, Pd, state_estimator, lambda_fa):
-    lambdau = self.poisson.weights
-    xu = np.array([state.mean for state in self.poisson.states]
-                  ).swapaxes(0, -1)
-    Pu = np.array([state.covar for state in self.poisson.states]
-                  ).swapaxes(0, -1)
-    r = np.array([bern.r for bern in self.mb])
-    x = np.array([bern.state.mean for bern in self.mb]).swapaxes(0, -1)
-    P = np.array([bern.state.covar for bern in self.mb]).swapaxes(0, -1)
-
-    # Extract parameters from model
-    lambdab_threshold = 1e-4
 
     # Interpret sizes from inputs
-    n = len(r)
-    stateDimensions, nu = xu.shape
-    _, m = z.shape
-
-    # Allocate memory for new tracks
-    wnew = np.zeros(m)
-    rnew = np.zeros(m)
-    xnew = np.zeros((stateDimensions, m))
-    Pnew = np.zeros((stateDimensions, stateDimensions, m))
-
-    # Allocate temporary working for new tracks
-    Pk = np.zeros((stateDimensions, stateDimensions, nu))
-    ck = np.zeros(nu)
-    yk = np.zeros((stateDimensions, nu))
+    n = len(self.mb)
+    # stateDimensions, nu = xu.shape
+    nu = len(self.poisson)
+    m = len(z)
 
     # Update existing tracks
     wupd = np.zeros((n, m + 1))
     mb_hypos = np.empty((n, m + 1), dtype=object)
     for i, bern in enumerate(self.mb):
       # Create missed detection hypothesis
-      wupd[i, 0] = 1 - r[i] + r[i] * (1 - Pd)
+      wupd[i, 0] = 1 - bern.r + bern.r * (1 - Pd)
       mb_hypos[i, 0] = bern.update(measurement=None, pd=Pd)
-      
-      # Create hypotheses with measurement updates
-      pred_state = GaussianState(mean=x[:, i], covar=P[:, :, i])
-      for j in range(m):
-        l = state_estimator.likelihood(
-            measurement=z[:, j], predicted_state=pred_state)
-        wupd[i, j + 1] = bern.r * Pd * l
-        mb_hypos[i, j+1] = bern.update(
-            pd=Pd, measurement=z[:, j], state_estimator=state_estimator)
-        
-    for j in range(m):
-      for k in range(nu):
-        pred_state = GaussianState(mean=xu[:, k], covar=Pu[:, :, k])
-        l = state_estimator.likelihood(
-            measurement=z[:, j], predicted_state=pred_state)
-        ck[k] = lambdau[k] * Pd * l
-        state_upd = state_estimator.update(
-            measurement=z[:, j], predicted_state=pred_state)
-        yk[:, k] = state_upd.mean
-        Pk[:, :, k] = state_upd.covar
-      C = np.sum(ck)
-      wnew[j] = C + lambda_fa
-      rnew[j] = C / wnew[j]
-      ck = ck / C
-      xnew[:, j] = yk @ ck
-      for k in range(nu):
-        v = xnew[:, j] - yk[:, k]
-        Pnew[:, :, j] = Pnew[:, :, j] + ck[k] * (Pk[:, :, k] + np.outer(v, v))
 
+      # Create hypotheses with measurement updates
+      l = state_estimator.likelihood(
+          measurement=z, predicted_state=bern.state)
+      for j in range(m):
+        wupd[i, j + 1] = bern.r * Pd * l[j]
+        mb_hypos[i, j+1] = bern.update(
+            pd=Pd, measurement=z[j], state_estimator=state_estimator)
+
+    wnew = np.zeros(m)
+    rnew = np.zeros(m)
+    state_new = []
+    for j in range(m):
+      bern, wnew[j] = self.poisson.update(
+          measurement=z[j],
+          in_gate=np.ones(nu, dtype=bool),
+          pd=Pd,
+          state_estimator=state_estimator,
+          clutter_intensity=lambda_fa)
+      state_new.append(bern.state)
+      rnew[j] = bern.r
+
+    poisson_upd = copy.deepcopy(self.poisson)
     # Update (i.e., thin) intensity of unknown targets
-    lambdau = (1 - Pd) * lambdau
+    poisson_upd.weights = poisson_upd.weights * (1 - Pd)
 
     # Not shown in paper--truncate low weight components
-    ss = lambdau > lambdab_threshold
-    lambdau = lambdau[ss]
-    xu = xu[:, ss]
-    Pu = Pu[:, :, ss]
+    poisson_upd = poisson_upd.prune(threshold=self.w_min)
 
     if wupd.size == 0:
       pupd = np.empty_like(wupd)
@@ -139,17 +109,14 @@ class TOMBP:
       pupd, pnew = self.spa(wupd=wupd, wnew=wnew)
 
     mb_upd = self.tomb(pupd=pupd, mb_hypos=mb_hypos, pnew=pnew,
-                       rnew=rnew, xnew=xnew, Pnew=Pnew)
-
-    poisson_upd = Poisson(birth_weights=self.poisson.birth_weights,
-                          birth_states=self.poisson.birth_states)
-    poisson_upd.weights = lambdau
-    poisson_upd.states = [GaussianState(
-        mean=xu[:, i], covar=Pu[:, :, i]) for i in range(len(lambdau))]
+                       rnew=rnew, state_new=state_new)
 
     return mb_upd, poisson_upd
 
-  def tomb(self, pupd, mb_hypos, pnew, rnew, xnew, Pnew):
+  def tomb(self, pupd, mb_hypos, pnew, rnew, state_new):
+
+    xnew = [state.mean for state in state_new]
+    Pnew = [state.covar for state in state_new]
 
     # Form continuing tracks
     tomb_mb = []
@@ -172,11 +139,9 @@ class TOMBP:
       tomb_mb.append(new_bern)
 
     # Form new tracks (already single hypothesis)
-    for j in range(len(pnew)):
+    for j in range(len(state_new)):
       r = pnew[j] * rnew[j]
-      x = xnew[:, j]
-      P = Pnew[:, :, j]
-      new_bern = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))
+      new_bern = Bernoulli(r=r, state=state_new[j])
       tomb_mb.append(new_bern)
 
     # Truncate tracks with low probability of existence (not shown in algorithm)
