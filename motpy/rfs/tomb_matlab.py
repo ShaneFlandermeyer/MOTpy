@@ -28,7 +28,6 @@ class TOMBP:
     self.r_min = r_min
     self.r_estimate_threshold = r_estimate_threshold
 
-  # TODO: Replace model with internal stuff
   def predict(self, state_estimator, dt, Ps):
     """
     PREDICT MULTI-BERNOULLI AND POISSON COMPONENTS
@@ -60,9 +59,7 @@ class TOMBP:
 
   def update(self, z, Pd, state_estimator, lambda_fa):
 
-    # Interpret sizes from inputs
     n = len(self.mb)
-    # stateDimensions, nu = xu.shape
     nu = len(self.poisson)
     m = len(z)
 
@@ -83,8 +80,7 @@ class TOMBP:
             pd=Pd, measurement=z[j], state_estimator=state_estimator)
 
     wnew = np.zeros(m)
-    rnew = np.zeros(m)
-    state_new = []
+    new_berns = []
     for j in range(m):
       bern, wnew[j] = self.poisson.update(
           measurement=z[j],
@@ -92,8 +88,7 @@ class TOMBP:
           pd=Pd,
           state_estimator=state_estimator,
           clutter_intensity=lambda_fa)
-      state_new.append(bern.state)
-      rnew[j] = bern.r
+      new_berns.append(bern)
 
     poisson_upd = copy.deepcopy(self.poisson)
     # Update (i.e., thin) intensity of unknown targets
@@ -109,39 +104,31 @@ class TOMBP:
       pupd, pnew = self.spa(wupd=wupd, wnew=wnew)
 
     mb_upd = self.tomb(pupd=pupd, mb_hypos=mb_hypos, pnew=pnew,
-                       rnew=rnew, state_new=state_new)
+                       new_berns=new_berns)
 
     return mb_upd, poisson_upd
 
-  def tomb(self, pupd, mb_hypos, pnew, rnew, state_new):
-
-    xnew = [state.mean for state in state_new]
-    Pnew = [state.covar for state in state_new]
+  def tomb(self, pupd, mb_hypos, pnew, new_berns):
 
     # Form continuing tracks
     tomb_mb = []
     for i in range(len(self.mb)):
       rupd = np.array([bern.r for bern in mb_hypos[i, :]])
-      xupd = np.array([bern.state.mean for bern in mb_hypos[i, :]])
-      Pupd = np.array([bern.state.covar for bern in mb_hypos[i, :]])
-      nupd = len(rupd)
+      xupd = [bern.state.mean for bern in mb_hypos[i, :]]
+      Pupd = [bern.state.covar for bern in mb_hypos[i, :]]
 
       pr = pupd[i, :] * rupd
       r = np.sum(pr)
       pr = pr / r
-      x = np.sum(xupd * pr[:, np.newaxis], axis=0)
-      P = np.zeros_like(Pupd[0])
-      for j in range(nupd):
-        v = x - xupd[j]
-        P = P + pr[j] * (Pupd[j] + np.outer(v, v))
+      x, P = mix_gaussians(means=xupd, covars=Pupd, weights=pr)
 
       new_bern = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))
       tomb_mb.append(new_bern)
 
     # Form new tracks (already single hypothesis)
-    for j in range(len(state_new)):
-      r = pnew[j] * rnew[j]
-      new_bern = Bernoulli(r=r, state=state_new[j])
+    for j in range(len(new_berns)):
+      r = pnew[j] * new_berns[j].r
+      new_bern = Bernoulli(r=r, state=new_berns[j].state)
       tomb_mb.append(new_bern)
 
     # Truncate tracks with low probability of existence (not shown in algorithm)

@@ -58,14 +58,6 @@ def test_scenario():
     for path in paths:
       path.append(cv(path[-1], dt=dt, noise=noisy))
 
-  # min_x = np.min([np.min([x[0] for x in path]) for path in paths])
-  # max_x = np.max([np.max([x[0] for x in path]) for path in paths])
-  # min_y = np.min([np.min([x[2] for x in path]) for path in paths])
-  # max_y = np.max([np.max([x[2] for x in path]) for path in paths])
-  # x_range = max_x - min_x
-  # y_range = max_y - min_y
-  # volume = x_range * y_range
-
   # Measurements
   linear = LinearMeasurementModel(
       ndim_state=4, covar=np.eye(2), measured_dims=[0, 2], seed=seed)
@@ -121,18 +113,7 @@ def test_scenario():
     print(np.max([bern.r for bern in tomb.mb]))
     print(len(tomb.mb))
     print(len(tomb.poisson))
-
-
-  # Plot paths
-  # plt.figure()
-  # for path in paths:
-  #   plt.plot([x[0] for x in path], [x[2] for x in path])
-  # # Plot measurements
-  # for k in range(n_steps):
-  #   for z in Z[k]:
-  #     plt.plot(z[0], z[1], 'rx')
-  # plt.show()
-
+    
   raise NotImplementedError
 
 
