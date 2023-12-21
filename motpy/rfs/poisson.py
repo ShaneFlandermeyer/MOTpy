@@ -108,10 +108,6 @@ class Poisson:
       # No measurements in gate
       return None, 0
 
-    if pd == 0:
-      # No measurements to update
-      return None, 0
-
     gate_states = [s for i, s in enumerate(self.states) if in_gate[i]]
     gate_weights = [w for i, w in enumerate(self.weights) if in_gate[i]]
 

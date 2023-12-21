@@ -71,11 +71,11 @@ class TOMBP:
       wupd[i, 0] = 1 - bern.r + bern.r * (1 - Pd)
       mb_hypos[i, 0] = bern.update(measurement=None, pd=Pd)
 
-      # Create hypotheses with measurement updates
-
       valid_meas, valid_inds = state_estimator.gate(
           measurements=z, predicted_state=bern.state, pg=self.pg)
       in_gate_mb[i, valid_inds] = True
+
+      # Create hypotheses with measurement updates
       l = np.zeros(len(z))
       if len(valid_inds) > 0:
         l[valid_inds] = state_estimator.likelihood(
@@ -85,17 +85,26 @@ class TOMBP:
         mb_hypos[i, j+1] = bern.update(
             pd=Pd, measurement=z[j], state_estimator=state_estimator)
 
-    # TODO: Do gating
-    wnew = np.zeros(m)
+    # Gate measurements with PPP intensity
+    in_gate_poisson = np.zeros((nu, m), dtype=bool)
+    for k, state in enumerate(self.poisson.states):
+      valid_meas, valid_inds = state_estimator.gate(
+          measurements=z, predicted_state=state, pg=self.pg)
+      in_gate_poisson[k, valid_inds] = True
+
+    # Create a new track for each measurement by updating PPP with measurement
+    wnew = []
     new_berns = []
     for j in range(m):
-      bern, wnew[j] = self.poisson.update(
+      bern, w = self.poisson.update(
           measurement=z[j],
-          in_gate=np.ones(nu, dtype=bool),
+          in_gate=in_gate_poisson[:, j],
           pd=Pd,
           state_estimator=state_estimator,
           clutter_intensity=lambda_fa)
-      new_berns.append(bern)
+      if bern is not None:
+        new_berns.append(bern)
+        wnew.append(w)
 
     poisson_upd = copy.deepcopy(self.poisson)
     # Update (i.e., thin) intensity of unknown targets
@@ -116,10 +125,10 @@ class TOMBP:
     return mb_upd, poisson_upd
 
   def tomb(self, pupd: np.ndarray, mb_hypos: np.ndarray, pnew: np.ndarray, new_berns: List[Bernoulli], in_gate_mb: np.ndarray):
-    
+
     # Add false alarm hypotheses as valid
     valid_hypos = np.concatenate(
-      (np.ones((len(self.mb), 1), dtype=bool), in_gate_mb), axis=1)
+        (np.ones((len(self.mb), 1), dtype=bool), in_gate_mb), axis=1)
 
     # Form continuing tracks
     tomb_mb = []
