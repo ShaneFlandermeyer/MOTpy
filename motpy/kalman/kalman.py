@@ -20,25 +20,33 @@ class KalmanFilter():
               state: GaussianState,
               dt: float,
               ) -> GaussianState:
-    mean_pred, covar_pred = self.kf_predict(
-        x=state.mean,
-        P=state.covar,
-        F=self.transition_model.matrix(dt),
-        Q=self.transition_model.covar(dt),
-    )
-    return GaussianState(mean=mean_pred, covar=covar_pred)
+    x, P = state.mean, state.covar
+    F = self.transition_model.matrix(dt)
+    Q = self.transition_model.covar(dt)
+    x_pred = F @ x
+    P_pred = F @ P @ F.T + Q
+    return GaussianState(mean=x_pred, covar=P_pred)
 
   def update(self,
              measurement: np.ndarray,
-             predicted_state: GaussianState,
-             ) -> Tuple[np.ndarray, np.ndarray]:
-    x_post, P_post, S, K, z_pred = self.kf_update(
-        x_pred=predicted_state.mean,
-        P_pred=predicted_state.covar,
-        z=measurement,
-        H=self.measurement_model.matrix(),
-        R=self.measurement_model.covar(),
-    )
+             predicted_state: GaussianState) -> Tuple[np.ndarray, np.ndarray]:
+    x_pred, P_pred = predicted_state.mean, predicted_state.covar
+    z = measurement
+    H = self.measurement_model.matrix()
+    R = self.measurement_model.covar()
+
+    z_pred = H @ x_pred
+    S = H @ P_pred @ H.T + R
+    K = P_pred @ H.T @ np.linalg.inv(S)
+    P_post = P_pred - K @ S @ K.T
+    P_post = (P_post + P_post.T) / 2
+
+    if z is None:
+      x_post = None
+    else:
+      y = z - z_pred
+      x_post = x_pred + K @ y
+
     return GaussianState(mean=x_post, covar=P_post,
                          metadata=dict(S=S, K=K, z_pred=z_pred))
 
@@ -64,11 +72,11 @@ class KalmanFilter():
     Tuple[np.ndarray, np.ndarray]
         Measurements in the gate and their indices
     """
-    gate = EllipsoidalGate(pg=pg, ndim=self.measurement_model.ndim)
     x, P = predicted_state.mean, predicted_state.covar
+    gate = EllipsoidalGate(pg=pg, ndim=measurements[0].size)
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
-    z_pred = H @ x
+    z_pred = self.measurement_model(x, noise=False)
     S = H @ P @ H.T + R
     return gate(measurements=measurements,
                 predicted_measurement=z_pred,
@@ -103,75 +111,3 @@ class KalmanFilter():
         H=self.measurement_model.matrix(),
         R=self.measurement_model.covar(),
     )
-
-  @staticmethod
-  def kf_predict(
-      x: np.ndarray,
-      P: np.ndarray,
-      F: np.ndarray,
-      Q: np.ndarray,
-  ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Kalman predict step
-
-    Parameters
-    ----------
-    x : np.ndarray
-        State vector
-    P : np.ndarray
-        Covariance
-    F : np.ndarray
-        State transition matrix
-    Q : np.ndarray
-        Transition model noise covariance
-    Returns
-    -------
-    Tuple[np.ndarray]
-        _description_
-    """
-    x_pred = F @ x
-    P_pred = F @ P @ F.T + Q
-    return x_pred, P_pred
-
-  @staticmethod
-  def kf_update(x_pred: np.ndarray,
-                P_pred: np.ndarray,
-                H: np.ndarray,
-                R: np.ndarray,
-                z: np.ndarray,
-                ) -> Tuple[np.ndarray]:
-    """
-    Kalman filter update step
-
-    Parameters
-    ----------
-    x_pred : np.ndarray
-        State prediction
-    P_pred : np.ndarray
-        Covariance prediction
-    z : np.ndarray
-        Measurement
-    H : np.ndarray
-        Measurement model matrix
-    R : np.ndarray
-        Measurement noise covariance
-    Returns
-    -------
-    Tuple[np.ndarray]
-        Updated state and covariance
-    """
-    # Compute the Kalman gain and innovation covar
-    S = H @ P_pred @ H.T + R
-    K = P_pred @ H.T @ np.linalg.inv(S)
-    z_pred = H @ x_pred
-
-    # Compute the updated state and covariance
-    if z is None:
-      x_post = None
-    else:
-      y = z - z_pred
-      x_post = x_pred + K @ y
-    P_post = P_pred - K @ S @ K.T
-    P_post = (P_post + P_post.T) / 2
-
-    return x_post, P_post, S, K, z_pred
