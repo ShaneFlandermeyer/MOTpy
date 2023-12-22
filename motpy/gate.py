@@ -1,3 +1,4 @@
+import functools
 import numpy as np
 from typing import List, Tuple
 from scipy.stats import norm, chi2
@@ -24,14 +25,16 @@ class EllipsoidalGate:
     dist = np.einsum('nji, ii, nij -> n', y.swapaxes(-1, -2), Si, y)
 
     # Return measurements in the gate and their indices
-    in_gate = dist < self.threshold
+    t = self.threshold(self.pg, self.ndim)
+    in_gate = dist < t
     valid_inds = np.where(in_gate)[0]
     valid_meas = [z[i].reshape(measurements[0].shape) for i in valid_inds]
     return valid_meas, valid_inds
 
-  @property
-  def threshold(self):
-    return chi2.ppf(self.pg, self.ndim)
+  @staticmethod
+  @functools.lru_cache
+  def threshold(pg: int, ndim: int):
+    return chi2.ppf(pg, ndim)
 
   def volume(self, innovation_covar: np.ndarray):
     gamma = self.threshold

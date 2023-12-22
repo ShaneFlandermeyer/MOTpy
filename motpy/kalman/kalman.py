@@ -85,11 +85,12 @@ class KalmanFilter():
         Measurements in the gate and their indices
     """
     x, P = predicted_state.mean, predicted_state.covar
-    gate = EllipsoidalGate(pg=pg, ndim=measurements[0].size)
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
     z_pred = self.measurement_model(x, noise=False)
     S = H @ P @ H.T + R
+    
+    gate = EllipsoidalGate(pg=pg, ndim=measurements[0].size)
     return gate(measurements=measurements,
                 predicted_measurement=z_pred,
                 innovation_covar=S)
