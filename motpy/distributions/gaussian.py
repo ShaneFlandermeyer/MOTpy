@@ -2,7 +2,7 @@ import datetime
 from typing import List, Tuple, Union
 
 import numpy as np
-from scipy.stats import multivariate_normal
+from numba import njit
 
 
 class GaussianState():
@@ -28,7 +28,8 @@ class GaussianState():
       covar=\n{self.covar})
       meta={self.metadata})"""
 
-
+# @profile
+# @njit
 def mix_gaussians(means: List[np.ndarray],
                   covars: List[np.ndarray],
                   weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -53,14 +54,13 @@ def mix_gaussians(means: List[np.ndarray],
   assert len(means) == len(covars) == len(weights)
 
   N = len(weights)
-  x = np.array(means).reshape(N, -1)
+  x = np.array(means)
   P = np.array(covars)
   w = weights / np.sum(weights)
 
   mix_mean = np.dot(weights, x)
   mix_covar = np.zeros((x.shape[1], x.shape[1]))
-  for i in range(N):
-    mix_covar += w[i] * (P[i] + np.outer(x[i], x[i]))
+  mix_covar = np.einsum('i,ijk->jk', w, P) + np.einsum('i,ij,ik->jk', w, x, x)
   mix_covar -= np.outer(mix_mean, mix_mean)
   return mix_mean, mix_covar
 

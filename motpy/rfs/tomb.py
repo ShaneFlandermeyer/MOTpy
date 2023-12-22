@@ -58,7 +58,6 @@ class TOMBP:
 
     return pred_mb, pred_poisson
 
-  # @profile
   def update(self, z, Pd, state_estimator, lambda_fa):
 
     n = len(self.mb)
