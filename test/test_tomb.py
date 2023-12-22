@@ -11,7 +11,6 @@ from motpy.models.transition import ConstantVelocity
 import matplotlib.pyplot as plt
 import scipy.io as io
 
-
 # def test_predict():
 #   raise NotImplementedError
 
@@ -43,7 +42,7 @@ def test_scenario():
 
   n_steps = 150
   pd = 0.5
-  lambda_c = 20
+  lambda_c = 10
   volume = 200*200
   dt = 1
   noisy = True
@@ -85,10 +84,10 @@ def test_scenario():
   # Load from matlab
   xlog = io.loadmat('test/xlog.mat')['xlog']
 
-  Z = []
-  measlog = io.loadmat('test/measlog.mat')['measlog']
-  for meas_k in measlog:
-    Z.append(list(meas_k[0].T))
+  # Z = []
+  # measlog = io.loadmat('test/measlog.mat')['measlog']
+  # for meas_k in measlog:
+  #   Z.append(list(meas_k[0].T))
 
   # Initialize TOMB filter
   tomb = TOMBP(birth_weights=[0.05],
@@ -96,10 +95,12 @@ def test_scenario():
                    mean=np.array([0, 0, 0, 0]),
                    covar=np.diag([100, 1, 100, 1])**2)],
                pg=0.99,
-               w_min=1e-4,
                r_min=1e-4,
+               w_min=1e-4,
                r_estimate_threshold=0.5)
-  tomb.poisson.states.append(tomb.poisson.birth_states[0])
+  tomb.poisson.states.append(GaussianState(
+                   mean=np.array([0, 0, 0, 0]),
+                   covar=np.diag([100, 1, 100, 1])**2))
   tomb.poisson.weights = np.append(tomb.poisson.weights, 10)
 
 
@@ -113,11 +114,11 @@ def test_scenario():
         z=Z[k], Pd=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
 
     # print(np.max([bern.r for bern in tomb.mb]))
-    # print(len(tomb.mb))
-    # print(len(tomb.poisson))
-    # for i, bern in enumerate(tomb.mb):
-    #   if bern.r > 0.5:
-    #     print(f"MB index: {i}, r: {bern.r}")
+    print(len(tomb.mb))
+    print(len(tomb.poisson))
+    for i, bern in enumerate(tomb.mb):
+      if bern.r > 0.5:
+        print(f"MB index: {i}, r: {bern.r}")
     print(f"Step {k}, {time.time() - start} seconds")
 
 if __name__ == '__main__':

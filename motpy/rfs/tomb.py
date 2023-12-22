@@ -70,17 +70,11 @@ class TOMBP:
       # Create missed detection hypothesis
       wupd[i, 0] = 1 - bern.r + bern.r * (1 - Pd)
       mb_hypos[i, 0] = bern.update(measurement=None, pd=Pd)
-
-      # Gate measurements
-      if self.pg < 1:
-        valid_meas, valid_inds = state_estimator.gate(
-            measurements=z, predicted_state=bern.state, pg=self.pg)
-        in_gate_mb[i, valid_inds] = True
-      else:
-        valid_meas = z
-        valid_inds = np.arange(m)
-        in_gate_mb[i, :] = True
-
+      
+      valid_meas, valid_inds = state_estimator.gate(
+          measurements=z, predicted_state=bern.state, pg=self.pg)
+      in_gate_mb[i, valid_inds] = True
+    
       # Create hypotheses with measurement updates
       l = np.zeros(len(z))
       if len(valid_inds) > 0:
@@ -92,14 +86,11 @@ class TOMBP:
             pd=Pd, measurement=z[j], state_estimator=state_estimator)
 
     # Gate measurements with PPP intensity
-    if self.pg < 1:
-      in_gate_poisson = np.zeros((nu, m), dtype=bool)
-      for k, state in enumerate(self.poisson.states):
-        valid_meas, valid_inds = state_estimator.gate(
-            measurements=z, predicted_state=state, pg=self.pg)
-        in_gate_poisson[k, valid_inds] = True
-    else:
-      in_gate_poisson = np.ones((nu, m), dtype=bool)
+    in_gate_poisson = np.zeros((nu, m), dtype=bool)
+    for k, state in enumerate(self.poisson.states):
+      valid_meas, valid_inds = state_estimator.gate(
+          measurements=z, predicted_state=state, pg=self.pg)
+      in_gate_poisson[k, valid_inds] = True
 
     # Create a new track for each measurement by updating PPP with measurement
     wnew = []
@@ -130,7 +121,7 @@ class TOMBP:
 
     mb_upd = self.tomb(pupd=pupd, mb_hypos=mb_hypos, pnew=pnew,
                        new_berns=new_berns, in_gate_mb=in_gate_mb)
-
+    
     return mb_upd, poisson_upd
 
   def tomb(self, pupd: np.ndarray, mb_hypos: np.ndarray, pnew: np.ndarray, new_berns: List[Bernoulli], in_gate_mb: np.ndarray):
@@ -165,6 +156,7 @@ class TOMBP:
     tomb_mb = [bern for bern in tomb_mb if bern.r >= self.r_min]
 
     return tomb_mb
+
 
   @staticmethod
   def spa(wupd: np.ndarray, wnew: np.ndarray, eps: float = 1e-4
