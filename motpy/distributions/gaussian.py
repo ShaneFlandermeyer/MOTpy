@@ -11,7 +11,7 @@ class GaussianState():
       mean: np.ndarray,
       covar: np.ndarray,
       timestamp: Union[float, datetime.datetime] = {},
-      metadata: dict = None,
+      metadata: dict = {},
       **kwargs
   ):
     self.mean = mean
@@ -23,7 +23,10 @@ class GaussianState():
       setattr(self, key, value)
 
   def __repr__(self):
-    return f'GaussianState(\n mean={self.mean}\n covar=\n{self.covar})'
+    return f"""GaussianState(
+      mean={self.mean}
+      covar=\n{self.covar})
+      meta={self.metadata})"""
 
 
 def mix_gaussians(means: List[np.ndarray],

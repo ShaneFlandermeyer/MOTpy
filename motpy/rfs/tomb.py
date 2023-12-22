@@ -58,7 +58,7 @@ class TOMBP:
 
     return pred_mb, pred_poisson
 
-  @profile
+  # @profile
   def update(self, z, Pd, state_estimator, lambda_fa):
 
     n = len(self.mb)
@@ -72,32 +72,24 @@ class TOMBP:
     for i, bern in enumerate(self.mb):
       # Create missed detection hypothesis
       wupd[i, 0] = 1 - bern.r + bern.r * (1 - Pd)
-      mb_hypos[i, 0] = bern.update(measurement=None, pd=Pd)
-
-      # TODO: Pre-compute KF params
-      H = state_estimator.measurement_model.matrix()
-      R = state_estimator.measurement_model.covar()
-      x_pred, P_pred = bern.state.mean, bern.state.covar
-      z_pred = H @ x_pred
-      S = H @ P_pred @ H.T + R
-      Si = np.linalg.inv(S)
-      K = P_pred @ H.T @ Si
-      P_post = P_pred - K @ H @ P_pred
-      y = np.atleast_2d(z) - z_pred
-      Ky = K @ y.T
+      mb_hypos[i, 0] = bern.update(measurement=None,
+                                   pd=Pd,
+                                   state_estimator=state_estimator)
 
       # Create hypotheses with measurement updates
       l = state_estimator.likelihood(measurement=z,
                                      predicted_state=bern.state)
+      bern.state.metadata['id'] = i
       for j in range(m):
         wupd[i, j + 1] = bern.r * Pd * l[j]
-        r = 1
-        x_post = x_pred + Ky[:, j]
-        mb_hypos[i, j + 1] = Bernoulli(r=r,
-                                       state=GaussianState(mean=x_post, covar=P_post))
-        # TODO: HAFTA HAFTA HAFTA CACHE THINGS HERE
-        # mb_hypos[i, j+1] = bern.update(
-        #     pd=Pd, measurement=z[j], state_estimator=state_estimator)
+        mb_hypos[i, j+1] = bern.update(
+            pd=Pd, measurement=z[j], state_estimator=state_estimator)
+        if j == 0:
+          # Add cached state estimation values to bernoulli state.
+          new_meta = mb_hypos[i, j+1].state.metadata.copy()
+          new_meta.update(bern.state.metadata)
+          bern.state.metadata = new_meta
+        
     stop = time.time()
     print(f'Update existing tracks: {stop - start}')
 
