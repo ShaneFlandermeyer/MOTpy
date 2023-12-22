@@ -2,8 +2,6 @@ import datetime
 from typing import List, Tuple, Union
 
 import numpy as np
-from numba import njit
-
 
 class GaussianState():
   def __init__(
@@ -28,8 +26,6 @@ class GaussianState():
       covar=\n{self.covar})
       meta={self.metadata})"""
 
-# @profile
-# @njit
 def mix_gaussians(means: List[np.ndarray],
                   covars: List[np.ndarray],
                   weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:

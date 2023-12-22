@@ -45,9 +45,8 @@ class TOMBP:
     # Implement prediction algorithm
 
     # Predict existing tracks
-    pred_mb = copy.deepcopy(self.mb)
-    for i, bern in enumerate(self.mb):
-      pred_mb[i] = bern.predict(state_estimator=state_estimator, ps=Ps, dt=dt)
+    pred_mb = [bern.predict(state_estimator=state_estimator,
+                            ps=Ps, dt=dt) for bern in self.mb]
 
     # Predict existing PPP intensity
     pred_poisson = self.poisson.predict(
@@ -75,8 +74,12 @@ class TOMBP:
                                    pd=Pd,
                                    state_estimator=state_estimator)
 
-      valid_meas, valid_inds = state_estimator.gate(
-          measurements=z, predicted_state=bern.state, pg=self.pg)
+      if self.pg == 1 or self.pg is None:
+        valid_meas = z
+        valid_inds = np.arange(m)
+      else:
+        valid_meas, valid_inds = state_estimator.gate(
+            measurements=z, predicted_state=bern.state, pg=self.pg)
       in_gate_mb[i, valid_inds] = True
 
       # Create hypotheses with measurement updates
@@ -102,8 +105,12 @@ class TOMBP:
     in_gate_poisson = np.zeros((nu, m), dtype=bool)
     l_ppp = np.zeros((nu, m))
     for k, state in enumerate(self.poisson.states):
-      valid_meas, valid_inds = state_estimator.gate(
-          measurements=z, predicted_state=state, pg=self.pg)
+      if self.pg == 1 or self.pg is None:
+        valid_meas = z
+        valid_inds = np.arange(m)
+      else:
+        valid_meas, valid_inds = state_estimator.gate(
+            measurements=z, predicted_state=state, pg=self.pg)
       in_gate_poisson[k, valid_inds] = True
       l_ppp[k, valid_inds] = state_estimator.likelihood(
           measurement=valid_meas, predicted_state=state)

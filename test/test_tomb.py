@@ -55,32 +55,33 @@ def test_scenario():
                         position_mapping=[0, 2],
                         velocity_mapping=[1, 3],
                         seed=seed)
-  for i in range(n_steps):
-    for path in paths:
-      path.append(cv(path[-1], dt=dt, noise=noisy))
-
-  # Measurements
   linear = LinearMeasurementModel(
       ndim_state=4, covar=np.eye(2), measured_dims=[0, 2], seed=seed)
-  Z = []
-  for k in range(n_steps):
-    zk = []
+  
+  # for i in range(n_steps):
+  #   for path in paths:
+  #     path.append(cv(path[-1], dt=dt, noise=noisy))
 
-    # Object measurements
-    for path in paths:
-      if np.random.uniform() < pd:
-        zk.append(linear(path[k], noise=noisy))
+  # # Measurements
+  # Z = []
+  # for k in range(n_steps):
+  #   zk = []
 
-    # Clutter measurements
-    for _ in range(np.random.poisson(lambda_c)):
-      x = np.random.uniform(-100, 100)
-      y = np.random.uniform(-100, 100)
-      zk.append(np.array([x, y]))
+  #   # Object measurements
+  #   for path in paths:
+  #     if np.random.uniform() < pd:
+  #       zk.append(linear(path[k], noise=noisy))
 
-    # Shuffle zk
-    np.random.shuffle(zk)
+  #   # Clutter measurements
+  #   for _ in range(np.random.poisson(lambda_c)):
+  #     x = np.random.uniform(-100, 100)
+  #     y = np.random.uniform(-100, 100)
+  #     zk.append(np.array([x, y]))
 
-    Z.append(zk)
+  #   # Shuffle zk
+  #   np.random.shuffle(zk)
+
+  #   Z.append(zk)
 
   # Load from matlab
   xlog = io.loadmat('test/xlog.mat')['xlog']
@@ -105,8 +106,9 @@ def test_scenario():
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
   
-  for k in range(25):
-    start = time.time()
+  start = time.time()
+  for k in range(n_steps):
+    # start = time.time()
     # Predict
     tomb.mb, tomb.poisson = tomb.predict(state_estimator=kf, dt=dt, Ps=0.999)
 
@@ -119,7 +121,7 @@ def test_scenario():
     for i, bern in enumerate(tomb.mb):
       if bern.r > tomb.r_estimate_threshold:
         print(f"Track {i}: {bern.r}")
-    print(f"Time: {time.time() - start}")
+  print(f"Time: {time.time() - start}")
     
   # raise NotImplementedError
 

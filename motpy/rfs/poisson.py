@@ -81,17 +81,12 @@ class Poisson:
               ps: float,
               dt: float) -> Poisson:
     # Predict existing PPP density
-    pred_weights = self.weights * ps
-    pred_states = []
-    for state in self.states:
-      pred_states.append(state_estimator.predict(state=state, dt=dt))
-
-    # Incorporate PPP birth intensity into PPP intensity
-    pred_ppp = copy.deepcopy(self)
-    pred_ppp.weights = np.concatenate(
-        (pred_weights, self.birth_weights))
-    pred_ppp.states = pred_states + self.birth_states
-
+    pred_ppp = Poisson(birth_weights=self.birth_weights,
+                       birth_states=self.birth_states)
+    pred_ppp.weights = np.concatenate((self.weights*ps, self.birth_weights))
+    pred_ppp.states = [state_estimator.predict(
+        state=state, dt=dt) for state in self.states] + self.birth_states
+    
     return pred_ppp
 
   # @profile
@@ -121,7 +116,7 @@ class Poisson:
       state = gate_states[i]
       w = gate_weights[i]
       l = likelihoods[i]
-      
+
       weight_up[i] = w * pd * l
 
       # Update state and likelihoods for PPP components with measurement in gate
