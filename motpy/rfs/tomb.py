@@ -66,7 +66,6 @@ class TOMBP:
     m = len(z)
 
     # Update existing tracks
-    start = time.time()
     wupd = np.zeros((n, m + 1))
     mb_hypos = np.empty((n, m + 1), dtype=object)
     for i, bern in enumerate(self.mb):
@@ -90,9 +89,6 @@ class TOMBP:
           new_meta.update(bern.state.metadata)
           bern.state.metadata = new_meta
         
-    stop = time.time()
-    print(f'Update existing tracks: {stop - start}')
-
     wnew = np.zeros(m)
     new_berns = []
     for j in range(m):

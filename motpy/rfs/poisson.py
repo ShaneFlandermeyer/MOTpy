@@ -94,6 +94,7 @@ class Poisson:
 
     return pred_ppp
 
+  # @profile
   def update(self,
              measurement: np.ndarray,
              pd: float,
@@ -108,12 +109,8 @@ class Poisson:
       # No measurements in gate
       return None, 0
 
-    if pd == 0:
-      # No measurements to update
-      return None, 0
-
     gate_states = [s for i, s in enumerate(self.states) if in_gate[i]]
-    gate_weights = [w for i, w in enumerate(self.weights) if in_gate[i]]
+    gate_weights = self.weights[in_gate]
 
     # If a measurement is associated to a PPP component, we create a new Bernoulli whose existence probability depends on likelihood of measurement
     state_up = []
@@ -125,6 +122,11 @@ class Poisson:
       # Update state and likelihoods for PPP components with measurement in gate
       state_up.append(state_estimator.update(measurement=measurement,
                                              predicted_state=state))
+      # Add cached state estimation values to bernoulli state.
+      new_meta = state_up[i].metadata.copy()
+      new_meta.update(state.metadata)
+      state.metadata = new_meta
+
       l = state_estimator.likelihood(measurement=measurement,
                                      predicted_state=state)
       weight_up[i] = w * pd * l
