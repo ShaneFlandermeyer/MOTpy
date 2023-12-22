@@ -8,27 +8,6 @@ from motpy.rfs.bernoulli import Bernoulli
 from motpy.distributions.gaussian import mix_gaussians, GaussianState
 
 
-def normalize_log_weights(log_w: np.ndarray) -> Tuple[np.ndarray, float]:
-  """
-  Normalize weights in log space to sum to 1 in linear space.
-
-  Parameters
-  ----------
-  log_w : np.ndarray
-      Array of log weights
-
-  Returns
-  -------
-  Tuple[np.ndarray, float]
-      - Array of normalized log weights
-      - Sum of normalized log weights
-  """
-  max_w = np.max(log_w)
-  log_sum_w = max_w + np.log(1 + np.sum(np.exp(log_w[log_w != max_w] - max_w)))
-  log_w = log_w - log_sum_w
-  return log_w, log_sum_w
-
-
 class Poisson:
   """
   Class to hold all poisson distributions. Methods include birth, prediction, merge, prune, recycle.
@@ -81,22 +60,19 @@ class Poisson:
               ps: float,
               dt: float) -> Poisson:
     # Predict existing PPP density
-    pred_weights = self.weights * ps
-    pred_states = []
-    for state in self.states:
-      pred_states.append(state_estimator.predict(state=state, dt=dt))
-
-    # Incorporate PPP birth intensity into PPP intensity
-    pred_ppp = copy.deepcopy(self)
-    pred_ppp.weights = np.concatenate(
-        (pred_weights, self.birth_weights))
-    pred_ppp.states = pred_states + self.birth_states
-
+    pred_ppp = Poisson(birth_weights=self.birth_weights,
+                       birth_states=self.birth_states)
+    pred_ppp.weights = np.concatenate((self.weights*ps, self.birth_weights))
+    pred_ppp.states = [state_estimator.predict(
+        state=state, dt=dt) for state in self.states] + self.birth_states
+    
     return pred_ppp
 
+  # @profile
   def update(self,
              measurement: np.ndarray,
              pd: float,
+             likelihoods: np.ndarray,
              in_gate: np.ndarray,
              state_estimator: KalmanFilter,
              clutter_intensity: float,
@@ -109,7 +85,8 @@ class Poisson:
       return None, 0
 
     gate_states = [s for i, s in enumerate(self.states) if in_gate[i]]
-    gate_weights = [w for i, w in enumerate(self.weights) if in_gate[i]]
+    gate_weights = self.weights[in_gate]
+    likelihoods = likelihoods[in_gate]
 
     # If a measurement is associated to a PPP component, we create a new Bernoulli whose existence probability depends on likelihood of measurement
     state_up = []
@@ -117,13 +94,17 @@ class Poisson:
     for i in range(n_in_gate):
       state = gate_states[i]
       w = gate_weights[i]
+      l = likelihoods[i]
+
+      weight_up[i] = w * pd * l
 
       # Update state and likelihoods for PPP components with measurement in gate
       state_up.append(state_estimator.update(measurement=measurement,
                                              predicted_state=state))
-      l = state_estimator.likelihood(measurement=measurement,
-                                     predicted_state=state)
-      weight_up[i] = w * pd * l
+      # Add cached state estimation values to bernoulli state.
+      new_meta = state_up[i].metadata.copy()
+      new_meta.update(state.metadata)
+      state.metadata = new_meta
 
     # Create a new Bernoulli component based on updated weights
     sum_w_up = np.sum(weight_up)

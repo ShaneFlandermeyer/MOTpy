@@ -23,6 +23,7 @@ class KalmanFilter():
     x, P = state.mean, state.covar
     F = self.transition_model.matrix(dt)
     Q = self.transition_model.covar(dt)
+
     x_pred = F @ x
     P_pred = F @ P @ F.T + Q
     return GaussianState(mean=x_pred, covar=P_pred)
@@ -35,20 +36,31 @@ class KalmanFilter():
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
 
-    z_pred = H @ x_pred
-    S = H @ P_pred @ H.T + R
-    K = P_pred @ H.T @ np.linalg.inv(S)
-    P_post = P_pred - K @ S @ K.T
-    P_post = (P_post + P_post.T) / 2
+    # Use cached values if available
+    S = predicted_state.metadata.get('S', None)
+    K = predicted_state.metadata.get('K', None)
+    z_pred = predicted_state.metadata.get('z_pred', None)
+    P_post = predicted_state.metadata.get('P_post', None)
+    if S is None:
+      S = H @ P_pred @ H.T + R
+    if K is None:
+      K = P_pred @ H.T @ np.linalg.inv(S)
+    if z_pred is None:
+      z_pred = H @ x_pred
 
     if z is None:
-      x_post = None
+      # Keep state the same, update metadata that doesn't depend on measurement
+      x_post = x_pred
+      P_post = P_pred
     else:
       y = z - z_pred
       x_post = x_pred + K @ y
+      if P_post is None:
+        P_post = P_pred - K @ S @ K.T
+        P_post = (P_post + P_post.T) / 2
 
     return GaussianState(mean=x_post, covar=P_post,
-                         metadata=dict(S=S, K=K, z_pred=z_pred))
+                         metadata=dict(S=S, K=K, z_pred=z_pred, P_post=P_post))
 
   def gate(self,
            measurements: np.ndarray,
@@ -73,11 +85,12 @@ class KalmanFilter():
         Measurements in the gate and their indices
     """
     x, P = predicted_state.mean, predicted_state.covar
-    gate = EllipsoidalGate(pg=pg, ndim=measurements[0].size)
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
     z_pred = self.measurement_model(x, noise=False)
     S = H @ P @ H.T + R
+    
+    gate = EllipsoidalGate(pg=pg, ndim=measurements[0].size)
     return gate(measurements=measurements,
                 predicted_measurement=z_pred,
                 innovation_covar=S)
@@ -104,9 +117,10 @@ class KalmanFilter():
     """
 
     x, P = predicted_state.mean, predicted_state.covar
+    H = self.measurement_model.matrix()
     return gaussian.likelihood(
         z=measurement,
-        z_pred=self.measurement_model(x, noise=False),
+        z_pred=H @ x,
         P_pred=P,
         H=self.measurement_model.matrix(),
         R=self.measurement_model.covar(),

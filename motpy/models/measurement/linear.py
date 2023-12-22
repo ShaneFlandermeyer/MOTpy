@@ -1,3 +1,4 @@
+import functools
 from typing import List, Union
 
 import numpy as np
@@ -33,6 +34,7 @@ class LinearMeasurementModel(MeasurementModel):
       out = out.astype(noise.dtype) + noise.reshape(out.shape)
     return list(out) if xarr.shape[0] > 1 else out[0]
 
+  @functools.lru_cache(maxsize=1)
   def matrix(self, **kwargs):
     H = np.zeros((self.ndim, self.ndim_state))
     H[np.arange(self.ndim), self.measured_dims] = 1

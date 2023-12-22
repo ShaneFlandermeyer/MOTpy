@@ -31,17 +31,17 @@ class EllipsoidalGate:
     valid_meas = [z[i].reshape(measurements[0].shape) for i in valid_inds]
     return valid_meas, valid_inds
 
+  @staticmethod
+  @functools.lru_cache
+  def threshold(pg: int, ndim: int):
+    return chi2.ppf(pg, ndim)
+
   def volume(self, innovation_covar: np.ndarray):
-    gamma = self.threshold(pg=self.pg, ndim=self.ndim)
+    gamma = self.threshold
     S = innovation_covar
 
     c = np.pi**(self.ndim/2) / math.gamma(self.ndim/2+1)
     return c*gamma**(self.ndim/2) * np.sqrt(np.linalg.det(S))
-
-  @staticmethod
-  @functools.lru_cache(maxsize=128)
-  def threshold(pg: float, ndim: int):
-    return chi2.ppf(pg, ndim)
 
 
 def gate_probability(threshold: float, ndim: int) -> float:

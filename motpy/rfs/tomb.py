@@ -1,4 +1,5 @@
 import copy
+import time
 from typing import List, Tuple
 
 import numpy as np
@@ -44,9 +45,8 @@ class TOMBP:
     # Implement prediction algorithm
 
     # Predict existing tracks
-    pred_mb = copy.deepcopy(self.mb)
-    for i, bern in enumerate(self.mb):
-      pred_mb[i] = bern.predict(state_estimator=state_estimator, ps=Ps, dt=dt)
+    pred_mb = [bern.predict(state_estimator=state_estimator,
+                            ps=Ps, dt=dt) for bern in self.mb]
 
     # Predict existing PPP intensity
     pred_poisson = self.poisson.predict(
@@ -57,7 +57,8 @@ class TOMBP:
 
     return pred_mb, pred_poisson
 
-  def update(self, z: List[np.ndarray], Pd: float, state_estimator: KalmanFilter, lambda_fa: float):
+  def update(self, z, Pd, state_estimator, lambda_fa):
+
     n = len(self.mb)
     nu = len(self.poisson)
     m = len(z)
@@ -69,46 +70,65 @@ class TOMBP:
     for i, bern in enumerate(self.mb):
       # Create missed detection hypothesis
       wupd[i, 0] = 1 - bern.r + bern.r * (1 - Pd)
-      mb_hypos[i, 0] = bern.update(measurement=None, pd=Pd)
-      
-      valid_meas, valid_inds = state_estimator.gate(
-          measurements=z, predicted_state=bern.state, pg=self.pg)
+      mb_hypos[i, 0] = bern.update(measurement=None,
+                                   pd=Pd,
+                                   state_estimator=state_estimator)
+
+      if self.pg == 1 or self.pg is None:
+        valid_meas = z
+        valid_inds = np.arange(m)
+      else:
+        valid_meas, valid_inds = state_estimator.gate(
+            measurements=z, predicted_state=bern.state, pg=self.pg)
       in_gate_mb[i, valid_inds] = True
-    
+
       # Create hypotheses with measurement updates
-      l = np.zeros(len(z))
       if len(valid_inds) > 0:
-        l[valid_inds] = state_estimator.likelihood(
+        l_mb = np.zeros(m)
+        l_mb[valid_inds] = state_estimator.likelihood(
             measurement=valid_meas, predicted_state=bern.state)
       for j in valid_inds:
-        wupd[i, j + 1] = bern.r * Pd * l[j]
-        mb_hypos[i, j+1] = bern.update(
+        wupd[i, j + 1] = bern.r * Pd * l_mb[j]
+        mb_hypos[i, j + 1] = bern.update(
             pd=Pd, measurement=z[j], state_estimator=state_estimator)
-
-    # Gate measurements with PPP intensity
-    in_gate_poisson = np.zeros((nu, m), dtype=bool)
-    for k, state in enumerate(self.poisson.states):
-      valid_meas, valid_inds = state_estimator.gate(
-          measurements=z, predicted_state=state, pg=self.pg)
-      in_gate_poisson[k, valid_inds] = True
+        if j == 0:
+          # Add cached state estimation values to bernoulli state.
+          new_meta = mb_hypos[i, j+1].state.metadata.copy()
+          new_meta.update(bern.state.metadata)
+          bern.state.metadata = new_meta
 
     # Create a new track for each measurement by updating PPP with measurement
-    wnew = []
+    wnew = np.zeros(m)
     new_berns = []
+
+    # Gate PPP components and pre-compute likelihoods
+    in_gate_poisson = np.zeros((nu, m), dtype=bool)
+    l_ppp = np.zeros((nu, m))
+    for k, state in enumerate(self.poisson.states):
+      if self.pg == 1 or self.pg is None:
+        valid_meas = z
+        valid_inds = np.arange(m)
+      else:
+        valid_meas, valid_inds = state_estimator.gate(
+            measurements=z, predicted_state=state, pg=self.pg)
+      in_gate_poisson[k, valid_inds] = True
+      l_ppp[k, valid_inds] = state_estimator.likelihood(
+          measurement=valid_meas, predicted_state=state)
+
     for j in range(m):
-      bern, w = self.poisson.update(
+      bern, wnew[j] = self.poisson.update(
           measurement=z[j],
-          in_gate=in_gate_poisson[:, j],
           pd=Pd,
+          likelihoods=l_ppp[:, j],
+          in_gate=np.ones(nu, dtype=bool),
           state_estimator=state_estimator,
           clutter_intensity=lambda_fa)
-      if bern is not None:
+      if wnew[j] > 0:
         new_berns.append(bern)
-        wnew.append(w)
 
-    poisson_upd = copy.deepcopy(self.poisson)
     # Update (i.e., thin) intensity of unknown targets
-    poisson_upd.weights = poisson_upd.weights * (1 - Pd)
+    poisson_upd = copy.deepcopy(self.poisson)
+    poisson_upd.weights *= 1 - Pd
 
     # Not shown in paper--truncate low weight components
     poisson_upd = poisson_upd.prune(threshold=self.w_min)
@@ -121,12 +141,12 @@ class TOMBP:
 
     mb_upd = self.tomb(pupd=pupd, mb_hypos=mb_hypos, pnew=pnew,
                        new_berns=new_berns, in_gate_mb=in_gate_mb)
-    
+
     return mb_upd, poisson_upd
 
   def tomb(self, pupd: np.ndarray, mb_hypos: np.ndarray, pnew: np.ndarray, new_berns: List[Bernoulli], in_gate_mb: np.ndarray):
 
-    # Add false alarm hypotheses as valid
+    # Add false alarm hypothesis as valid
     valid_hypos = np.concatenate(
         (np.ones((len(self.mb), 1), dtype=bool), in_gate_mb), axis=1)
 
@@ -143,8 +163,8 @@ class TOMBP:
       pr = pr / r
       x, P = mix_gaussians(means=xupd, covars=Pupd, weights=pr)
 
-      bern_upd = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))
-      tomb_mb.append(bern_upd)
+      new_bern = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))
+      tomb_mb.append(new_bern)
 
     # Form new tracks (already single hypothesis)
     for j in range(len(new_berns)):
@@ -156,7 +176,6 @@ class TOMBP:
     tomb_mb = [bern for bern in tomb_mb if bern.r >= self.r_min]
 
     return tomb_mb
-
 
   @staticmethod
   def spa(wupd: np.ndarray, wnew: np.ndarray, eps: float = 1e-4
