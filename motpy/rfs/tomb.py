@@ -1,4 +1,5 @@
 import copy
+import time
 from typing import List, Tuple
 
 import numpy as np
@@ -57,6 +58,7 @@ class TOMBP:
 
     return pred_mb, pred_poisson
 
+  @profile
   def update(self, z, Pd, state_estimator, lambda_fa):
 
     n = len(self.mb)
@@ -64,6 +66,7 @@ class TOMBP:
     m = len(z)
 
     # Update existing tracks
+    start = time.time()
     wupd = np.zeros((n, m + 1))
     mb_hypos = np.empty((n, m + 1), dtype=object)
     for i, bern in enumerate(self.mb):
@@ -71,13 +74,32 @@ class TOMBP:
       wupd[i, 0] = 1 - bern.r + bern.r * (1 - Pd)
       mb_hypos[i, 0] = bern.update(measurement=None, pd=Pd)
 
+      # TODO: Pre-compute KF params
+      H = state_estimator.measurement_model.matrix()
+      R = state_estimator.measurement_model.covar()
+      x_pred, P_pred = bern.state.mean, bern.state.covar
+      z_pred = H @ x_pred
+      S = H @ P_pred @ H.T + R
+      Si = np.linalg.inv(S)
+      K = P_pred @ H.T @ Si
+      P_post = P_pred - K @ H @ P_pred
+      y = np.atleast_2d(z) - z_pred
+      Ky = K @ y.T
+
       # Create hypotheses with measurement updates
-      l = state_estimator.likelihood(
-          measurement=z, predicted_state=bern.state)
+      l = state_estimator.likelihood(measurement=z,
+                                     predicted_state=bern.state)
       for j in range(m):
         wupd[i, j + 1] = bern.r * Pd * l[j]
-        mb_hypos[i, j+1] = bern.update(
-            pd=Pd, measurement=z[j], state_estimator=state_estimator)
+        r = 1
+        x_post = x_pred + Ky[:, j]
+        mb_hypos[i, j + 1] = Bernoulli(r=r,
+                                       state=GaussianState(mean=x_post, covar=P_post))
+        # TODO: HAFTA HAFTA HAFTA CACHE THINGS HERE
+        # mb_hypos[i, j+1] = bern.update(
+        #     pd=Pd, measurement=z[j], state_estimator=state_estimator)
+    stop = time.time()
+    print(f'Update existing tracks: {stop - start}')
 
     wnew = np.zeros(m)
     new_berns = []

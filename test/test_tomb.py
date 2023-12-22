@@ -1,3 +1,4 @@
+import time
 from motpy.rfs.bernoulli import Bernoulli
 from motpy.rfs.tomb import TOMBP
 import pytest
@@ -103,6 +104,7 @@ def test_scenario():
 
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
+  start = time.time()
   for k in range(25):
     # Predict
     tomb.mb, tomb.poisson = tomb.predict(state_estimator=kf, dt=dt, Ps=0.999)
@@ -113,10 +115,11 @@ def test_scenario():
     print(np.max([bern.r for bern in tomb.mb]))
     print(len(tomb.mb))
     print(len(tomb.poisson))
+  print(f"Time: {time.time() - start}")
     
-  raise NotImplementedError
+  # raise NotImplementedError
 
 
 if __name__ == '__main__':
   test_scenario()
-  pytest.main([__file__])
+  # pytest.main([__file__])

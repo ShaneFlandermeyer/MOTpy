@@ -7,12 +7,12 @@ from scipy.stats import multivariate_normal
 
 class GaussianState():
   def __init__(
-    self,
-    mean: np.ndarray,
-    covar: np.ndarray,
-    timestamp: Union[float, datetime.datetime] = {},
-    metadata: dict = None,
-    **kwargs
+      self,
+      mean: np.ndarray,
+      covar: np.ndarray,
+      timestamp: Union[float, datetime.datetime] = {},
+      metadata: dict = None,
+      **kwargs
   ):
     self.mean = mean
     self.covar = covar
@@ -21,9 +21,10 @@ class GaussianState():
     # Set additional kwargs as attributes for flexibility
     for key, value in kwargs.items():
       setattr(self, key, value)
-    
+
   def __repr__(self):
     return f'GaussianState(\n mean={self.mean}\n covar=\n{self.covar})'
+
 
 def mix_gaussians(means: List[np.ndarray],
                   covars: List[np.ndarray],
@@ -70,4 +71,10 @@ def likelihood(z: np.ndarray,
   z = np.atleast_2d(z)
   z_pred = z_pred.flatten()
   S = H @ P_pred @ H.T + R
-  return multivariate_normal.pdf(z, z_pred, S)
+  Si = np.linalg.inv(S)
+
+  k = z_pred.size
+  den = np.sqrt((2 * np.pi) ** k * np.linalg.det(S))
+  x = z - z_pred
+  l = np.squeeze(np.exp(-0.5 * x[..., None, :] @ Si @ x[..., None])) / den
+  return l
