@@ -83,7 +83,7 @@ class TOMBP:
       # Create hypotheses with measurement updates
       if len(valid_inds) > 0:
         l_mb = np.zeros(m)
-        l_mb = state_estimator.likelihood(
+        l_mb[valid_inds] = state_estimator.likelihood(
             measurement=valid_meas, predicted_state=bern.state)
       for j in valid_inds:
         wupd[i, j + 1] = bern.r * Pd * l_mb[j]
@@ -134,20 +134,25 @@ class TOMBP:
       pupd, pnew = self.spa(wupd=wupd, wnew=wnew)
 
     mb_upd = self.tomb(pupd=pupd, mb_hypos=mb_hypos, pnew=pnew,
-                       new_berns=new_berns)
+                       new_berns=new_berns, in_gate_mb=in_gate_mb)
 
     return mb_upd, poisson_upd
 
-  def tomb(self, pupd, mb_hypos, pnew, new_berns):
+  def tomb(self, pupd: np.ndarray, mb_hypos: np.ndarray, pnew: np.ndarray, new_berns: List[Bernoulli], in_gate_mb: np.ndarray):
+
+    # Add false alarm hypothesis as valid
+    valid_hypos = np.concatenate(
+        (np.ones((len(self.mb), 1), dtype=bool), in_gate_mb), axis=1)
 
     # Form continuing tracks
     tomb_mb = []
     for i in range(len(self.mb)):
-      rupd = np.array([bern.r for bern in mb_hypos[i, :]])
-      xupd = [bern.state.mean for bern in mb_hypos[i, :]]
-      Pupd = [bern.state.covar for bern in mb_hypos[i, :]]
+      valid = valid_hypos[i]
+      rupd = np.array([bern.r for bern in mb_hypos[i, valid]])
+      xupd = [bern.state.mean for bern in mb_hypos[i, valid]]
+      Pupd = [bern.state.covar for bern in mb_hypos[i, valid]]
 
-      pr = pupd[i, :] * rupd
+      pr = pupd[i, valid] * rupd
       r = np.sum(pr)
       pr = pr / r
       x, P = mix_gaussians(means=xupd, covars=Pupd, weights=pr)

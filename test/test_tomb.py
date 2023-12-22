@@ -104,18 +104,22 @@ def test_scenario():
 
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
-  start = time.time()
+  
   for k in range(25):
+    start = time.time()
     # Predict
     tomb.mb, tomb.poisson = tomb.predict(state_estimator=kf, dt=dt, Ps=0.999)
 
     tomb.mb, tomb.poisson = tomb.update(
         z=Z[k], Pd=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
 
-    print(np.max([bern.r for bern in tomb.mb]))
+    # print(np.max([bern.r for bern in tomb.mb]))
     print(len(tomb.mb))
     print(len(tomb.poisson))
-  print(f"Time: {time.time() - start}")
+    for i, bern in enumerate(tomb.mb):
+      if bern.r > tomb.r_estimate_threshold:
+        print(f"Track {i}: {bern.r}")
+    print(f"Time: {time.time() - start}")
     
   # raise NotImplementedError
 
