@@ -76,11 +76,11 @@ class TOMBP:
                                    state_estimator=state_estimator)
 
       # Create hypotheses with measurement updates
-      l = state_estimator.likelihood(measurement=z,
-                                     predicted_state=bern.state)
+      l_ppp = state_estimator.likelihood(measurement=z,
+                                         predicted_state=bern.state)
       bern.state.metadata['id'] = i
       for j in range(m):
-        wupd[i, j + 1] = bern.r * Pd * l[j]
+        wupd[i, j + 1] = bern.r * Pd * l_ppp[j]
         mb_hypos[i, j+1] = bern.update(
             pd=Pd, measurement=z[j], state_estimator=state_estimator)
         if j == 0:
@@ -88,21 +88,30 @@ class TOMBP:
           new_meta = mb_hypos[i, j+1].state.metadata.copy()
           new_meta.update(bern.state.metadata)
           bern.state.metadata = new_meta
-        
+
+    # Create a new track for each measurement by updating PPP with measurement
     wnew = np.zeros(m)
     new_berns = []
+    # Pre-compute likelihoods for PPP components
+    l_ppp = np.zeros((nu, m))
+    for k in range(nu):
+      # TODO: Only need this for measurements in gate
+      l_ppp[k] = state_estimator.likelihood(
+          measurement=z,
+          predicted_state=self.poisson.states[k])
     for j in range(m):
       bern, wnew[j] = self.poisson.update(
           measurement=z[j],
-          in_gate=np.ones(nu, dtype=bool),
           pd=Pd,
+          likelihoods=l_ppp[:, j],
+          in_gate=np.ones(nu, dtype=bool),
           state_estimator=state_estimator,
           clutter_intensity=lambda_fa)
       new_berns.append(bern)
 
     poisson_upd = copy.deepcopy(self.poisson)
     # Update (i.e., thin) intensity of unknown targets
-    poisson_upd.weights = poisson_upd.weights * (1 - Pd)
+    poisson_upd.weights *= 1 - Pd
 
     # Not shown in paper--truncate low weight components
     poisson_upd = poisson_upd.prune(threshold=self.w_min)

@@ -98,6 +98,7 @@ class Poisson:
   def update(self,
              measurement: np.ndarray,
              pd: float,
+             likelihoods: np.ndarray,
              in_gate: np.ndarray,
              state_estimator: KalmanFilter,
              clutter_intensity: float,
@@ -111,6 +112,7 @@ class Poisson:
 
     gate_states = [s for i, s in enumerate(self.states) if in_gate[i]]
     gate_weights = self.weights[in_gate]
+    likelihoods = likelihoods[in_gate]
 
     # If a measurement is associated to a PPP component, we create a new Bernoulli whose existence probability depends on likelihood of measurement
     state_up = []
@@ -118,6 +120,9 @@ class Poisson:
     for i in range(n_in_gate):
       state = gate_states[i]
       w = gate_weights[i]
+      l = likelihoods[i]
+      
+      weight_up[i] = w * pd * l
 
       # Update state and likelihoods for PPP components with measurement in gate
       state_up.append(state_estimator.update(measurement=measurement,
@@ -126,10 +131,6 @@ class Poisson:
       new_meta = state_up[i].metadata.copy()
       new_meta.update(state.metadata)
       state.metadata = new_meta
-
-      l = state_estimator.likelihood(measurement=measurement,
-                                     predicted_state=state)
-      weight_up[i] = w * pd * l
 
     # Create a new Bernoulli component based on updated weights
     sum_w_up = np.sum(weight_up)
