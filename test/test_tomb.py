@@ -110,7 +110,7 @@ def test_scenario():
   for k in range(n_steps):
     # start = time.time()
     # Predict
-    tomb.mb, tomb.poisson = tomb.predict(state_estimator=kf, dt=dt, Ps=0.999)
+    tomb.mb, tomb.poisson = tomb.predict(state_estimator=kf, dt=dt, ps=0.999)
 
     tomb.mb, tomb.poisson = tomb.update(
         z=Z[k], Pd=pd, state_estimator=kf, lambda_fa=lambda_c/volume)

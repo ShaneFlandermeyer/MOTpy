@@ -1,17 +1,35 @@
 import copy
-import time
 from typing import List, Tuple
 
 import numpy as np
 
 from motpy.distributions.gaussian import GaussianState, mix_gaussians
 from motpy.kalman import KalmanFilter
-from motpy.rfs.bernoulli import Bernoulli, MultiBernoulli
+from motpy.rfs.bernoulli import Bernoulli
 from motpy.rfs.poisson import Poisson
 from motpy.gate import EllipsoidalGate
 
 
 class TOMBP:
+  """
+  Track-oriented Marginal MeMBer-Poisson Filter (TOMBP) for multi-object tracking.
+  
+  Attributes
+  ----------
+  poisson : Poisson
+      The Poisson point process (PPP) representing the intensity of new objects.
+  mb : list
+      The list of Bernoulli components representing the multi-Bernoulli (MB).
+  pg : float
+      The gating size in terms of the probability of Gaussian error.
+  w_min : float
+      The minimum weight below which a component in the PPP is pruned.
+  r_min : float
+      The minimum probability of existence below which a Bernoulli component is pruned.
+  r_estimate_threshold : float
+      The threshold for the probability of existence above which an object is estimated to exist.
+  """
+
   def __init__(self,
                birth_weights: np.ndarray,
                birth_states: List[np.ndarray],
@@ -20,6 +38,24 @@ class TOMBP:
                r_min: float = None,
                r_estimate_threshold: float = None,
                ):
+    """
+    Initializes the Track-Oriented Multi-Bernoulli (TOMB) process.
+
+    Parameters
+    ----------
+    birth_weights : np.ndarray
+        The weights of the birth components in the Poisson point process (PPP) representing the intensity of new objects.
+    birth_states : List[np.ndarray]
+        The states of the birth components in the PPP representing the intensity of new objects.
+    pg : float, optional
+        The gating size in terms of the probability of Gaussian error, by default None.
+    w_min : float, optional
+        The minimum weight below which a component in the PPP is pruned, by default None.
+    r_min : float, optional
+        The minimum probability of existence below which a Bernoulli component is pruned, by default None.
+    r_estimate_threshold : float, optional
+        The threshold for the probability of existence above which an object is estimated to exist, by default None.
+    """
     self.poisson = Poisson(birth_weights=birth_weights,
                            birth_states=birth_states)
     self.mb = []
@@ -29,28 +65,37 @@ class TOMBP:
     self.r_min = r_min
     self.r_estimate_threshold = r_estimate_threshold
 
-  def predict(self, state_estimator, dt, Ps):
+  def predict(self,
+              state_estimator: KalmanFilter,
+              dt: float,
+              ps: float):
     """
-    PREDICT MULTI-BERNOULLI AND POISSON COMPONENTS
-    Input:
-    r(i), x[:,i] and P[:,:,i] give the probability of existence, state 
-    estimate and covariance for the i-th multi-Bernoulli component (track)
-    lambdau(k), xu[:,k] and Pu[:,:,k] give the intensity, state estimate and 
-    covariance for the k-th mixture component of the unknown target Poisson
-    Point Process (PPP)
-    model is structure describing target birth and transition models
-    Output:
-    Predicted components in same format as input
+    Predicts the state of the multi-object system in the next time step.
+
+    Parameters
+    ----------
+    state_estimator : KalmanFilter
+        The Kalman filter used for state estimation.
+    dt : float
+        The time step size.
+    ps : float
+        The survival probability, i.e., the probability that each object will continue to exist.
+
+    Returns
+    -------
+    Tuple[List[Bernoulli], Poisson]
+        A tuple containing the list of predicted Bernoulli components representing the multi-Bernoulli mixture (MBM), 
+        and the predicted Poisson point process (PPP) representing the intensity of new objects.
     """
     # Implement prediction algorithm
 
     # Predict existing tracks
     pred_mb = [bern.predict(state_estimator=state_estimator,
-                            ps=Ps, dt=dt) for bern in self.mb]
+                            ps=ps, dt=dt) for bern in self.mb]
 
     # Predict existing PPP intensity
     pred_poisson = self.poisson.predict(
-        state_estimator=state_estimator, ps=Ps, dt=dt)
+        state_estimator=state_estimator, ps=ps, dt=dt)
 
     # Not shown in paper--truncate low weight components
     pred_poisson = pred_poisson.prune(threshold=self.w_min)
@@ -58,7 +103,26 @@ class TOMBP:
     return pred_mb, pred_poisson
 
   def update(self, z, Pd, state_estimator, lambda_fa):
+    """
+    Updates the state of the multi-object system based on the given measurements.
 
+    Parameters
+    ----------
+    z : np.ndarray
+        The array of measurements.
+    Pd : float
+        The detection probability, i.e., the probability that each object will be detected.
+    state_estimator : KalmanFilter
+        The Kalman filter used for state estimation.
+    lambda_fa : float
+        The false alarm rate, representing the density of spurious measurements.
+
+    Returns
+    -------
+    Tuple[List[Bernoulli], Poisson]
+        A tuple containing the list of updated Bernoulli components representing the multi-Bernoulli mixture (MBM), 
+        and the updated Poisson point process (PPP) representing the intensity of new objects.
+    """
     n = len(self.mb)
     nu = len(self.poisson)
     m = len(z)
@@ -144,7 +208,33 @@ class TOMBP:
 
     return mb_upd, poisson_upd
 
-  def tomb(self, pupd: np.ndarray, mb_hypos: np.ndarray, pnew: np.ndarray, new_berns: List[Bernoulli], in_gate_mb: np.ndarray):
+  def tomb(self,
+           pupd: np.ndarray,
+           mb_hypos: np.ndarray,
+           pnew: np.ndarray,
+           new_berns: List[Bernoulli],
+           in_gate_mb: np.ndarray) -> List[Bernoulli]:
+    """
+    Implements the Track-Oriented Multi-Bernoulli (TOMB) update step.
+
+    Parameters
+    ----------
+    pupd : np.ndarray
+        The marginal association probabilities for existing objects.
+    mb_hypos : np.ndarray
+        The Bernoulli components representing the hypotheses for existing objects.
+    pnew : np.ndarray
+        The marginal association probabilities for potential new objects.
+    new_berns : List[Bernoulli]
+        The Bernoulli components representing the hypotheses for potential new objects.
+    in_gate_mb : np.ndarray
+        A boolean array indicating which measurements are inside the gating region for each existing object.
+
+    Returns
+    -------
+    List[Bernoulli]
+        The list of updated Bernoulli components representing the multi-Bernoulli mixture (MBM) after the TOMB update step.
+    """
 
     # Add false alarm hypothesis as valid
     valid_hypos = np.concatenate(
