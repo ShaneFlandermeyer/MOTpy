@@ -9,7 +9,7 @@ from motpy.rfs.bernoulli import Bernoulli
 from motpy.rfs.poisson import Poisson
 
 
-class TOMBP:
+class MOMBP:
   """
   Track-oriented Marginal MeMBer-Poisson Filter (TOMBP) for multi-object tracking.
 
@@ -193,12 +193,12 @@ class TOMBP:
     else:
       pupd, pnew = self.spa(wupd=wupd, wnew=wnew)
 
-    mb_upd = self.tomb(pupd=pupd, mb_hypos=mb_hypos, pnew=pnew,
+    mb_upd = self.momb(pupd=pupd, mb_hypos=mb_hypos, pnew=pnew,
                        new_berns=new_berns, in_gate_mb=in_gate_mb)
 
     return mb_upd, poisson_upd
 
-  def tomb(self,
+  def momb(self,
            pupd: np.ndarray,
            mb_hypos: np.ndarray,
            pnew: np.ndarray,
@@ -226,35 +226,41 @@ class TOMBP:
         The list of updated Bernoulli components representing the multi-Bernoulli mixture (MBM) after the TOMB update step.
     """
 
-    # Add false alarm hypothesis as valid
-    valid_hypos = np.concatenate(
-        (np.ones((len(self.mb), 1), dtype=bool), in_gate_mb), axis=1)
+    n = len(self.mb)
+    mp1 = pupd.shape[1]
+    m = mp1 - 1
 
-    # Form continuing tracks
-    tomb_mb = []
-    for i in range(len(self.mb)):
-      valid = valid_hypos[i]
-      rupd = np.array([bern.r for bern in mb_hypos[i, valid]])
-      xupd = [bern.state.mean for bern in mb_hypos[i, valid]]
-      Pupd = [bern.state.covar for bern in mb_hypos[i, valid]]
+    momb_mb = []
+    for i in range(n):
+      r = mb_hypos[i, 0].r
+      p = pupd[i, 0]
+      new_bern = Bernoulli(r=r*p, state=mb_hypos[i, 0].state)
+      momb_mb.append(new_bern)
 
-      pr = pupd[i, valid] * rupd
-      r = np.sum(pr)
-      x, P = mix_gaussians(means=xupd, covars=Pupd, weights=pr)
+    for j in range(m):
+      valid = in_gate_mb[:, j]
+      rupd = np.array([bern.r for bern in mb_hypos[valid, j+1]])
+      xupd = [bern.state.mean for bern in mb_hypos[valid, j+1]]
+      Pupd = [bern.state.covar for bern in mb_hypos[valid, j+1]]
 
+      if n == 0:
+        x, P = new_berns[j].state.mean, new_berns[j].state.covar
+        r = pnew[j]*new_berns[j].r
+      else:
+        pr = np.append(pupd[valid, j+1]*rupd, pnew[j]*new_berns[j].r)
+        r = np.sum(pr)
+        xmix = xupd + [new_berns[j].state.mean]
+        Pmix = Pupd + [new_berns[j].state.covar]
+        
+        x, P = mix_gaussians(means=xmix, covars=Pmix, weights=pr)
+        
       new_bern = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))
-      tomb_mb.append(new_bern)
-
-    # Form new tracks (already single hypothesis)
-    for j in range(len(new_berns)):
-      r = pnew[j] * new_berns[j].r
-      new_bern = Bernoulli(r=r, state=new_berns[j].state)
-      tomb_mb.append(new_bern)
+      momb_mb.append(new_bern)
 
     # Truncate tracks with low probability of existence (not shown in algorithm)
-    tomb_mb = [bern for bern in tomb_mb if bern.r >= self.r_min]
+    momb_mb = [bern for bern in momb_mb if bern.r >= self.r_min]
 
-    return tomb_mb
+    return momb_mb
 
   @staticmethod
   def spa(wupd: np.ndarray, wnew: np.ndarray, eps: float = 1e-4
