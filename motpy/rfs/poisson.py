@@ -90,28 +90,21 @@ class Poisson:
 
     # If a measurement is associated to a PPP component, we create a new Bernoulli whose existence probability depends on likelihood of measurement
     state_up = []
-    weight_up = np.empty(n_in_gate)
+    weight_up = gate_weights * likelihoods * pd
     for i in range(n_in_gate):
-      state = gate_states[i]
-      w = gate_weights[i]
-      l = likelihoods[i]
-
-      weight_up[i] = w * pd * l
-
       # Update state and likelihoods for PPP components with measurement in gate
       state_up.append(state_estimator.update(measurement=measurement,
-                                             predicted_state=state))
+                                             predicted_state=gate_states[i]))
 
     # Create a new Bernoulli component based on updated weights
     sum_w_up = np.sum(weight_up)
-    norm_w_up = weight_up / sum_w_up
     sum_w_total = sum_w_up + clutter_intensity
     r = sum_w_up / sum_w_total
 
     # Compute the state using moment matching across all PPP components
     mean, covar = mix_gaussians(means=[state.mean for state in state_up],
                                 covars=[state.covar for state in state_up],
-                                weights=norm_w_up)
+                                weights=weight_up)
     bern = Bernoulli(r=r, state=GaussianState(mean=mean, covar=covar))
     return bern, sum_w_total
 
