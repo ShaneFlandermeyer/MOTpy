@@ -29,8 +29,8 @@ class KalmanFilter():
     x_pred = F @ x
     P_pred = F @ P @ F.T + Q
 
+    # Clear cache from previous update step
     meta = state.metadata.copy()
-    # Clear cache from prior update step
     if 'cache' in meta:
       for key in ['S', 'K', 'P_post']:
         meta['cache'].pop(key, None)
@@ -52,7 +52,6 @@ class KalmanFilter():
     
     S = cache['S'] if 'S' in cache else H @ P_pred @ H.T + R
     K = cache['K'] if 'K' in cache else P_pred @ H.T @ np.linalg.inv(S)
-    
     if 'P_post' in cache:
       P_post = cache['P_post']
     else:
@@ -62,7 +61,7 @@ class KalmanFilter():
     z_pred = H @ x_pred
     x_post = x_pred + K @ (z - z_pred) if z is not None else None
 
-    # 
+    # Update cache
     meta = predicted_state.metadata
     meta['cache'] = meta.get('cache', {})
     meta['cache'].update(dict(S=S, K=K, P_post=P_post))

@@ -1,7 +1,8 @@
 import datetime
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Dict
 
 import numpy as np
+
 
 class GaussianState():
   def __init__(
@@ -9,19 +10,20 @@ class GaussianState():
       mean: np.ndarray,
       covar: np.ndarray,
       timestamp: Union[float, datetime.datetime] = {},
-      metadata: dict = {},
+      metadata: Dict = None,
       **kwargs
   ):
     self.mean = mean
     self.covar = covar
     self.timestamp = timestamp
-    self.metadata = metadata
+    self.metadata = metadata if metadata is not None else {}
 
   def __repr__(self):
     return f"""GaussianState(
       mean={self.mean}
       covar=\n{self.covar})
       meta={self.metadata})"""
+
 
 def mix_gaussians(means: List[np.ndarray],
                   covars: List[np.ndarray],
@@ -51,7 +53,7 @@ def mix_gaussians(means: List[np.ndarray],
   P = np.array(covars)
   w = weights / np.sum(weights)
 
-  mix_mean = np.dot(weights, x)
+  mix_mean = np.dot(w, x)
   mix_covar = np.zeros((x.shape[1], x.shape[1]))
   mix_covar = np.einsum('i,ijk->jk', w, P) + np.einsum('i,ij,ik->jk', w, x, x)
   mix_covar -= np.outer(mix_mean, mix_mean)

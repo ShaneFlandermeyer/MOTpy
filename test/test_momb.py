@@ -1,5 +1,5 @@
 import time
-from motpy.rfs.tomb import TOMBP
+from motpy.rfs.momb import MOMBP
 import pytest
 import numpy as np
 from motpy.distributions.gaussian import GaussianState
@@ -80,31 +80,31 @@ def test_scenario():
     Z.append(zk)
 
   # Initialize TOMB filter
-  tomb = TOMBP(birth_weights=[0.05],
+  momb = MOMBP(birth_weights=[0.05],
                birth_states=[GaussianState(
                    mean=np.array([0, 0, 0, 0]),
                    covar=np.diag([100, 1, 100, 1])**2)],
                pg=1,
                w_min=1e-4,
                r_min=1e-4,
-               r_estimate_threshold=0.5)
-  tomb.poisson.states.append(tomb.poisson.birth_states[0])
-  tomb.poisson.weights = np.append(tomb.poisson.weights, 10)
+               r_estimate_threshold=0.8)
+  momb.poisson.states.append(momb.poisson.birth_states[0])
+  momb.poisson.weights = np.append(momb.poisson.weights, 10)
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 
   start = time.time()
   for k in range(10):
-    tomb.mb, tomb.poisson = tomb.predict(state_estimator=kf, dt=dt, ps=0.999)
+    momb.mb, momb.poisson = momb.predict(state_estimator=kf, dt=dt, ps=0.999)
 
-    tomb.mb, tomb.poisson = tomb.update(
+    momb.mb, momb.poisson = momb.update(
         measurements=Z[k], pd=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
-  print(f'TOMB: {time.time() - start:.3f} s')
 
-  assert len(tomb.mb) == 54
-  assert len(tomb.poisson) == 3
-  assert np.allclose(tomb.mb[0].r, 0.999993507634737, atol=1e-6)
-  assert np.allclose(tomb.mb[3].r, 0.9999901057899843, atol=1e-6)
+  print(f'MOMB: {time.time() - start:.3f} s')
+  assert len(momb.mb) == 52
+  assert len(momb.poisson) == 3
+  assert np.allclose(momb.mb[36].r, 0.9986985737236855, atol=1e-6)
+  assert np.allclose(momb.mb[51].r, 0.9980263987614411, atol=1e-6)
 
 
 if __name__ == '__main__':
