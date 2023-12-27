@@ -1,7 +1,7 @@
 from __future__ import annotations
 import copy
 import numpy as np
-from typing import List, Tuple
+from typing import Callable, List, Tuple, Union
 
 from motpy.kalman import KalmanFilter
 from motpy.rfs.bernoulli import Bernoulli
@@ -65,18 +65,20 @@ class Poisson:
     pred_ppp.weights = np.concatenate((self.weights*ps, self.birth_weights))
     pred_ppp.states = [state_estimator.predict(
         state=state, dt=dt) for state in self.states] + self.birth_states
-    
+
     return pred_ppp
 
   # @profile
   def update(self,
              measurement: np.ndarray,
-             pd: float,
+             pd: Union[float, Callable],
              likelihoods: np.ndarray,
              in_gate: np.ndarray,
              state_estimator: KalmanFilter,
              clutter_intensity: float,
              ) -> Tuple[Bernoulli, float]:
+    if isinstance(pd, float):
+      def pd(x): return pd
 
     # Get PPP components in gate
     n_in_gate = np.count_nonzero(in_gate)
@@ -90,11 +92,12 @@ class Poisson:
 
     # If a measurement is associated to a PPP component, we create a new Bernoulli whose existence probability depends on likelihood of measurement
     state_up = []
-    weight_up = gate_weights * likelihoods * pd
+    weight_up = np.empty(n_in_gate)
     for i in range(n_in_gate):
       # Update state and likelihoods for PPP components with measurement in gate
       state_up.append(state_estimator.update(measurement=measurement,
                                              predicted_state=gate_states[i]))
+      weight_up[i] = gate_weights[i] * likelihoods[i] * pd(state_up[i])
 
     # Create a new Bernoulli component based on updated weights
     sum_w_up = np.sum(weight_up)

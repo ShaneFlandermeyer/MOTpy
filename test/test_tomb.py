@@ -38,7 +38,7 @@ def test_scenario():
   np.random.seed(seed)
 
   n_steps = 150
-  pd = 0.8
+  def pd(x): return 0.8
   lambda_c = 20
   volume = 200*200
   dt = 1
@@ -53,7 +53,7 @@ def test_scenario():
                         seed=seed)
   linear = LinearMeasurementModel(
       ndim_state=4, covar=np.eye(2), measured_dims=[0, 2], seed=seed)
-  
+
   for i in range(n_steps):
     for path in paths:
       path.append(cv(path[-1], dt=dt, noise=noisy))
@@ -65,7 +65,7 @@ def test_scenario():
 
     # Object measurements
     for path in paths:
-      if np.random.uniform() < pd:
+      if np.random.uniform() < pd(path[k]):
         zk.append(linear(path[k], noise=noisy))
 
     # Clutter measurements
@@ -91,9 +91,8 @@ def test_scenario():
   tomb.poisson.states.append(tomb.poisson.birth_states[0])
   tomb.poisson.weights = np.append(tomb.poisson.weights, 10)
 
-
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
-  
+
   start = time.time()
   for k in range(10):
     tomb.mb, tomb.poisson = tomb.predict(state_estimator=kf, dt=dt, ps=0.999)
@@ -106,6 +105,7 @@ def test_scenario():
   assert len(tomb.poisson) == 3
   assert np.allclose(tomb.mb[0].r, 0.999993507634737, atol=1e-6)
   assert np.allclose(tomb.mb[3].r, 0.9999901057899843, atol=1e-6)
+
 
 if __name__ == '__main__':
   # test_scenario()

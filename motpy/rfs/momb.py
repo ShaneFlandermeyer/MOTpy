@@ -1,5 +1,5 @@
 import copy
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 
 import numpy as np
 
@@ -104,7 +104,7 @@ class MOMBP:
   def update(self,
              measurements: List[np.ndarray],
              state_estimator: KalmanFilter,
-             pd: float,
+             pd: Callable,
              lambda_fa: float):
     """
     Updates the state of the multi-object system based on the given measurements.
@@ -126,6 +126,7 @@ class MOMBP:
         A tuple containing the list of updated Bernoulli components representing the multi-Bernoulli mixture (MBM), 
         and the updated Poisson point process (PPP) representing the intensity of new objects.
     """
+
     n = len(self.mb)
     nu = len(self.poisson)
     m = len(measurements)
@@ -136,9 +137,9 @@ class MOMBP:
     in_gate_mb = np.zeros((n, m), dtype=bool)
     for i, bern in enumerate(self.mb):
       # Create missed detection hypothesis
-      wupd[i, 0] = 1 - bern.r + bern.r * (1 - pd)
+      wupd[i, 0] = 1 - bern.r + bern.r * (1 - pd(bern.state))
       mb_hypos[i, 0] = bern.update(measurement=None,
-                                   pd=pd,
+                                   pd=pd(bern.state),
                                    state_estimator=state_estimator)
 
       valid_meas, valid_inds = state_estimator.gate(
@@ -150,10 +151,11 @@ class MOMBP:
         l_mb = np.zeros(m)
         l_mb[valid_inds] = state_estimator.likelihood(
             measurement=valid_meas, predicted_state=bern.state)
+
       for j in valid_inds:
-        wupd[i, j + 1] = bern.r * pd * l_mb[j]
         mb_hypos[i, j + 1] = bern.update(
             pd=pd, measurement=measurements[j], state_estimator=state_estimator)
+        wupd[i, j + 1] = bern.r * pd(mb_hypos[i, j+1].state) * l_mb[j]
 
     # Create a new track for each measurement by updating PPP with measurement
     wnew = np.zeros(m)
@@ -182,7 +184,8 @@ class MOMBP:
 
     # Update (i.e., thin) intensity of unknown targets
     poisson_upd = copy.deepcopy(self.poisson)
-    poisson_upd.weights *= 1 - pd
+    for k in range(nu):
+      poisson_upd.weights[k] *= 1 - pd(poisson_upd.states[k])
 
     # Not shown in paper--truncate low weight components
     poisson_upd = poisson_upd.prune(threshold=self.w_min)
@@ -251,9 +254,9 @@ class MOMBP:
         r = np.sum(pr)
         xmix = xupd + [new_berns[j].state.mean]
         Pmix = Pupd + [new_berns[j].state.covar]
-        
+
         x, P = mix_gaussians(means=xmix, covars=Pmix, weights=pr)
-        
+
       new_bern = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))
       momb_mb.append(new_bern)
 

@@ -1,5 +1,5 @@
 import copy
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 
 import numpy as np
 
@@ -104,7 +104,7 @@ class TOMBP:
   def update(self,
              measurements: List[np.ndarray],
              state_estimator: KalmanFilter,
-             pd: float,
+             pd: Callable,
              lambda_fa: float):
     """
     Updates the state of the multi-object system based on the given measurements.
@@ -113,7 +113,7 @@ class TOMBP:
     ----------
     measurements : np.ndarray
         The array of measurements.
-    pd : float
+    pd : Callable
         The detection probability, i.e., the probability that each object will be detected.
     state_estimator : KalmanFilter
         The Kalman filter used for state estimation.
@@ -136,9 +136,9 @@ class TOMBP:
     in_gate_mb = np.zeros((n, m), dtype=bool)
     for i, bern in enumerate(self.mb):
       # Create missed detection hypothesis
-      wupd[i, 0] = 1 - bern.r + bern.r * (1 - pd)
+      wupd[i, 0] = 1 - bern.r + bern.r * (1 - pd(bern.state))
       mb_hypos[i, 0] = bern.update(measurement=None,
-                                   pd=pd,
+                                   pd=pd(bern.state),
                                    state_estimator=state_estimator)
 
       valid_meas, valid_inds = state_estimator.gate(
@@ -150,10 +150,11 @@ class TOMBP:
         l_mb = np.zeros(m)
         l_mb[valid_inds] = state_estimator.likelihood(
             measurement=valid_meas, predicted_state=bern.state)
+
       for j in valid_inds:
-        wupd[i, j + 1] = bern.r * pd * l_mb[j]
         mb_hypos[i, j + 1] = bern.update(
             pd=pd, measurement=measurements[j], state_estimator=state_estimator)
+        wupd[i, j + 1] = bern.r * pd(mb_hypos[i, j+1].state) * l_mb[j]
 
     # Create a new track for each measurement by updating PPP with measurement
     wnew = np.zeros(m)
@@ -182,7 +183,8 @@ class TOMBP:
 
     # Update (i.e., thin) intensity of unknown targets
     poisson_upd = copy.deepcopy(self.poisson)
-    poisson_upd.weights *= 1 - pd
+    for k in range(nu):
+      poisson_upd.weights[k] *= 1 - pd(poisson_upd.states[k])
 
     # Not shown in paper--truncate low weight components
     poisson_upd = poisson_upd.prune(threshold=self.w_min)

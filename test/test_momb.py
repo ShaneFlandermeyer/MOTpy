@@ -38,7 +38,7 @@ def test_scenario():
   np.random.seed(seed)
 
   n_steps = 150
-  pd = 0.8
+  def pd(x): return 0.8
   lambda_c = 20
   volume = 200*200
   dt = 1
@@ -65,7 +65,7 @@ def test_scenario():
 
     # Object measurements
     for path in paths:
-      if np.random.uniform() < pd:
+      if np.random.uniform() < pd(path[k]):
         zk.append(linear(path[k], noise=noisy))
 
     # Clutter measurements
@@ -100,11 +100,11 @@ def test_scenario():
     momb.mb, momb.poisson = momb.update(
         measurements=Z[k], pd=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
 
+  print(f'MOMB: {time.time() - start:.3f} s')
   assert len(momb.mb) == 52
   assert len(momb.poisson) == 3
   assert np.allclose(momb.mb[36].r, 0.9986985737236855, atol=1e-6)
   assert np.allclose(momb.mb[51].r, 0.9980263987614411, atol=1e-6)
-  print(f'MOMB: {time.time() - start:.3f} s')
 
 
 if __name__ == '__main__':
