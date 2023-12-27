@@ -16,9 +16,6 @@ class GaussianState():
     self.covar = covar
     self.timestamp = timestamp
     self.metadata = metadata
-    # Set additional kwargs as attributes for flexibility
-    for key, value in kwargs.items():
-      setattr(self, key, value)
 
   def __repr__(self):
     return f"""GaussianState(

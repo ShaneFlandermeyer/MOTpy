@@ -1,6 +1,6 @@
 import abc
 from typing import List
-
+import numpy as np
 
 class MeasurementModel(abc.ABC):
   """Base class for measurement models"""
@@ -11,11 +11,11 @@ class MeasurementModel(abc.ABC):
     pass
 
   @abc.abstractmethod
-  def matrix(self, **kwargs):
+  def matrix(self, **kwargs) -> np.ndarray:
     """Measurement matrix"""
     pass
   
   @abc.abstractmethod
-  def covar(self, **kwargs):
+  def covar(self, **kwargs) -> np.ndarray:
     """Measurement covariance"""
     pass

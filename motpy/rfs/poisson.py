@@ -101,10 +101,6 @@ class Poisson:
       # Update state and likelihoods for PPP components with measurement in gate
       state_up.append(state_estimator.update(measurement=measurement,
                                              predicted_state=state))
-      # Add cached state estimation values to bernoulli state.
-      new_meta = state_up[i].metadata.copy()
-      new_meta.update(state.metadata)
-      state.metadata = new_meta
 
     # Create a new Bernoulli component based on updated weights
     sum_w_up = np.sum(weight_up)

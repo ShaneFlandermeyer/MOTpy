@@ -15,6 +15,9 @@ class EllipsoidalGate:
                predicted_measurement: np.ndarray,
                innovation_covar: np.ndarray
                ) -> Tuple[List[np.ndarray], np.ndarray]:
+    if self.pg == 1:
+      return measurements, np.arange(len(measurements))
+
     z = np.array(measurements).reshape((-1, self.ndim, 1))
     z_pred = predicted_measurement.reshape((-1, 1))
     S = innovation_covar
@@ -33,11 +36,11 @@ class EllipsoidalGate:
 
   @staticmethod
   @functools.lru_cache
-  def threshold(pg: int, ndim: int):
+  def threshold(pg: int, ndim: int) -> float:
     return chi2.ppf(pg, ndim)
 
   def volume(self, innovation_covar: np.ndarray):
-    gamma = self.threshold
+    gamma = self.threshold(pg=self.pg, ndim=self.ndim)
     S = innovation_covar
 
     c = np.pi**(self.ndim/2) / math.gamma(self.ndim/2+1)

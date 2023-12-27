@@ -7,13 +7,12 @@ from motpy.distributions.gaussian import GaussianState, mix_gaussians
 from motpy.kalman import KalmanFilter
 from motpy.rfs.bernoulli import Bernoulli
 from motpy.rfs.poisson import Poisson
-from motpy.gate import EllipsoidalGate
 
 
 class TOMBP:
   """
   Track-oriented Marginal MeMBer-Poisson Filter (TOMBP) for multi-object tracking.
-  
+
   Attributes
   ----------
   poisson : Poisson
@@ -102,15 +101,19 @@ class TOMBP:
 
     return pred_mb, pred_poisson
 
-  def update(self, z, Pd, state_estimator, lambda_fa):
+  def update(self,
+             measurements: List[np.ndarray],
+             state_estimator: KalmanFilter,
+             pd: float,
+             lambda_fa: float):
     """
     Updates the state of the multi-object system based on the given measurements.
 
     Parameters
     ----------
-    z : np.ndarray
+    measurements : np.ndarray
         The array of measurements.
-    Pd : float
+    pd : float
         The detection probability, i.e., the probability that each object will be detected.
     state_estimator : KalmanFilter
         The Kalman filter used for state estimation.
@@ -125,7 +128,7 @@ class TOMBP:
     """
     n = len(self.mb)
     nu = len(self.poisson)
-    m = len(z)
+    m = len(measurements)
 
     # Update existing tracks
     wupd = np.zeros((n, m + 1))
@@ -133,17 +136,13 @@ class TOMBP:
     in_gate_mb = np.zeros((n, m), dtype=bool)
     for i, bern in enumerate(self.mb):
       # Create missed detection hypothesis
-      wupd[i, 0] = 1 - bern.r + bern.r * (1 - Pd)
+      wupd[i, 0] = 1 - bern.r + bern.r * (1 - pd)
       mb_hypos[i, 0] = bern.update(measurement=None,
-                                   pd=Pd,
+                                   pd=pd,
                                    state_estimator=state_estimator)
 
-      if self.pg == 1 or self.pg is None:
-        valid_meas = z
-        valid_inds = np.arange(m)
-      else:
-        valid_meas, valid_inds = state_estimator.gate(
-            measurements=z, predicted_state=bern.state, pg=self.pg)
+      valid_meas, valid_inds = state_estimator.gate(
+          measurements=measurements, predicted_state=bern.state, pg=self.pg)
       in_gate_mb[i, valid_inds] = True
 
       # Create hypotheses with measurement updates
@@ -152,14 +151,9 @@ class TOMBP:
         l_mb[valid_inds] = state_estimator.likelihood(
             measurement=valid_meas, predicted_state=bern.state)
       for j in valid_inds:
-        wupd[i, j + 1] = bern.r * Pd * l_mb[j]
+        wupd[i, j + 1] = bern.r * pd * l_mb[j]
         mb_hypos[i, j + 1] = bern.update(
-            pd=Pd, measurement=z[j], state_estimator=state_estimator)
-        if j == 0:
-          # Add cached state estimation values to bernoulli state.
-          new_meta = mb_hypos[i, j+1].state.metadata.copy()
-          new_meta.update(bern.state.metadata)
-          bern.state.metadata = new_meta
+            pd=pd, measurement=measurements[j], state_estimator=state_estimator)
 
     # Create a new track for each measurement by updating PPP with measurement
     wnew = np.zeros(m)
@@ -169,20 +163,16 @@ class TOMBP:
     in_gate_poisson = np.zeros((nu, m), dtype=bool)
     l_ppp = np.zeros((nu, m))
     for k, state in enumerate(self.poisson.states):
-      if self.pg == 1 or self.pg is None:
-        valid_meas = z
-        valid_inds = np.arange(m)
-      else:
-        valid_meas, valid_inds = state_estimator.gate(
-            measurements=z, predicted_state=state, pg=self.pg)
+      valid_meas, valid_inds = state_estimator.gate(
+          measurements=measurements, predicted_state=state, pg=self.pg)
       in_gate_poisson[k, valid_inds] = True
       l_ppp[k, valid_inds] = state_estimator.likelihood(
           measurement=valid_meas, predicted_state=state)
 
     for j in range(m):
       bern, wnew[j] = self.poisson.update(
-          measurement=z[j],
-          pd=Pd,
+          measurement=measurements[j],
+          pd=pd,
           likelihoods=l_ppp[:, j],
           in_gate=np.ones(nu, dtype=bool),
           state_estimator=state_estimator,
@@ -192,7 +182,7 @@ class TOMBP:
 
     # Update (i.e., thin) intensity of unknown targets
     poisson_upd = copy.deepcopy(self.poisson)
-    poisson_upd.weights *= 1 - Pd
+    poisson_upd.weights *= 1 - pd
 
     # Not shown in paper--truncate low weight components
     poisson_upd = poisson_upd.prune(threshold=self.w_min)
