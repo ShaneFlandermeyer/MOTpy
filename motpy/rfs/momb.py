@@ -147,7 +147,7 @@ class MOMBP:
       in_gate_mb[i, valid_inds] = True
 
       # Create hypotheses with measurement updates
-      if len(valid_inds) > 0:
+      if len(valid_meas) > 0:
         l_mb = np.zeros(m)
         l_mb[valid_inds] = state_estimator.likelihood(
             measurement=valid_meas, predicted_state=bern.state)
@@ -168,8 +168,9 @@ class MOMBP:
       valid_meas, valid_inds = state_estimator.gate(
           measurements=measurements, predicted_state=state, pg=self.pg)
       in_gate_poisson[k, valid_inds] = True
-      l_ppp[k, valid_inds] = state_estimator.likelihood(
-          measurement=valid_meas, predicted_state=state)
+      if len(valid_meas) > 0:
+        l_ppp[k, valid_inds] = state_estimator.likelihood(
+            measurement=valid_meas, predicted_state=state)
 
     for j in range(m):
       bern, wnew[j] = self.poisson.update(

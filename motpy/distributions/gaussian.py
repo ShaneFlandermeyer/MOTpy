@@ -51,7 +51,7 @@ def mix_gaussians(means: List[np.ndarray],
   N = len(weights)
   x = np.array(means)
   P = np.array(covars)
-  w = weights / np.sum(weights)
+  w = weights / (np.sum(weights) + 1e-15)
 
   mix_mean = np.dot(w, x)
   mix_covar = np.zeros((x.shape[1], x.shape[1]))
