@@ -10,4 +10,4 @@ def mahalanobis(ref_dist: GaussianState, states: List[GaussianState]):
 
   x = np.array([s.mean for s in states])
   y = x - mean
-  return np.einsum('ni, ii, in -> n', y, Si, y.swapaxes(-1, -2))
+  return np.sqrt(np.einsum('ni, ii, in -> n', y, Si, y.swapaxes(-1, -2)))

@@ -7,6 +7,7 @@ from motpy.kalman import KalmanFilter
 from motpy.measures import mahalanobis
 from motpy.rfs.bernoulli import Bernoulli
 from motpy.distributions.gaussian import mix_gaussians, GaussianState
+from scipy.stats import multivariate_normal
 
 
 class Poisson:
@@ -156,3 +157,27 @@ class Poisson:
         old_states.pop(0)
 
     return merged
+
+  def intensity(self, grid: np.ndarray, H: np.ndarray) -> np.ndarray:
+    """
+    Compute the intensity of the Poisson process at a grid of points.
+
+    Parameters
+    ----------
+    grid : np.ndarray
+        Query points
+    H : np.ndarray
+        Matrix for extracting relevant dims
+
+    Returns
+    -------
+    np.ndarray
+        Intensity grid
+    """
+    intensity = np.zeros(grid.shape[:-1])
+    for i, state in enumerate(self.states):
+      mean = H @ state.mean
+      cov = H @ state.covar @ H.T
+      rv = multivariate_normal(mean=mean, cov=cov)
+      intensity += self.weights[i] * rv.pdf(grid)
+    return intensity

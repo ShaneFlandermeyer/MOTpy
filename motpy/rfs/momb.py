@@ -134,8 +134,8 @@ class MOMBP:
     m = len(measurements)
 
     # Update existing tracks
-    wupd = np.empty((n, m + 1))
-    mb_hypos = np.empty((n, m + 1), dtype=object)
+    wupd = np.zeros((n, m + 1))
+    mb_hypos = np.zeros((n, m + 1), dtype=object)
     in_gate_mb = np.zeros((n, m), dtype=bool)
     for i, bern in enumerate(self.mb):
       # Create missed detection hypothesis
@@ -147,26 +147,24 @@ class MOMBP:
       valid_meas, valid_inds = state_estimator.gate(
           measurements=measurements, predicted_state=bern.state, pg=self.pg)
       in_gate_mb[i, valid_inds] = True
-
       # Create hypotheses with measurement updates
       if len(valid_meas) > 0:
-        l_mb = np.empty(m)
+        l_mb = np.zeros(m)
         l_mb[valid_inds] = state_estimator.likelihood(
             measurement=valid_meas, predicted_state=bern.state)
-
       for j in valid_inds:
         mb_hypos[i, j + 1] = bern.update(
             pd=pd, measurement=measurements[j], state_estimator=state_estimator)
         wupd[i, j + 1] = bern.r * pd(mb_hypos[i, j+1].state) * l_mb[j]
 
     # Create a new track for each measurement by updating PPP with measurement
-    wnew = np.empty(m)
+    wnew = np.zeros(m)
     new_berns = []
 
     # Gate PPP components and pre-compute likelihoods
     in_gate_poisson = np.zeros((nu, m), dtype=bool)
-    l_ppp = np.empty((nu, m))
-    pd_ppp = np.empty(nu)
+    l_ppp = np.zeros((nu, m))
+    pd_ppp = np.zeros(nu)
     for k, state in enumerate(self.poisson.states):
       pd_ppp[k] = pd(state)
       if pd_ppp[k] == 0:
@@ -199,8 +197,9 @@ class MOMBP:
     if self.poisson_merge_threshold is not None:
       poisson_upd = poisson_upd.merge(threshold=self.poisson_merge_threshold)
 
+    # TODO: This requires m > 0
     if wupd.size == 0:
-      pupd = np.empty_like(wupd)
+      pupd = np.zeros_like(wupd)
       pnew = np.ones_like(wnew)
     else:
       pupd, pnew = self.spa(wupd=wupd, wnew=wnew)
@@ -249,7 +248,7 @@ class MOMBP:
       new_bern = Bernoulli(r=r*p, state=mb_hypos[i, 0].state)
       momb_mb.append(new_bern)
 
-    for j in range(m):
+    for j in range(len(new_berns)):
       valid = in_gate_mb[:, j]
       rupd = np.array([bern.r for bern in mb_hypos[valid, j+1]])
       xupd = [bern.state.mean for bern in mb_hypos[valid, j+1]]
@@ -310,13 +309,14 @@ class MOMBP:
 
       w_muba = wupd[:, 1:] * mu_ba
       mu_ab = wupd[:, 1:] / (wupd[:, 0][:, np.newaxis] +
-                             np.sum(w_muba, axis=1, keepdims=True) - w_muba)
-      mu_ba = 1 / (wnew + np.sum(mu_ab, axis=0, keepdims=True) - mu_ab)
+                             np.sum(w_muba, axis=1, keepdims=True) - w_muba + 1e-15)
+      mu_ba = 1 / (wnew + np.sum(mu_ab, axis=0, keepdims=True) - mu_ab + 1e-15)
 
     # Compute marginal association probabilities
     mu_ba = np.concatenate((np.ones((n, 1)), mu_ba), axis=1)
-    p_upd = wupd * mu_ba / (np.sum(wupd * mu_ba, axis=1, keepdims=True))
+    p_upd = wupd * mu_ba / \
+        (np.sum(wupd * mu_ba, axis=1, keepdims=True) + 1e-15)
 
-    p_new = wnew / (wnew + np.sum(mu_ab, axis=0))
+    p_new = wnew / (wnew + np.sum(mu_ab, axis=0) + 1e-15)
 
     return p_upd, p_new

@@ -94,32 +94,12 @@ def test_scenario():
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 
-  start = time.time()
-  # plt.ion()
-  # plt.figure()
-
   for k in range(10):
     momb.mb, momb.poisson = momb.predict(state_estimator=kf, dt=dt, ps=0.999)
 
     momb.mb, momb.poisson = momb.update(
         measurements=Z[k], pd=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
-    
-    # plt.clf()
-    # # Plot ground truth up to this point
-    # for path in paths:
-    #   plt.plot([z[0] for z in path[:k+1]], [z[2] for z in path[:k+1]], '-')
-    # plt.plot([z[0] for z in Z[k]], [z[1] for z in Z[k]], 'x')
-    # # Plot markers for MB components over the threshold
-    # for mb in momb.mb:
-    #   if mb.r > momb.r_estimate_threshold:
-    #     plt.plot(mb.state.mean[0], mb.state.mean[2], 'r^')
-    
-    # plt.xlim(-100, 100)
-    # plt.ylim(-100, 100) 
-    # plt.pause(0.01)
-     
-    # plt.draw()
-  print(f'MOMB: {time.time() - start:.3f} s')
+
   assert len(momb.mb) == 52
   assert len(momb.poisson) == 3
   assert np.allclose(momb.mb[36].r, 0.9986985737236855, atol=1e-6)
