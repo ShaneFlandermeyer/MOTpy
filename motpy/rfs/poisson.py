@@ -4,6 +4,7 @@ import numpy as np
 from typing import Callable, List, Tuple, Union
 
 from motpy.kalman import KalmanFilter
+from motpy.measures import mahalanobis
 from motpy.rfs.bernoulli import Bernoulli
 from motpy.distributions.gaussian import mix_gaussians, GaussianState
 
@@ -35,7 +36,9 @@ class Poisson:
   def __iter__(self):
     return zip(self.weights, self.states)
 
-  def append(self, weight: float, state: GaussianState):
+  def append(self,
+             weight: Union[float, np.ndarray],
+             state: Union[GaussianState, List[GaussianState]]) -> None:
     """
     Append a new Gaussian state and its corresponding weight to the Poisson process.
 
@@ -52,8 +55,9 @@ class Poisson:
     -------
     None
     """
-    self.weights.append(weight)
-    self.states.append(state)
+    state = state if isinstance(state, list) else [state]
+    self.weights = np.append(self.weights, weight)
+    self.states.extend(state)
 
   def predict(self,
               state_estimator: KalmanFilter,
@@ -118,3 +122,37 @@ class Poisson:
                      for i in range(len(self.states)) if keep[i]]
 
     return pruned
+
+  def merge(self, threshold: float) -> Poisson:
+    """
+    Merge components that are close to each other.
+
+    TODO: Only supports mahalanobis distance for now.
+    """
+    merged = Poisson(birth_weights=self.birth_weights,
+                     birth_states=self.birth_states)
+    old_weights, old_states = self.weights.copy(), self.states.copy()
+    while len(old_weights) > 0:
+      # Find components that are close to each other
+      dists = mahalanobis(ref_dist=old_states[0], states=old_states)
+      similar = dists < threshold
+      # Mix components that are close to each other
+      if np.any(similar):
+        new_weight = np.sum(old_weights[similar])
+        mix_mean, mix_covar = mix_gaussians(
+            means=[s.mean for i, s in enumerate(old_states) if similar[i]],
+            covars=[s.covar for i, s in enumerate(old_states) if similar[i]],
+            weights=old_weights[similar])
+        mix_state = GaussianState(mean=mix_mean, covar=mix_covar)
+        merged.append(weight=new_weight, state=mix_state)
+        # Remove components that have been merged
+        old_weights = old_weights[~similar]
+        old_states = [s for i, s in enumerate(old_states) if not similar[i]]
+      else:
+        # No components are close to each other
+        merged.weights.append(old_weights[0])
+        merged.states.append(old_states[0])
+        old_weights = old_weights[1:]
+        old_states.pop(0)
+
+    return merged

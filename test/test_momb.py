@@ -88,7 +88,7 @@ def test_scenario():
                pg=1.0,
                w_min=1e-4,
                r_min=1e-4,
-               r_estimate_threshold=0.8)
+               r_estimate_threshold=0.5)
   momb.poisson.states.append(momb.poisson.birth_states[0])
   momb.poisson.weights = np.append(momb.poisson.weights, 10)
 
@@ -119,7 +119,6 @@ def test_scenario():
     # plt.pause(0.01)
      
     # plt.draw()
-
   print(f'MOMB: {time.time() - start:.3f} s')
   assert len(momb.mb) == 52
   assert len(momb.poisson) == 3

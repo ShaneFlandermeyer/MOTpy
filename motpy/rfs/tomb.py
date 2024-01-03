@@ -35,6 +35,7 @@ class TOMBP:
                pg: float = None,
                w_min: float = None,
                r_min: float = None,
+               poisson_merge_threshold: float = None,
                r_estimate_threshold: float = None,
                ):
     """
@@ -62,6 +63,7 @@ class TOMBP:
     self.pg = pg
     self.w_min = w_min
     self.r_min = r_min
+    self.poisson_merge_threshold = poisson_merge_threshold
     self.r_estimate_threshold = r_estimate_threshold
 
   def predict(self,
@@ -191,7 +193,16 @@ class TOMBP:
     poisson_upd.weights *= 1 - pd_ppp
 
     # Not shown in paper--truncate low weight components
-    poisson_upd = poisson_upd.prune(threshold=self.w_min)
+    if self.w_min is not None:
+      poisson_upd = poisson_upd.prune(threshold=self.w_min)
+    if self.poisson_merge_threshold is not None:
+      poisson_upd = poisson_upd.merge(threshold=self.poisson_merge_threshold)
+
+    if wupd.size == 0:
+      pupd = np.empty_like(wupd)
+      pnew = np.ones_like(wnew)
+    else:
+      pupd, pnew = self.spa(wupd=wupd, wnew=wnew)
 
     if wupd.size == 0:
       pupd = np.empty_like(wupd)
