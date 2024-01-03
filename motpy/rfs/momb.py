@@ -132,7 +132,7 @@ class MOMBP:
     m = len(measurements)
 
     # Update existing tracks
-    wupd = np.zeros((n, m + 1))
+    wupd = np.empty((n, m + 1))
     mb_hypos = np.empty((n, m + 1), dtype=object)
     in_gate_mb = np.zeros((n, m), dtype=bool)
     for i, bern in enumerate(self.mb):
@@ -148,7 +148,7 @@ class MOMBP:
 
       # Create hypotheses with measurement updates
       if len(valid_meas) > 0:
-        l_mb = np.zeros(m)
+        l_mb = np.empty(m)
         l_mb[valid_inds] = state_estimator.likelihood(
             measurement=valid_meas, predicted_state=bern.state)
 
@@ -158,13 +158,13 @@ class MOMBP:
         wupd[i, j + 1] = bern.r * pd(mb_hypos[i, j+1].state) * l_mb[j]
 
     # Create a new track for each measurement by updating PPP with measurement
-    wnew = np.zeros(m)
+    wnew = np.empty(m)
     new_berns = []
 
     # Gate PPP components and pre-compute likelihoods
     in_gate_poisson = np.zeros((nu, m), dtype=bool)
-    l_ppp = np.zeros((nu, m))
-    pd_ppp = np.zeros(nu)
+    l_ppp = np.empty((nu, m))
+    pd_ppp = np.empty(nu)
     for k, state in enumerate(self.poisson.states):
       pd_ppp[k] = pd(state)
       if pd_ppp[k] == 0:
