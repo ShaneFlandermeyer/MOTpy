@@ -163,19 +163,24 @@ class TOMBP:
     # Gate PPP components and pre-compute likelihoods
     in_gate_poisson = np.zeros((nu, m), dtype=bool)
     l_ppp = np.zeros((nu, m))
+    pd_ppp = np.zeros(nu)
     for k, state in enumerate(self.poisson.states):
+      pd_ppp[k] = pd(state)
+      if pd_ppp[k] == 0:
+        continue
       valid_meas, valid_inds = state_estimator.gate(
           measurements=measurements, predicted_state=state, pg=self.pg)
       in_gate_poisson[k, valid_inds] = True
-      l_ppp[k, valid_inds] = state_estimator.likelihood(
-          measurement=valid_meas, predicted_state=state)
+      if len(valid_meas) > 0:
+        l_ppp[k, valid_inds] = state_estimator.likelihood(
+            measurement=valid_meas, predicted_state=state)
 
     for j in range(m):
       bern, wnew[j] = self.poisson.update(
           measurement=measurements[j],
-          pd=pd,
+          pd=pd_ppp,
           likelihoods=l_ppp[:, j],
-          in_gate=np.ones(nu, dtype=bool),
+          in_gate=in_gate_poisson[:, j],
           state_estimator=state_estimator,
           clutter_intensity=lambda_fa)
       if wnew[j] > 0:
@@ -183,8 +188,7 @@ class TOMBP:
 
     # Update (i.e., thin) intensity of unknown targets
     poisson_upd = copy.deepcopy(self.poisson)
-    for k in range(nu):
-      poisson_upd.weights[k] *= 1 - pd(poisson_upd.states[k])
+    poisson_upd.weights *= 1 - pd_ppp
 
     # Not shown in paper--truncate low weight components
     poisson_upd = poisson_upd.prune(threshold=self.w_min)
