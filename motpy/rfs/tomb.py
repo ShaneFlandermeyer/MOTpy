@@ -257,7 +257,9 @@ class TOMBP:
 
       pr = pupd[i, valid] * rupd
       r = np.sum(pr)
-      x, P = mix_gaussians(means=xupd, covars=Pupd, weights=pr)
+      x, P = mix_gaussians(means=np.array(xupd),
+                           covars=np.array(Pupd),
+                           weights=pr)
 
       new_bern = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))
       tomb_mb.append(new_bern)

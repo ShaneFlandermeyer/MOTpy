@@ -265,7 +265,8 @@ class MOMBP:
         xmix = xupd + [new_berns[j].state.mean]
         Pmix = Pupd + [new_berns[j].state.covar]
 
-        x, P = mix_gaussians(means=xmix, covars=Pmix, weights=pr)
+        x, P = mix_gaussians(means=np.array(xmix), 
+                             covars=np.array(Pmix), weights=pr)
 
       new_bern = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))
       momb_mb.append(new_bern)

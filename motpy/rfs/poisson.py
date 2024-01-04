@@ -108,9 +108,10 @@ class Poisson:
     r = sum_w_up / sum_w_total
 
     # Compute the state using moment matching across all PPP components
-    mean, covar = mix_gaussians(means=[state.mean for state in state_up],
-                                covars=[state.covar for state in state_up],
-                                weights=weight_up)
+    mean, covar = mix_gaussians(
+        means=np.array([state.mean for state in state_up]),
+        covars=np.array([state.covar for state in state_up]),
+        weights=weight_up)
     bern = Bernoulli(r=r, state=GaussianState(mean=mean, covar=covar))
     return bern, sum_w_total
 
@@ -126,7 +127,7 @@ class Poisson:
 
     return pruned
 
-  @profile
+  # @profile
   def merge(self, threshold: float) -> Poisson:
     """
     Merge components that are close to each other.
