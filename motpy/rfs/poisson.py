@@ -114,8 +114,10 @@ class Poisson:
     bern = Bernoulli(r=r, state=GaussianState(mean=mean, covar=covar))
     return bern, sum_w_total
 
+  # @profile
   def prune(self, threshold: float) -> Poisson:
-    pruned = copy.deepcopy(self)
+    pruned = Poisson(birth_weights=self.birth_weights,
+                     birth_states=self.birth_states)
     # Prune components with existence probability below threshold
     keep = self.weights > threshold
     pruned.weights = self.weights[keep]
@@ -124,6 +126,7 @@ class Poisson:
 
     return pruned
 
+  @profile
   def merge(self, threshold: float) -> Poisson:
     """
     Merge components that are close to each other.
@@ -132,29 +135,34 @@ class Poisson:
     """
     merged = Poisson(birth_weights=self.birth_weights,
                      birth_states=self.birth_states)
-    old_weights, old_states = self.weights.copy(), self.states.copy()
+    old_weights = self.weights.copy()
+
+    old_means = np.array([s.mean for s in self.states])
+    old_covars = np.array([s.covar for s in self.states])
     while len(old_weights) > 0:
       # Find components that are close to each other
-      dists = mahalanobis(ref_dist=old_states[0], states=old_states)
+      dists = mahalanobis(
+          mean=old_means[0], covar=old_covars[0], points=old_means)
       similar = dists < threshold
       # Mix components that are close to each other
       if np.any(similar):
         new_weight = np.sum(old_weights[similar])
         mix_mean, mix_covar = mix_gaussians(
-            means=[s.mean for i, s in enumerate(old_states) if similar[i]],
-            covars=[s.covar for i, s in enumerate(old_states) if similar[i]],
+            means=old_means[similar],
+            covars=old_covars[similar],
             weights=old_weights[similar])
         mix_state = GaussianState(mean=mix_mean, covar=mix_covar)
         merged.append(weight=new_weight, state=mix_state)
         # Remove components that have been merged
         old_weights = old_weights[~similar]
-        old_states = [s for i, s in enumerate(old_states) if not similar[i]]
+        old_means = old_means[~similar]
+        old_covars = old_covars[~similar]
       else:
         # No components are close to each other
         merged.weights.append(old_weights[0])
-        merged.states.append(old_states[0])
+        merged.states.append(GaussianState(
+            mean=old_means[0], covar=old_covars[0]))
         old_weights = old_weights[1:]
-        old_states.pop(0)
 
     return merged
 

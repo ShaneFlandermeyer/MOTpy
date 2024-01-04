@@ -103,6 +103,7 @@ class MOMBP:
 
     return pred_mb, pred_poisson
 
+  @profile
   def update(self,
              measurements: List[np.ndarray],
              state_estimator: KalmanFilter,
@@ -188,8 +189,9 @@ class MOMBP:
         new_berns.append(bern)
 
     # Update (i.e., thin) intensity of unknown targets
-    poisson_upd = copy.deepcopy(self.poisson)
+    poisson_upd = copy.copy(self.poisson)
     poisson_upd.weights *= 1 - pd_ppp
+    # poisson_upd.states = self.poisson.states.copy()
 
     # Not shown in paper--truncate low weight components
     if self.w_min is not None:
