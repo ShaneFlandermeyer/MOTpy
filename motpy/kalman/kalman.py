@@ -1,4 +1,5 @@
 from typing import List, Optional, Tuple
+import warnings
 import numpy as np
 
 from motpy.models.measurement.base import MeasurementModel
@@ -31,8 +32,6 @@ class KalmanFilter():
     P_pred = F @ P @ F.T + Q
 
     pred_state = GaussianState(mean=x_pred, covar=P_pred)
-    # Clear cache
-    pred_state['cache'] = {}
 
     return pred_state
 
@@ -63,7 +62,7 @@ class KalmanFilter():
       cache = dict(S=S, K=K, P_post=P_post)
 
     z_pred = x_pred @ H.T
-    x_post = x_pred + (z - z_pred) @ K.mT
+    x_post = x_pred + torch.einsum('nij, nj -> ni', K, z - z_pred)
 
     # Update cache
     post_state = GaussianState(mean=x_post, covar=P_post)
@@ -94,6 +93,10 @@ class KalmanFilter():
         Measurements in the gate and their indices
     """
     assert self.measurement_model is not None
+    # TODO: Make this work with the tensordict states
+    # Raise warning that this is not implemented yet
+    warnings.warn('Gating with tensordict states is not implemented yet')
+    return measurements, np.arange(len(measurements))
     x, P = predicted_state.mean, predicted_state.covar
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
@@ -107,7 +110,7 @@ class KalmanFilter():
 
   def likelihood(
       self,
-      measurement: np.ndarray,
+      measurement: torch.Tensor,
       predicted_state: GaussianState,
   ) -> float:
     """
@@ -126,12 +129,13 @@ class KalmanFilter():
         Likelihood
     """
 
-    x, P = predicted_state.mean, predicted_state.covar
-    H = self.measurement_model.matrix()
+    x, P = predicted_state['mean'], predicted_state['covar']
+    H = torch.tensor(self.measurement_model.matrix()).float()
+    R = torch.tensor(self.measurement_model.covar()).float()
     return gaussian.likelihood(
-        z=measurement,
+        z=torch.tensor(measurement).float(),
         z_pred=H @ x,
         P_pred=P,
-        H=self.measurement_model.matrix(),
-        R=self.measurement_model.covar(),
+        H=H,
+        R=R,
     )

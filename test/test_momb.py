@@ -7,6 +7,7 @@ from motpy.kalman import KalmanFilter
 from motpy.models.measurement import LinearMeasurementModel
 from motpy.models.transition import ConstantVelocity
 import matplotlib.pyplot as plt
+import torch
 
 
 # def test_predict():
@@ -81,16 +82,17 @@ def test_scenario():
     Z.append(zk)
 
   # Initialize TOMB filter
-  momb = MOMBP(birth_weights=[0.05],
-               birth_states=[GaussianState(
-                   mean=np.array([0, 0, 0, 0]),
-                   covar=np.diag([100, 1, 100, 1])**2)],
+  momb = MOMBP(birth_weights=torch.tensor([0.05]),
+               birth_states=GaussianState(
+                   mean=torch.zeros(4),
+                   covar=torch.diag(torch.FloatTensor([100, 1, 100, 1])**2)),
                pg=1.0,
                w_min=1e-4,
                r_min=1e-4,
                r_estimate_threshold=0.5)
-  momb.poisson.states.append(momb.poisson.birth_states[0])
-  momb.poisson.weights = np.append(momb.poisson.weights, 10)
+  momb.poisson.states = torch.cat((momb.poisson.states,
+                                   momb.poisson.birth_states[0].view(1)))
+  momb.poisson.weights = torch.cat((momb.poisson.weights, torch.tensor([10])))
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 
@@ -107,5 +109,5 @@ def test_scenario():
 
 
 if __name__ == '__main__':
-  # test_scenario()
-  pytest.main([__file__])
+  test_scenario()
+  # pytest.main([__file__])

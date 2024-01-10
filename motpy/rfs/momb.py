@@ -2,6 +2,8 @@ import copy
 from typing import Callable, List, Tuple
 
 import numpy as np
+from tensordict import TensorDict
+import torch
 
 from motpy.distributions.gaussian import GaussianState, mix_gaussians
 from motpy.kalman import KalmanFilter
@@ -30,8 +32,8 @@ class MOMBP:
   """
 
   def __init__(self,
-               birth_weights: np.ndarray,
-               birth_states: List[np.ndarray],
+               birth_weights: torch.Tensor,
+               birth_states: GaussianState,
                pg: float = None,
                w_min: float = None,
                r_min: float = None,
@@ -99,11 +101,13 @@ class MOMBP:
         state_estimator=state_estimator, ps=ps, dt=dt)
 
     # Not shown in paper--truncate low weight components
-    pred_poisson = pred_poisson.prune(threshold=self.w_min)
-
+    if self.w_min is not None:
+      pred_poisson = pred_poisson.prune(threshold=self.w_min)
+    if self.poisson_merge_threshold is not None:
+      pred_poisson = pred_poisson.merge(threshold=self.poisson_merge_threshold)
     return pred_mb, pred_poisson
 
-  @profile
+#   @profile
   def update(self,
              measurements: List[np.ndarray],
              state_estimator: KalmanFilter,
@@ -135,7 +139,7 @@ class MOMBP:
     m = len(measurements)
 
     # Update existing tracks
-    wupd = np.zeros((n, m + 1))
+    wupd = torch.zeros((n, m + 1))
     mb_hypos = np.zeros((n, m + 1), dtype=object)
     in_gate_mb = np.zeros((n, m), dtype=bool)
     for i, bern in enumerate(self.mb):
@@ -158,14 +162,10 @@ class MOMBP:
             pd=pd, measurement=measurements[j], state_estimator=state_estimator)
         wupd[i, j + 1] = bern.r * pd(mb_hypos[i, j+1].state) * l_mb[j]
 
-    # Create a new track for each measurement by updating PPP with measurement
-    wnew = np.zeros(m)
-    new_berns = []
-
     # Gate PPP components and pre-compute likelihoods
-    in_gate_poisson = np.zeros((nu, m), dtype=bool)
-    l_ppp = np.zeros((nu, m))
-    pd_ppp = np.zeros(nu)
+    in_gate_poisson = torch.zeros((nu, m), dtype=bool)
+    l_ppp = torch.zeros((nu, m))
+    pd_ppp = torch.zeros(nu)
     for k, state in enumerate(self.poisson.states):
       pd_ppp[k] = pd(state)
       if pd_ppp[k] == 0:
@@ -175,8 +175,12 @@ class MOMBP:
       in_gate_poisson[k, valid_inds] = True
       if len(valid_meas) > 0:
         l_ppp[k, valid_inds] = state_estimator.likelihood(
-            measurement=valid_meas, predicted_state=state)
+            measurement=np.array(valid_meas), predicted_state=state)
 
+    # Create a new track for each measurement by updating PPP with measurement
+    wnew = torch.zeros(m)
+    new_bern_rs = torch.zeros(m)
+    new_bern_states = TensorDict({}, batch_size=[m])
     for j in range(m):
       bern, wnew[j] = self.poisson.update(
           measurement=measurements[j],
@@ -186,30 +190,27 @@ class MOMBP:
           state_estimator=state_estimator,
           clutter_intensity=lambda_fa)
       if wnew[j] > 0:
-        new_berns.append(bern)
+        new_bern_rs[j] = bern.r
+        new_bern_states[j] = bern.state[0]
+    new_bern_states = GaussianState(**new_bern_states[wnew > 0])
+    new_bern_rs = new_bern_rs[wnew > 0]
+    # TODO: Make MB object for new Bernoulli components
 
     # Update (i.e., thin) intensity of unknown targets
-    poisson_upd = copy.copy(self.poisson)
-    poisson_upd.weights *= 1 - pd_ppp
-    # poisson_upd.states = self.poisson.states.copy()
-
-    # Not shown in paper--truncate low weight components
-    if self.w_min is not None:
-      poisson_upd = poisson_upd.prune(threshold=self.w_min)
-    if self.poisson_merge_threshold is not None:
-      poisson_upd = poisson_upd.merge(threshold=self.poisson_merge_threshold)
+    poisson_up = copy.deepcopy(self.poisson)
+    poisson_up.weights *= 1 - pd_ppp
 
     # TODO: This requires m > 0
-    if wupd.size == 0:
-      pupd = np.zeros_like(wupd)
-      pnew = np.ones_like(wnew)
+    if wupd.numel() == 0:
+      pupd = torch.zeros_like(wupd)
+      pnew = torch.ones_like(wnew)
     else:
       pupd, pnew = self.spa(wupd=wupd, wnew=wnew)
 
     mb_upd = self.momb(pupd=pupd, mb_hypos=mb_hypos, pnew=pnew,
                        new_berns=new_berns, in_gate_mb=in_gate_mb)
 
-    return mb_upd, poisson_upd
+    return mb_upd, poisson_up
 
   def momb(self,
            pupd: np.ndarray,
@@ -265,7 +266,7 @@ class MOMBP:
         xmix = xupd + [new_berns[j].state.mean]
         Pmix = Pupd + [new_berns[j].state.covar]
 
-        x, P = mix_gaussians(means=np.array(xmix), 
+        x, P = mix_gaussians(means=np.array(xmix),
                              covars=np.array(Pmix), weights=pr)
 
       new_bern = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))

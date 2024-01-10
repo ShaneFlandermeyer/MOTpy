@@ -16,15 +16,15 @@ class GaussianState(TensorDict):
       covar = covar.view(1, *covar.shape)
 
     assert mean.shape[0] == covar.shape[0]
-    
+
     batch_size = mean.shape[0]
     source = dict(mean=mean, covar=covar)
     super().__init__(source=source, batch_size=batch_size)
 
 
-def mix_gaussians(means: np.ndarray,
-                  covars: np.ndarray,
-                  weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def mix_gaussians(means: torch.Tensor,
+                  covars: torch.Tensor,
+                  weights: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
   """
   Compute a Gaussian mixture as a weighted sum of N Gaussian distributions, each with dimension D.
 
@@ -43,30 +43,27 @@ def mix_gaussians(means: np.ndarray,
     Mixture PDF mean and covariance
 
   """
-  x = means
-  P = covars
-  w = weights / (np.sum(weights) + 1e-15)
+  x, P = means, covars
+  w = weights / (torch.sum(weights) + 1e-15)
 
-  mix_mean = np.dot(w, x)
-  mix_covar = np.einsum('i,ijk->jk', w, P)
-  mix_covar += np.einsum('i,ij,ik->jk', w, x, x)
-  mix_covar -= np.outer(mix_mean, mix_mean)
+  mix_mean = torch.einsum('i, ij -> j', w, x)
+  mix_covar = torch.einsum('i, ijk -> jk', w, P)
+  mix_covar += torch.einsum('i, ij, ik -> jk', w, x, x)
+  mix_covar -= torch.outer(mix_mean, mix_mean)
   return mix_mean, mix_covar
 
 
-def likelihood(z: np.ndarray,
-               z_pred: np.ndarray,
-               P_pred: np.ndarray,
-               H: np.ndarray,
-               R: np.ndarray,
+def likelihood(z: torch.Tensor,
+               z_pred: torch.Tensor,
+               P_pred: torch.Tensor,
+               H: torch.Tensor,
+               R: torch.Tensor,
                ) -> float:
-  z = np.atleast_2d(z)
-  z_pred = z_pred.flatten()
   S = H @ P_pred @ H.T + R
-  Si = np.linalg.inv(S)
+  Si = torch.linalg.inv(S)
 
-  k = z_pred.size
-  den = np.sqrt((2 * np.pi) ** k * np.linalg.det(S))
+  k = z_pred.shape[-1]
+  den = torch.sqrt((2 * torch.pi) ** k * torch.linalg.det(S))
   x = z - z_pred
-  l = np.squeeze(np.exp(-0.5 * x[..., None, :] @ Si @ x[..., None])) / den
+  l = torch.exp(-0.5 * torch.einsum('...i, ...ij, j...', x, Si, x.T)) / den
   return l
