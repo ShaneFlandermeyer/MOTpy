@@ -10,7 +10,13 @@ class GaussianState(TensorDict):
   def __init__(self,
                mean: torch.Tensor,
                covar: torch.Tensor):
+    # Handle batch dimension
+    mean = torch.atleast_2d(mean)
+    if covar.ndim == 2:
+      covar = covar.view(1, *covar.shape)
+
     assert mean.shape[0] == covar.shape[0]
+    
     batch_size = mean.shape[0]
     source = dict(mean=mean, covar=covar)
     super().__init__(source=source, batch_size=batch_size)
