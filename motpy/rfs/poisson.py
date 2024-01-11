@@ -8,6 +8,7 @@ from motpy.measures import mahalanobis
 from motpy.rfs.bernoulli import Bernoulli
 from motpy.distributions.gaussian import mix_gaussians, GaussianState
 from scipy.stats import multivariate_normal
+import torch
 
 
 class Poisson:
@@ -18,17 +19,21 @@ class Poisson:
   def __init__(
       self,
       birth_weights: List[float] = None,
-      birth_states: List[GaussianState] = None,
+      birth_states: GaussianState = None,
   ):
     self.birth_weights = np.array(
         birth_weights) if birth_weights is not None else np.array([])
-    self.birth_states = list(birth_states) if birth_states is not None else []
+    self.birth_states = birth_states
 
+    state_dim = birth_states.state_dim
     self.weights = np.array([])
-    self.states = []
+    self.states = GaussianState(
+        mean=torch.zeros(0, state_dim),
+        covar=torch.zeros(0, state_dim, state_dim))
 
   def __repr__(self):
-    return f"PoissonPointProcess(log_weights={np.array(self.weights).tolist()}, states={self.states})"
+    return f"""Poisson(weights={np.array(self.weights).tolist()}, 
+                       states={self.states})"""
 
   def __len__(self):
     assert len(self.weights) == len(self.states)
@@ -68,8 +73,9 @@ class Poisson:
     pred_ppp = Poisson(birth_weights=self.birth_weights,
                        birth_states=self.birth_states)
     pred_ppp.weights = np.concatenate((self.weights*ps, self.birth_weights))
-    pred_ppp.states = [state_estimator.predict(
-        state=state, dt=dt) for state in self.states] + self.birth_states
+
+    pred_ppp.states = state_estimator.predict(state=self.states, dt=dt)
+    pred_ppp.states.append(self.birth_states)
 
     return pred_ppp
 
@@ -122,8 +128,7 @@ class Poisson:
     # Prune components with existence probability below threshold
     keep = self.weights > threshold
     pruned.weights = self.weights[keep]
-    pruned.states = [self.states[i]
-                     for i in range(len(self.states)) if keep[i]]
+    pruned.states = self.states[keep]
 
     return pruned
 

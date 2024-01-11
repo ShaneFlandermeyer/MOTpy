@@ -1,28 +1,49 @@
+from __future__ import annotations
+
 import datetime
 from typing import List, Tuple, Union, Dict
 
 import numpy as np
+import torch
+from tensordict import TensorDict
 
 
 class GaussianState():
   def __init__(
       self,
-      mean: np.ndarray,
-      covar: np.ndarray,
-      timestamp: Union[float, datetime.datetime] = {},
-      metadata: Dict = None,
-      **kwargs
+      mean: torch.Tensor,
+      covar: torch.Tensor,
+      cache: TensorDict = None,
   ):
-    self.mean = mean
-    self.covar = covar
-    self.timestamp = timestamp
-    self.metadata = metadata if metadata is not None else {}
+    self.state_dim = mean.shape[-1]
+    self.mean = mean.view(-1, self.state_dim)
+    self.covar = covar.view(-1, self.state_dim, self.state_dim)
+    self.cache = cache if cache is not None else TensorDict({}, batch_size=[])
+
+  def __len__(self):
+    return len(self.mean)
 
   def __repr__(self):
     return f"""GaussianState(
       mean={self.mean}
       covar=\n{self.covar})
-      meta={self.metadata})"""
+      cache={self.cache})"""
+
+  def __getitem__(self, idx):
+    cache = self.cache[idx] if len(self.cache) > 0 else self.cache
+    return GaussianState(self.mean[idx], self.covar[idx], cache)
+
+  def append(self, state: GaussianState):
+    self.mean = torch.cat([self.mean, state.mean])
+    self.covar = torch.cat([self.covar, state.covar])
+    
+    if len(state.cache) < 0:
+      return 
+    
+    if len(self.cache) > 0:
+      self.cache = torch.cat([self.cache, state.cache])
+    else:
+      self.cache = state.cache
 
 
 def mix_gaussians(means: np.ndarray,
@@ -57,19 +78,19 @@ def mix_gaussians(means: np.ndarray,
   return mix_mean, mix_covar
 
 
-def likelihood(z: np.ndarray,
-               z_pred: np.ndarray,
-               P_pred: np.ndarray,
-               H: np.ndarray,
-               R: np.ndarray,
+def likelihood(z: torch.Tensor,
+               z_pred: torch.Tensor,
+               P_pred: torch.Tensor,
+               H: torch.Tensor,
+               R: torch.Tensor,
                ) -> float:
-  z = np.atleast_2d(z)
-  z_pred = z_pred.flatten()
+  # z = np.atleast_2d(z)
+  # z_pred = z_pred.flatten()
   S = H @ P_pred @ H.T + R
-  Si = np.linalg.inv(S)
+  Si = torch.linalg.inv(S)
 
-  k = z_pred.size
-  den = np.sqrt((2 * np.pi) ** k * np.linalg.det(S))
+  k = z_pred.numel()
+  den = np.sqrt((2 * torch.pi) ** k * torch.linalg.det(S))
   x = z - z_pred
-  l = np.squeeze(np.exp(-0.5 * x[..., None, :] @ Si @ x[..., None])) / den
+  l = torch.exp(-0.5 * torch.einsum('...i, ...ij, j... -> ...', x, Si, x.T)) / den
   return l

@@ -1,4 +1,5 @@
 from typing import List, Optional, Tuple
+import warnings
 import numpy as np
 
 from motpy.models.measurement.base import MeasurementModel
@@ -6,6 +7,7 @@ from motpy.models.transition.base import TransitionModel
 from motpy.distributions.gaussian import GaussianState
 import motpy.distributions.gaussian as gaussian
 from motpy.gate import EllipsoidalGate
+import torch
 
 
 class KalmanFilter():
@@ -23,19 +25,19 @@ class KalmanFilter():
     assert self.transition_model is not None
 
     x, P = state.mean, state.covar
-    F = self.transition_model.matrix(dt=dt)
-    Q = self.transition_model.covar(dt=dt)
+    F = torch.tensor(self.transition_model.matrix(dt=dt)).float()
+    Q = torch.tensor(self.transition_model.covar(dt=dt)).float()
 
-    x_pred = F @ x
+    x_pred = x @ F.T
     P_pred = F @ P @ F.T + Q
 
-    # Clear cache from previous update step
-    meta = state.metadata.copy()
-    if 'cache' in meta:
-      for key in ['S', 'K', 'P_post']:
-        meta['cache'].pop(key, None)
+    # # Clear cache from previous update step
+    # meta = state.metadata.copy()
+    # if 'cache' in meta:
+    #   for key in ['S', 'K', 'P_post']:
+    #     meta['cache'].pop(key, None)
 
-    return GaussianState(mean=x_pred, covar=P_pred, metadata=meta)
+    return GaussianState(mean=x_pred, covar=P_pred)
 
   def update(self,
              measurement: np.ndarray,
@@ -49,7 +51,7 @@ class KalmanFilter():
 
     # Use cached values if available
     cache = predicted_state.metadata.get('cache', {})
-    
+
     S = cache['S'] if 'S' in cache else H @ P_pred @ H.T + R
     K = cache['K'] if 'K' in cache else P_pred @ H.T @ np.linalg.inv(S)
     if 'P_post' in cache:
@@ -57,7 +59,7 @@ class KalmanFilter():
     else:
       P_post = P_pred - K @ S @ K.T
       P_post = (P_post + P_post.T) / 2
-      
+
     z_pred = H @ x_pred
     x_post = x_pred + K @ (z - z_pred) if z is not None else None
 
@@ -91,6 +93,9 @@ class KalmanFilter():
         Measurements in the gate and their indices
     """
     assert self.measurement_model is not None
+
+    warnings.warn('This function is not implemented yet.')
+    return measurements, np.arange(len(measurements))
     x, P = predicted_state.mean, predicted_state.covar
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
@@ -124,11 +129,13 @@ class KalmanFilter():
     """
 
     x, P = predicted_state.mean, predicted_state.covar
-    H = self.measurement_model.matrix()
+    z = torch.tensor(np.array(measurement)).float()
+    H = torch.tensor(self.measurement_model.matrix()).float()
+    R = torch.tensor(self.measurement_model.covar()).float()
     return gaussian.likelihood(
-        z=measurement,
-        z_pred=H @ x,
+        z=z,
+        z_pred=x @ H.T,
         P_pred=P,
-        H=self.measurement_model.matrix(),
-        R=self.measurement_model.covar(),
+        H=H,
+        R=R,
     )

@@ -2,6 +2,7 @@ import copy
 from typing import Callable, List, Tuple
 
 import numpy as np
+import torch
 
 from motpy.distributions.gaussian import GaussianState, mix_gaussians
 from motpy.kalman import KalmanFilter
@@ -31,7 +32,7 @@ class MOMBP:
 
   def __init__(self,
                birth_weights: np.ndarray,
-               birth_states: List[np.ndarray],
+               birth_states: GaussianState,
                pg: float = None,
                w_min: float = None,
                r_min: float = None,
@@ -103,7 +104,7 @@ class MOMBP:
 
     return pred_mb, pred_poisson
 
-  @profile
+#   @profile
   def update(self,
              measurements: List[np.ndarray],
              state_estimator: KalmanFilter,
@@ -179,10 +180,10 @@ class MOMBP:
 
     for j in range(m):
       bern, wnew[j] = self.poisson.update(
-          measurement=measurements[j],
-          pd=pd_ppp,
+          measurement=torch.tensor(measurements[j]).float(),
+          pd=torch.tensor(pd_ppp).float(),
           likelihoods=l_ppp[:, j],
-          in_gate=in_gate_poisson[:, j],
+          in_gate=torch.tensor(in_gate_poisson[:, j]),
           state_estimator=state_estimator,
           clutter_intensity=lambda_fa)
       if wnew[j] > 0:
@@ -265,7 +266,7 @@ class MOMBP:
         xmix = xupd + [new_berns[j].state.mean]
         Pmix = Pupd + [new_berns[j].state.covar]
 
-        x, P = mix_gaussians(means=np.array(xmix), 
+        x, P = mix_gaussians(means=np.array(xmix),
                              covars=np.array(Pmix), weights=pr)
 
       new_bern = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))

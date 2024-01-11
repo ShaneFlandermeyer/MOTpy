@@ -1,4 +1,6 @@
 import time
+
+import torch
 from motpy.rfs.momb import MOMBP
 import pytest
 import numpy as np
@@ -7,7 +9,7 @@ from motpy.kalman import KalmanFilter
 from motpy.models.measurement import LinearMeasurementModel
 from motpy.models.transition import ConstantVelocity
 import matplotlib.pyplot as plt
-
+import torch
 
 # def test_predict():
 #   raise NotImplementedError
@@ -82,9 +84,9 @@ def test_scenario():
 
   # Initialize TOMB filter
   momb = MOMBP(birth_weights=[0.05],
-               birth_states=[GaussianState(
-                   mean=np.array([0, 0, 0, 0]),
-                   covar=np.diag([100, 1, 100, 1])**2)],
+               birth_states=GaussianState(
+                   mean=torch.zeros(4),
+                   covar=torch.diag(torch.tensor([100, 1.0, 100, 1.0])**2)),
                pg=1.0,
                w_min=1e-4,
                r_min=1e-4,
@@ -107,5 +109,5 @@ def test_scenario():
 
 
 if __name__ == '__main__':
-  # test_scenario()
-  pytest.main([__file__])
+  test_scenario()
+  # pytest.main([__file__])
