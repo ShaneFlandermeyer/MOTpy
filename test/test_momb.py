@@ -101,7 +101,7 @@ def test_scenario():
         measurements=Z[k], pd=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
 
   assert len(momb.mb) == 52
-  assert len(momb.poisson) == 3
+  assert len(momb.poisson) == 4
   assert np.allclose(momb.mb[36].r, 0.9986985737236855, atol=1e-6)
   assert np.allclose(momb.mb[51].r, 0.9980263987614411, atol=1e-6)
 

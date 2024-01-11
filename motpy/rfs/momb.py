@@ -99,8 +99,10 @@ class MOMBP:
         state_estimator=state_estimator, ps=ps, dt=dt)
 
     # Not shown in paper--truncate low weight components
-    pred_poisson = pred_poisson.prune(threshold=self.w_min)
-
+    if self.w_min is not None:
+      pred_poisson = pred_poisson.prune(threshold=self.w_min)
+    if self.poisson_merge_threshold is not None:
+      pred_poisson = pred_poisson.merge(threshold=self.poisson_merge_threshold)
     return pred_mb, pred_poisson
 
   def update(self,
@@ -191,12 +193,6 @@ class MOMBP:
     poisson_upd = copy.copy(self.poisson)
     poisson_upd.weights *= 1 - pd_ppp
     # poisson_upd.states = self.poisson.states.copy()
-
-    # Not shown in paper--truncate low weight components
-    if self.w_min is not None:
-      poisson_upd = poisson_upd.prune(threshold=self.w_min)
-    if self.poisson_merge_threshold is not None:
-      poisson_upd = poisson_upd.merge(threshold=self.poisson_merge_threshold)
 
     # TODO: This requires m > 0
     if wupd.size == 0:

@@ -99,13 +99,6 @@ class Poisson:
     state_up = state_estimator.update(measurement=measurement,
                                       predicted_state=gate_states)
     weight_up = gate_weights * likelihoods * pds
-    # state_up = []
-    # weight_up = np.empty(n_in_gate)
-    # for i in range(n_in_gate):
-    #   # Update state and likelihoods for PPP components with measurement in gate
-    #   state_up.append(state_estimator.update(measurement=measurement,
-    #                                          predicted_state=gate_states[i]))
-    #   weight_up[i] = gate_weights[i] * likelihoods[i] * pds[i]
 
     # Create a new Bernoulli component based on updated weights
     sum_w_up = np.sum(weight_up)
