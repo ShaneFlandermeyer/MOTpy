@@ -1,3 +1,4 @@
+from __future__ import annotations
 import datetime
 from typing import List, Tuple, Union, Dict
 
@@ -9,20 +10,28 @@ class GaussianState():
       self,
       mean: np.ndarray,
       covar: np.ndarray,
-      timestamp: Union[float, datetime.datetime] = {},
-      metadata: Dict = None,
-      **kwargs
   ):
-    self.mean = mean
-    self.covar = covar
-    self.timestamp = timestamp
-    self.metadata = metadata if metadata is not None else {}
+    self.state_dim = mean.shape[-1]
+    self.mean = np.atleast_2d(mean)
+    self.covar = covar.reshape(-1, self.state_dim, self.state_dim)
+
+    
 
   def __repr__(self):
     return f"""GaussianState(
       mean={self.mean}
       covar=\n{self.covar})
-      meta={self.metadata})"""
+      """
+
+  def __len__(self):
+    return len(self.mean)
+
+  def __getitem__(self, idx):
+    return GaussianState(mean=self.mean[idx], covar=self.covar[idx])
+
+  def append(self, state: GaussianState) -> None:
+    self.mean = np.concatenate((self.mean, state.mean), axis=0)
+    self.covar = np.concatenate((self.covar, state.covar), axis=0)
 
 
 def mix_gaussians(means: np.ndarray,
@@ -63,13 +72,11 @@ def likelihood(z: np.ndarray,
                H: np.ndarray,
                R: np.ndarray,
                ) -> float:
-  z = np.atleast_2d(z)
-  z_pred = z_pred.flatten()
   S = H @ P_pred @ H.T + R
   Si = np.linalg.inv(S)
 
-  k = z_pred.size
+  k = z_pred.shape[-1]
   den = np.sqrt((2 * np.pi) ** k * np.linalg.det(S))
   x = z - z_pred
-  l = np.squeeze(np.exp(-0.5 * x[..., None, :] @ Si @ x[..., None])) / den
+  l = np.exp(-0.5 * np.einsum('...i, ...ij, j...', x, Si, x.T)) / den
   return l

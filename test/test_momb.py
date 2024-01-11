@@ -81,10 +81,10 @@ def test_scenario():
     Z.append(zk)
 
   # Initialize TOMB filter
-  momb = MOMBP(birth_weights=[0.05],
-               birth_states=[GaussianState(
+  momb = MOMBP(birth_weights=np.array([0.05]),
+               birth_states=GaussianState(
                    mean=np.array([0, 0, 0, 0]),
-                   covar=np.diag([100, 1, 100, 1])**2)],
+                   covar=np.diag([100, 1, 100, 1])**2),
                pg=1.0,
                w_min=1e-4,
                r_min=1e-4,

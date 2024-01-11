@@ -31,7 +31,7 @@ class MOMBP:
 
   def __init__(self,
                birth_weights: np.ndarray,
-               birth_states: List[np.ndarray],
+               birth_states: GaussianState,
                pg: float = None,
                w_min: float = None,
                r_min: float = None,
@@ -103,7 +103,6 @@ class MOMBP:
 
     return pred_mb, pred_poisson
 
-  @profile
   def update(self,
              measurements: List[np.ndarray],
              state_estimator: KalmanFilter,
@@ -251,22 +250,23 @@ class MOMBP:
       momb_mb.append(new_bern)
 
     for j in range(len(new_berns)):
-      valid = in_gate_mb[:, j]
-      rupd = np.array([bern.r for bern in mb_hypos[valid, j+1]])
-      xupd = [bern.state.mean for bern in mb_hypos[valid, j+1]]
-      Pupd = [bern.state.covar for bern in mb_hypos[valid, j+1]]
 
       if n == 0:
         x, P = new_berns[j].state.mean, new_berns[j].state.covar
         r = pnew[j]*new_berns[j].r
       else:
+        valid = in_gate_mb[:, j]
+        rupd = np.array([bern.r for bern in mb_hypos[valid, j+1]])
+        xupd = np.concatenate(
+            [bern.state.mean for bern in mb_hypos[valid, j+1]])
+        Pupd = np.concatenate(
+            [bern.state.covar for bern in mb_hypos[valid, j+1]])
         pr = np.append(pupd[valid, j+1]*rupd, pnew[j]*new_berns[j].r)
         r = np.sum(pr)
-        xmix = xupd + [new_berns[j].state.mean]
-        Pmix = Pupd + [new_berns[j].state.covar]
+        xmix = np.append(xupd, new_berns[j].state.mean, axis=0)
+        Pmix = np.append(Pupd, new_berns[j].state.covar, axis=0)
 
-        x, P = mix_gaussians(means=np.array(xmix), 
-                             covars=np.array(Pmix), weights=pr)
+        x, P = mix_gaussians(means=xmix, covars=Pmix, weights=pr)
 
       new_bern = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))
       momb_mb.append(new_bern)

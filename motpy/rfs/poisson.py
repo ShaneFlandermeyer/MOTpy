@@ -17,18 +17,19 @@ class Poisson:
 
   def __init__(
       self,
-      birth_weights: List[float] = None,
-      birth_states: List[GaussianState] = None,
+      birth_weights: np.ndarray = None,
+      birth_states: GaussianState = None,
   ):
-    self.birth_weights = np.array(
-        birth_weights) if birth_weights is not None else np.array([])
-    self.birth_states = list(birth_states) if birth_states is not None else []
+    self.birth_weights = birth_weights
+    self.birth_states = birth_states
 
     self.weights = np.array([])
-    self.states = []
+    self.states = GaussianState(
+        mean=np.empty([0, birth_states.state_dim]),
+        covar=np.empty([0, birth_states.state_dim, birth_states.state_dim]))
 
   def __repr__(self):
-    return f"PoissonPointProcess(log_weights={np.array(self.weights).tolist()}, states={self.states})"
+    return f"Poisson(weights={self.weights.tolist()}, \nstates={self.states})"
 
   def __len__(self):
     assert len(self.weights) == len(self.states)
@@ -68,8 +69,9 @@ class Poisson:
     pred_ppp = Poisson(birth_weights=self.birth_weights,
                        birth_states=self.birth_states)
     pred_ppp.weights = np.concatenate((self.weights*ps, self.birth_weights))
-    pred_ppp.states = [state_estimator.predict(
-        state=state, dt=dt) for state in self.states] + self.birth_states
+    
+    pred_ppp.states = state_estimator.predict(state=self.states, dt=dt)
+    pred_ppp.states.append(self.birth_states)
 
     return pred_ppp
 
@@ -88,19 +90,22 @@ class Poisson:
       # No measurements in gate
       return None, 0
 
-    gate_states = [s for i, s in enumerate(self.states) if in_gate[i]]
+    gate_states = self.states[in_gate]
     gate_weights = self.weights[in_gate]
     likelihoods = likelihoods[in_gate]
     pds = pd[in_gate]
 
     # If a measurement is associated to a PPP component, we create a new Bernoulli whose existence probability depends on likelihood of measurement
-    state_up = []
-    weight_up = np.empty(n_in_gate)
-    for i in range(n_in_gate):
-      # Update state and likelihoods for PPP components with measurement in gate
-      state_up.append(state_estimator.update(measurement=measurement,
-                                             predicted_state=gate_states[i]))
-      weight_up[i] = gate_weights[i] * likelihoods[i] * pds[i]
+    state_up = state_estimator.update(measurement=measurement,
+                                      predicted_state=gate_states)
+    weight_up = gate_weights * likelihoods * pds
+    # state_up = []
+    # weight_up = np.empty(n_in_gate)
+    # for i in range(n_in_gate):
+    #   # Update state and likelihoods for PPP components with measurement in gate
+    #   state_up.append(state_estimator.update(measurement=measurement,
+    #                                          predicted_state=gate_states[i]))
+    #   weight_up[i] = gate_weights[i] * likelihoods[i] * pds[i]
 
     # Create a new Bernoulli component based on updated weights
     sum_w_up = np.sum(weight_up)
@@ -109,8 +114,8 @@ class Poisson:
 
     # Compute the state using moment matching across all PPP components
     mean, covar = mix_gaussians(
-        means=np.array([state.mean for state in state_up]),
-        covars=np.array([state.covar for state in state_up]),
+        means=state_up.mean,
+        covars=state_up.covar,
         weights=weight_up)
     bern = Bernoulli(r=r, state=GaussianState(mean=mean, covar=covar))
     return bern, sum_w_total
@@ -122,8 +127,7 @@ class Poisson:
     # Prune components with existence probability below threshold
     keep = self.weights > threshold
     pruned.weights = self.weights[keep]
-    pruned.states = [self.states[i]
-                     for i in range(len(self.states)) if keep[i]]
+    pruned.states = self.states[keep]
 
     return pruned
 
