@@ -94,29 +94,25 @@ class Poisson:
       # No measurements in gate
       return None, 0
 
-    gate_states = [s for i, s in enumerate(self.states) if in_gate[i]]
-    gate_weights = self.weights[in_gate]
+    gate_states = self.states[in_gate]
+    gate_weights = torch.tensor(self.weights[in_gate])
     likelihoods = likelihoods[in_gate]
     pds = pd[in_gate]
 
     # If a measurement is associated to a PPP component, we create a new Bernoulli whose existence probability depends on likelihood of measurement
-    state_up = []
-    weight_up = np.empty(n_in_gate)
-    for i in range(n_in_gate):
-      # Update state and likelihoods for PPP components with measurement in gate
-      state_up.append(state_estimator.update(measurement=measurement,
-                                             predicted_state=gate_states[i]))
-      weight_up[i] = gate_weights[i] * likelihoods[i] * pds[i]
+    state_up = state_estimator.update(measurement=measurement,
+                                      predicted_state=gate_states)
+    weight_up = gate_weights * likelihoods * pds
 
     # Create a new Bernoulli component based on updated weights
-    sum_w_up = np.sum(weight_up)
+    sum_w_up = torch.sum(weight_up).item()
     sum_w_total = sum_w_up + clutter_intensity
     r = sum_w_up / sum_w_total
 
     # Compute the state using moment matching across all PPP components
     mean, covar = mix_gaussians(
-        means=np.array([state.mean for state in state_up]),
-        covars=np.array([state.covar for state in state_up]),
+        means=state_up.mean,
+        covars=state_up.covar,
         weights=weight_up)
     bern = Bernoulli(r=r, state=GaussianState(mean=mean, covar=covar))
     return bern, sum_w_total

@@ -156,7 +156,8 @@ class MOMBP:
             measurement=valid_meas, predicted_state=bern.state)
       for j in valid_inds:
         mb_hypos[i, j + 1] = bern.update(
-            pd=pd, measurement=measurements[j], state_estimator=state_estimator)
+            pd=pd,
+            measurement=torch.tensor(measurements[j]), state_estimator=state_estimator)
         wupd[i, j + 1] = bern.r * pd(mb_hypos[i, j+1].state) * l_mb[j]
 
     # Create a new track for each measurement by updating PPP with measurement
@@ -164,9 +165,9 @@ class MOMBP:
     new_berns = []
 
     # Gate PPP components and pre-compute likelihoods
-    in_gate_poisson = np.zeros((nu, m), dtype=bool)
-    l_ppp = np.zeros((nu, m))
-    pd_ppp = np.zeros(nu)
+    in_gate_poisson = torch.zeros((nu, m), dtype=bool)
+    l_ppp = torch.zeros((nu, m))
+    pd_ppp = torch.zeros(nu)
     for k, state in enumerate(self.poisson.states):
       pd_ppp[k] = pd(state)
       if pd_ppp[k] == 0:
@@ -180,10 +181,10 @@ class MOMBP:
 
     for j in range(m):
       bern, wnew[j] = self.poisson.update(
-          measurement=torch.tensor(measurements[j]).float(),
-          pd=torch.tensor(pd_ppp).float(),
+          measurement=torch.tensor(measurements[j]),
+          pd=pd_ppp,
           likelihoods=l_ppp[:, j],
-          in_gate=torch.tensor(in_gate_poisson[:, j]),
+          in_gate=in_gate_poisson[:, j],
           state_estimator=state_estimator,
           clutter_intensity=lambda_fa)
       if wnew[j] > 0:
@@ -191,7 +192,7 @@ class MOMBP:
 
     # Update (i.e., thin) intensity of unknown targets
     poisson_upd = copy.copy(self.poisson)
-    poisson_upd.weights *= 1 - pd_ppp
+    poisson_upd.weights *= np.array(1 - pd_ppp)
     # poisson_upd.states = self.poisson.states.copy()
 
     # Not shown in paper--truncate low weight components
@@ -207,15 +208,18 @@ class MOMBP:
     else:
       pupd, pnew = self.spa(wupd=wupd, wnew=wnew)
 
-    mb_upd = self.momb(pupd=pupd, mb_hypos=mb_hypos, pnew=pnew,
-                       new_berns=new_berns, in_gate_mb=in_gate_mb)
+    mb_upd = self.momb(pupd=torch.tensor(pupd),
+                       mb_hypos=mb_hypos,
+                       pnew=torch.tensor(pnew),
+                       new_berns=new_berns,
+                       in_gate_mb=in_gate_mb)
 
     return mb_upd, poisson_upd
 
   def momb(self,
-           pupd: np.ndarray,
+           pupd: torch.tensor,
            mb_hypos: np.ndarray,
-           pnew: np.ndarray,
+           pnew: torch.Tensor,
            new_berns: List[Bernoulli],
            in_gate_mb: np.ndarray) -> List[Bernoulli]:
     """
@@ -252,22 +256,22 @@ class MOMBP:
       momb_mb.append(new_bern)
 
     for j in range(len(new_berns)):
-      valid = in_gate_mb[:, j]
-      rupd = np.array([bern.r for bern in mb_hypos[valid, j+1]])
-      xupd = [bern.state.mean for bern in mb_hypos[valid, j+1]]
-      Pupd = [bern.state.covar for bern in mb_hypos[valid, j+1]]
 
       if n == 0:
         x, P = new_berns[j].state.mean, new_berns[j].state.covar
         r = pnew[j]*new_berns[j].r
       else:
-        pr = np.append(pupd[valid, j+1]*rupd, pnew[j]*new_berns[j].r)
-        r = np.sum(pr)
-        xmix = xupd + [new_berns[j].state.mean]
-        Pmix = Pupd + [new_berns[j].state.covar]
+        valid = in_gate_mb[:, j]
+        rupd = torch.tensor([bern.r for bern in mb_hypos[valid, j+1]])
+        xupd = torch.cat([bern.state.mean for bern in mb_hypos[valid, j+1]])
+        Pupd = torch.cat([bern.state.covar for bern in mb_hypos[valid, j+1]])
+        pr = torch.cat((pupd[valid, j+1]*rupd,
+                        torch.atleast_1d(pnew[j]*new_berns[j].r)))
+        r = torch.sum(pr).item()
+        xmix = torch.cat((xupd, new_berns[j].state.mean))
+        Pmix = torch.cat((Pupd, new_berns[j].state.covar))
 
-        x, P = mix_gaussians(means=np.array(xmix),
-                             covars=np.array(Pmix), weights=pr)
+        x, P = mix_gaussians(means=xmix, covars=Pmix, weights=pr)
 
       new_bern = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))
       momb_mb.append(new_bern)

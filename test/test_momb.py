@@ -33,6 +33,10 @@ import torch
 #   tomb.update(measurements=measurements, state_estimator=kf, pd=0.9)
 
 
+torch.set_default_tensor_type(torch.DoubleTensor)
+torch.set_default_device(torch.device('cpu'))
+torch.set_grad_enabled(False)
+
 def test_scenario():
   """
   Test the algorithm with a simple multi-object scenario
@@ -109,5 +113,5 @@ def test_scenario():
 
 
 if __name__ == '__main__':
-  test_scenario()
-  # pytest.main([__file__])
+  # test_scenario()
+  pytest.main([__file__])
