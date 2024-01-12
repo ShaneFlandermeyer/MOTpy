@@ -5,7 +5,7 @@ import numpy as np
 
 from motpy.distributions.gaussian import GaussianState, mix_gaussians
 from motpy.kalman import KalmanFilter
-from motpy.rfs.bernoulli import Bernoulli
+from motpy.rfs.bernoulli import Bernoulli, MultiBernoulli
 from motpy.rfs.poisson import Poisson
 
 
@@ -56,9 +56,10 @@ class MOMBP:
     r_estimate_threshold : float, optional
         The threshold for the probability of existence above which an object is estimated to exist, by default None.
     """
+    self.ndim_state = birth_states.state_dim
     self.poisson = Poisson(birth_weights=birth_weights,
                            birth_states=birth_states)
-    self.mb = []
+    self.mb = MultiBernoulli()
 
     self.pg = pg
     self.w_min = w_min
@@ -91,8 +92,7 @@ class MOMBP:
     # Implement prediction algorithm
 
     # Predict existing tracks
-    pred_mb = [bern.predict(state_estimator=state_estimator,
-                            ps=ps, dt=dt) for bern in self.mb]
+    pred_mb = self.mb.predict(state_estimator=state_estimator, ps=ps, dt=dt)
 
     # Predict existing PPP intensity
     pred_poisson = self.poisson.predict(
@@ -139,15 +139,17 @@ class MOMBP:
 
     # Update existing tracks
     wupd = np.zeros((n, m + 1))
-    mb_hypos = np.zeros((n, m + 1), dtype=object)
+    # We create one MB hypothesis for each measurement, plus one missed detection hypothesis
+    mb_hypos = [MultiBernoulli() for _ in range(m+1)]
     in_gate_mb = np.zeros((n, m), dtype=bool)
+
     for i, bern in enumerate(self.mb):
       # Create missed detection hypothesis
       pd_bern = pd(bern.state)
       state_post = bern.state
       r_post = bern.r * (1 - pd_bern) / (1 - bern.r + bern.r * (1 - pd_bern))
       wupd[i, 0] = 1 - bern.r + bern.r * (1 - pd_bern)
-      mb_hypos[i, 0] = Bernoulli(r=r_post, state=state_post)
+      mb_hypos[0].append(r=r_post, state=state_post)
 
       valid_meas, in_gate_mb[i] = state_estimator.gate(
           measurements=measurements, predicted_state=bern.state, pg=self.pg)
@@ -157,15 +159,15 @@ class MOMBP:
         l_mb[in_gate_mb[i]] = state_estimator.likelihood(
             measurement=valid_meas, predicted_state=bern.state)
       for j in np.nonzero(in_gate_mb[i])[0]:
+        wupd[i, j + 1] = bern.r * pd(state_post) * l_mb[j]
         state_post = state_estimator.update(
             measurement=measurements[j], predicted_state=bern.state)
         r_post = 1
-        wupd[i, j + 1] = bern.r * pd(state_post) * l_mb[j]
-        mb_hypos[i, j + 1] = Bernoulli(r=r_post, state=state_post)
+        mb_hypos[j+1].append(r=r_post, state=state_post)
 
     # Create a new track for each measurement by updating PPP with measurement
     wnew = np.zeros(m)
-    new_berns = []
+    new_berns = MultiBernoulli()
 
     # Gate PPP components and pre-compute likelihoods
     in_gate_poisson = np.zeros((nu, m), dtype=bool)
@@ -190,7 +192,7 @@ class MOMBP:
           state_estimator=state_estimator,
           clutter_intensity=lambda_fa)
       if wnew[j] > 0:
-        new_berns.append(bern)
+        new_berns.append(r=bern.r, state=bern.state)
 
     # Update (i.e., thin) intensity of unknown targets
     poisson_upd = copy.copy(self.poisson)
@@ -211,10 +213,10 @@ class MOMBP:
 
   def momb(self,
            pupd: np.ndarray,
-           mb_hypos: np.ndarray,
+           mb_hypos: List[MultiBernoulli],
            pnew: np.ndarray,
-           new_berns: List[Bernoulli],
-           in_gate_mb: np.ndarray) -> List[Bernoulli]:
+           new_berns: MultiBernoulli,
+           in_gate_mb: np.ndarray) -> MultiBernoulli:
     """
     Implements the Track-Oriented Multi-Bernoulli (TOMB) update step.
 
@@ -241,39 +243,32 @@ class MOMBP:
     mp1 = pupd.shape[1]
     m = mp1 - 1
 
-    momb_mb = []
-    for i in range(n):
-      r = mb_hypos[i, 0].r
-      p = pupd[i, 0]
-      new_bern = Bernoulli(r=r*p, state=mb_hypos[i, 0].state)
-      momb_mb.append(new_bern)
+    # Create tracks for "missed detection" hypotheses
+    momb_mb = MultiBernoulli()
+    r_missed = mb_hypos[0].r
+    p_missed = pupd[:, 0]
+    momb_mb.append(r=r_missed*p_missed, state=mb_hypos[0].state)
 
     for j in range(len(new_berns)):
-
       if n == 0:
         x, P = new_berns[j].state.mean, new_berns[j].state.covar
         r = pnew[j]*new_berns[j].r
       else:
         valid = in_gate_mb[:, j]
-        if np.count_nonzero(valid) == 0:
-          continue
-        rupd = np.array([bern.r for bern in mb_hypos[valid, j+1]])
-        xupd = np.concatenate(
-            [bern.state.mean for bern in mb_hypos[valid, j+1]])
-        Pupd = np.concatenate(
-            [bern.state.covar for bern in mb_hypos[valid, j+1]])
+        rupd = mb_hypos[j+1].r
+        xupd = mb_hypos[j+1].state.mean
+        Pupd = mb_hypos[j+1].state.covar
         pr = np.append(pupd[valid, j+1]*rupd, pnew[j]*new_berns[j].r)
         r = np.sum(pr)
+        
         xmix = np.append(xupd, new_berns[j].state.mean, axis=0)
         Pmix = np.append(Pupd, new_berns[j].state.covar, axis=0)
-
         x, P = mix_gaussians(means=xmix, covars=Pmix, weights=pr)
 
-      new_bern = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))
-      momb_mb.append(new_bern)
+      momb_mb.append(r=r, state=GaussianState(mean=x, covar=P))
 
     # Truncate tracks with low probability of existence (not shown in algorithm)
-    momb_mb = [bern for bern in momb_mb if bern.r >= self.r_min]
+    momb_mb = momb_mb[momb_mb.r > self.r_min]
 
     return momb_mb
 

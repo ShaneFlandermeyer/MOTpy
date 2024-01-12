@@ -29,12 +29,6 @@ class KalmanFilter():
     x_pred = x @ F.T
     P_pred = F @ P @ F.T + Q
 
-    # Clear cache from previous update step
-    # meta = state.metadata.copy()
-    # if 'cache' in meta:
-    #   for key in ['S', 'K', 'P_post']:
-    #     meta['cache'].pop(key, None)
-
     return GaussianState(mean=x_pred, covar=P_pred)
 
   def update(self,
