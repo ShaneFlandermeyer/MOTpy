@@ -103,7 +103,7 @@ class MOMBP:
       pred_poisson = pred_poisson.prune(threshold=self.w_min)
     # TODO: Update the merge function, assuming Poisson components are Gaussian
     if self.merge_poisson:
-      assert self.w_min is not None, "Poisson merging currently assumes there is no pruning"
+      assert self.w_min is None, "Poisson merging currently assumes there is no pruning"
       pred_poisson = pred_poisson.merge(threshold=None)
     return pred_mb, pred_poisson
 

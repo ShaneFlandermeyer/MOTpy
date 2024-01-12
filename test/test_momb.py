@@ -88,8 +88,10 @@ def test_scenario():
                    covar=np.diag([100, 1, 100, 1])**2),
                pg=1,
                w_min=1e-4,
+               merge_poisson=False,
                r_min=1e-4,
-               r_estimate_threshold=0.5)
+               r_estimate_threshold=0.5,
+               )
   momb.poisson.states.append(momb.poisson.birth_states[0])
   momb.poisson.weights = np.append(momb.poisson.weights, 10)
 
@@ -100,7 +102,7 @@ def test_scenario():
 
     momb.mb, momb.poisson = momb.update(
         measurements=Z[k], pd=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
-
+        
   assert len(momb.mb) == 52
   assert len(momb.poisson) == 4
   assert np.allclose(momb.mb[36].r, 0.9986985737236855, atol=1e-6)

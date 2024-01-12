@@ -69,7 +69,7 @@ class Poisson:
     pred_ppp = Poisson(birth_weights=self.birth_weights,
                        birth_states=self.birth_states)
     pred_ppp.weights = np.concatenate((self.weights*ps, self.birth_weights))
-    
+
     pred_ppp.states = state_estimator.predict(state=self.states, dt=dt)
     pred_ppp.states.append(self.birth_states)
 
@@ -84,7 +84,6 @@ class Poisson:
              state_estimator: KalmanFilter,
              clutter_intensity: float,
              ) -> Tuple[Bernoulli, float]:
-    # Get PPP components in gate
     n_in_gate = np.count_nonzero(in_gate)
     if n_in_gate == 0:
       # No measurements in gate
@@ -113,7 +112,6 @@ class Poisson:
     bern = Bernoulli(r=r, state=GaussianState(mean=mean, covar=covar))
     return bern, sum_w_total
 
-  # @profile
   def prune(self, threshold: float) -> Poisson:
     pruned = Poisson(birth_weights=self.birth_weights,
                      birth_states=self.birth_states)
@@ -124,13 +122,33 @@ class Poisson:
 
     return pruned
 
-  # @profile
   def merge(self, threshold: float) -> Poisson:
     """
     Merge components that are close to each other.
 
-    TODO: Only supports mahalanobis distance for now.
+    TODO: Currently assumes there is no thresholding
     """
+    nbirth = len(self.birth_states)
+    assert len(self.states) == 2 * \
+        nbirth, "Merging currently only supported when PPP states come directly from birth states"
+
+    birth_states = self.states[-nbirth:]
+    birth_weights = self.weights[-nbirth:]
+    persistent_states = self.states[:-nbirth]
+    persistent_weights = self.weights[:-nbirth]
+
+    merged = Poisson(birth_weights=birth_weights, birth_states=birth_states)
+    # Sum birth and consistent components, mix their distributions
+    merged.weights = birth_weights + persistent_weights
+    # TODO: Not actually mixing anything right now
+    wmix = np.concatenate((persistent_weights, birth_weights))
+    wmix = wmix / np.sum(wmix + 1e-15)
+    Pmix = np.concatenate(
+        (persistent_states.covar, birth_states.covar), axis=0)
+    merged.states = GaussianState(
+        mean=persistent_states.mean,
+        covar=np.tensordot(wmix, Pmix, axes=1))
+    return merged
 
   def intensity(self, grid: np.ndarray, H: np.ndarray) -> np.ndarray:
     """
