@@ -168,8 +168,8 @@ class Poisson:
     """
     intensity = np.zeros(grid.shape[:-1])
     for i, state in enumerate(self.states):
-      mean = H @ state.mean
-      cov = H @ state.covar @ H.T
+      mean = H @ state.mean[0]
+      cov = H @ state.covar[0] @ H.T
       rv = multivariate_normal(mean=mean, cov=cov)
       intensity += self.weights[i] * rv.pdf(grid)
     return intensity

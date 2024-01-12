@@ -1,3 +1,4 @@
+import copy
 from typing import Dict, List, Optional, Tuple, Union
 import gymnasium as gym
 from motpy.rfs.momb import MOMBP
@@ -7,6 +8,7 @@ from motpy.kalman import KalmanFilter
 from motpy.models.measurement import LinearMeasurementModel
 from motpy.models.transition import ConstantVelocity
 import matplotlib.pyplot as plt
+
 
 def wrap_to_interval(x: Union[float, np.ndarray],
                      start: float,
@@ -30,38 +32,40 @@ class SearchAndTrackEnv(gym.Env):
     # Env params
     self.max_set_size = 512
     self.state_dim = 2*4+1
-    self.extents = np.array([[-1000, 1000],
-                             [-1, 1],
-                             [-1000, 1000],
-                             [-1, 1]])
+    self.extents = np.array([[-100, 100],
+                             [-0.1, 0.1],
+                             [-100, 100],
+                             [-0.1, 0.1]])
     self.volume = np.prod(self.extents[[0, 2], 1] - self.extents[[0, 2], 0])
     self.dt = 1
-    self.birth_rate = 0.001
+    self.birth_rate = 1e-2
     self.ps = 0.999
-    self.beamwidth = np.radians(5)
+    self.beamwidth = 2*np.pi/5
     self.n_expected_init = 10
-    self.lambda_c = 1
+    self.lambda_c = 10
 
     # MOMB params
     # Arange birth distribution
-    nax = 25
-    birth_grid = np.meshgrid(np.linspace(
-        self.extents[0, 0], self.extents[0, 1], nax), np.linspace(self.extents[2, 0], self.extents[2, 1], nax))
-    self.birth_states = [GaussianState(
-        mean=np.array([x, 0, y, 0]),
-        covar=np.diag([1000/nax, 1, 1000/nax, 1])**2) for x, y in zip(birth_grid[0].flatten(), birth_grid[1].flatten())
-    ]
+    ngrid = 10
+    birth_grid = np.meshgrid(np.linspace(-100, 100, ngrid),
+                             np.linspace(-100, 100, ngrid))
+    xgrid, ygrid = birth_grid[0].flatten(), birth_grid[1].flatten()
+    self.birth_states = GaussianState(
+        mean=np.array([[x, 0, y, 0] for x, y in zip(xgrid, ygrid)]),
+        covar=(np.diag([100/ngrid, 0.1, 100/ngrid, 0.1])[None, ...]
+               ** 2).repeat(ngrid**2, axis=0)
+    )
     self.birth_weights = np.full(
         len(self.birth_states), self.birth_rate/len(self.birth_states))
 
-    self.pg = 0.999
-    self.w_min = 0
+    self.pg = 1.0
+    self.w_min = None
     self.r_min = 1e-4
-    self.poisson_merge_threshold = 0.1
-    self.r_estimate_threshold = 0.8
-    self.init_ppp_states = self.birth_states.copy()
+    self.merge_poisson = True
+    self.r_estimate_threshold = 0.5
+    self.init_ppp_states = copy.deepcopy(self.birth_states)
     self.init_ppp_weights = np.full(
-        len(self.birth_states), 5/len(self.birth_states))
+        len(self.birth_states), self.n_expected_init/len(self.birth_states))
 
     # Observations are as follows:
     #   - tracked: object state vector, covariance diagonal elements, existence probability
@@ -91,9 +95,11 @@ class SearchAndTrackEnv(gym.Env):
                       pg=self.pg,
                       w_min=self.w_min,
                       r_min=self.r_min,
-                      poisson_merge_threshold=self.poisson_merge_threshold,
+                      merge_poisson=self.merge_poisson,
                       r_estimate_threshold=self.r_estimate_threshold)
-    self.momb.poisson.append(self.init_ppp_weights, self.init_ppp_states)
+    self.momb.poisson.states.append(self.init_ppp_states)
+    self.momb.poisson.weights = np.append(
+        self.momb.poisson.weights, self.init_ppp_weights)
     cv = ConstantVelocity(ndim_pos=2,
                           q=0.01,
                           position_mapping=[0, 2],
@@ -114,15 +120,18 @@ class SearchAndTrackEnv(gym.Env):
     angle = action[0] * (2*np.pi)
 
     def pd(state):
-      # return 0.9
-      x = state.mean if isinstance(state, GaussianState) else state
-      obj_angle = np.arctan2(x[2], x[0])
+      return 0.9
+      x = state.mean if isinstance(
+          state, GaussianState) else np.atleast_2d(state)
+      obj_angle = np.arctan2(x[0, 2], x[0, 0])
       # Check if object is within beamwidth
       angle_diff = wrap_to_interval(angle-obj_angle, -np.pi, np.pi)
-      if np.abs(angle_diff) < self.beamwidth/2:
+      if abs(angle_diff) < self.beamwidth/2:
         return 0.9
       else:
         return 0.0
+      
+    
 
     # Collect measurements from existing objects
     alive = np.ones(len(self.ground_truth), dtype=bool)
@@ -131,23 +140,21 @@ class SearchAndTrackEnv(gym.Env):
       if self.np_random.uniform() > self.ps:
         alive[i] = False
         continue
-      # Check if object has left extents
       if not np.all(np.logical_and(self.extents[:, 0] <= path[-1],
                                    path[-1] <= self.extents[:, 1])):
-        alive[i] = False
-        continue
+        path[-1][[1, 3]] *= -1
 
       path.append(self.state_estimator.transition_model(
-          path[-1], dt=self.dt, noise=False))
+          path[-1], dt=self.dt, noise=True))
       if self.np_random.uniform() < pd(path[-1]):
         Zk.append(self.state_estimator.measurement_model(
             path[-1], noise=True))
     self.ground_truth = [path for i, path in enumerate(
         self.ground_truth) if alive[i]]
-
+    
     # Clutter measurements
     # TODO: Forcing Nc > 0
-    Nc = max(self.np_random.poisson(self.lambda_c), 1)
+    Nc = self.np_random.poisson(self.lambda_c)
     zc = self.np_random.uniform(
         self.extents[[0, 2], 0], self.extents[[0, 2], 1], size=(Nc, 2))
     Zk.extend(list(zc))
@@ -158,6 +165,8 @@ class SearchAndTrackEnv(gym.Env):
         self.extents[:, 0], self.extents[:, 1], size=(Nb, 4))
     for x in xb:
       self.ground_truth.append([x])
+
+    Zk = np.array(Zk)
 
     # Update filter state
     self.momb.mb, self.momb.poisson = self.momb.predict(
@@ -221,30 +230,54 @@ if __name__ == '__main__':
       np.linspace(xmin, xmax, 25), np.linspace(ymin, ymax, 25))
   grid = np.dstack((xmesh, ymesh))
 
-  plt.figure()
-  for i in range(10):
-    action = env.action_space.sample()
+  # plt.figure()
+  action = np.array([0.0])
+  for i in range(int(1e5)):
+    action = (action + 0.15) % 1
+    # action = env.action_space.sample()
+    # action = np.array([0.25])
+    # Steer to a random target
+    # if i % 1 == 0:
+    # object_ind = np.random.randint(len(env.ground_truth))
+    # object_path = env.ground_truth[object_ind]
+    # object_pos = object_path[-1][[0, 2]]
+    # angle = np.arctan2(object_pos[1], object_pos[0])
+    # action = np.array([angle/(2*np.pi)])
+
     obs, reward, term, trunc, info = env.step(action)
 
-    # plt.clf()
-    # intensity = env.momb.poisson.intensity(
-    #     grid=grid, H=env.state_estimator.measurement_model.matrix())
-    # plt.imshow(intensity, extent=(xmin, xmax, ymin, ymax), origin='lower', aspect='auto')
-    # # Plot trajectories in env.ground_truth
-    # for path in env.ground_truth:
-    #   p = np.array(path)
-    #   plt.plot(p[:, 0], p[:, 2], 'r--')
-    # plt.xlim(xmin, xmax)
-    # plt.ylim(ymin, ymax)
-    # # plt.clim([0, 1e-7])
-    # plt.colorbar()
+    print(f"Action: {action*360}")
 
-    # plt.pause(0.001)
+    plt.clf()
+    intensity = env.momb.poisson.intensity(
+        grid=grid, H=env.state_estimator.measurement_model.matrix())
+    
+    plt.imshow(intensity, extent=(xmin, xmax, ymin, ymax),
+               origin='lower', aspect='auto')
+    # Plot trajectories in env.ground_truth
+    for path in env.ground_truth:
+      p = np.array(path)
+      plt.plot(p[:, 0], p[:, 2], 'r--')
+    # Plot high-confidence tracks
+    for bern in env.momb.mb:
+      if bern.r > env.r_estimate_threshold:
+        plt.plot(bern.state.mean[:, 0], bern.state.mean[:, 2], 'k^')
 
-    # print(f"Action: {action*360}")
+    plt.xlim(xmin, xmax)
+    plt.ylim(ymin, ymax)
+
+    # plt.clim([0, 1e-6])
+    plt.colorbar()
+    plt.draw()
+    plt.pause(0.001)
     print(f"PPP: {len(env.momb.poisson)}")
     print(
         f"MB: {len([bern for bern in env.momb.mb if bern.r > env.r_estimate_threshold])}")
+    # Print max r
+    print(f"r: {env.momb.mb.r}")
     print(f"True: {len(env.ground_truth)}")
+    print(f"Undetected: {np.sum(env.momb.poisson.weights)}")
+
+    print(i)
 
     # plt.draw()
