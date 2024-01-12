@@ -60,7 +60,7 @@ def mix_gaussians(means: np.ndarray,
   w = weights / (np.sum(weights) + 1e-15)
 
   mix_mean = np.dot(w, x)
-  mix_covar = np.einsum('i,ijk->jk', w, P)
+  mix_covar = np.tensordot(w, P, axes=1)
   mix_covar += np.einsum('i,ij,ik->jk', w, x, x)
   mix_covar -= np.outer(mix_mean, mix_mean)
   return mix_mean, mix_covar

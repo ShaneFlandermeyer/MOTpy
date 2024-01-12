@@ -133,13 +133,14 @@ class Poisson:
         nbirth, "Merging currently only supported when PPP states come directly from birth states"
 
     birth_states = self.states[-nbirth:]
-    birth_weights = self.weights[-nbirth:, None]
+    birth_weights = self.weights[-nbirth:]
     persistent_states = self.states[:-nbirth]
-    persistent_weights = self.weights[:-nbirth, None]
+    persistent_weights = self.weights[:-nbirth]
 
     merged = Poisson(birth_weights=birth_weights, birth_states=birth_states)
     # Sum birth and consistent components, mix their distributions
-    wmix = np.concatenate((persistent_weights, birth_weights), axis=1)
+    wmix = np.concatenate(
+        (persistent_weights[:, None], birth_weights[:, None]), axis=1)
     wmix = wmix / np.sum(wmix + 1e-15, axis=1)
     Pmix = np.concatenate(
         (persistent_states.covar, birth_states.covar), axis=0)
