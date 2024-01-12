@@ -133,21 +133,20 @@ class Poisson:
         nbirth, "Merging currently only supported when PPP states come directly from birth states"
 
     birth_states = self.states[-nbirth:]
-    birth_weights = self.weights[-nbirth:]
+    birth_weights = self.weights[-nbirth:, None]
     persistent_states = self.states[:-nbirth]
-    persistent_weights = self.weights[:-nbirth]
+    persistent_weights = self.weights[:-nbirth, None]
 
     merged = Poisson(birth_weights=birth_weights, birth_states=birth_states)
     # Sum birth and consistent components, mix their distributions
-    merged.weights = birth_weights + persistent_weights
-    # TODO: Not actually mixing anything right now
-    wmix = np.concatenate((persistent_weights, birth_weights))
-    wmix = wmix / np.sum(wmix + 1e-15)
+    wmix = np.concatenate((persistent_weights, birth_weights), axis=1)
+    wmix = wmix / np.sum(wmix + 1e-15, axis=1)
     Pmix = np.concatenate(
         (persistent_states.covar, birth_states.covar), axis=0)
     merged.states = GaussianState(
         mean=persistent_states.mean,
         covar=np.tensordot(wmix, Pmix, axes=1))
+    merged.weights = birth_weights + persistent_weights
     return merged
 
   def intensity(self, grid: np.ndarray, H: np.ndarray) -> np.ndarray:
