@@ -158,11 +158,12 @@ class MOMBP:
         l_mb = np.zeros(m)
         l_mb[in_gate_mb[i]] = state_estimator.likelihood(
             measurement=valid_meas, predicted_state=bern.state)
+        
       for j in np.nonzero(in_gate_mb[i])[0]:
-        wupd[i, j + 1] = bern.r * pd(state_post) * l_mb[j]
         state_post = state_estimator.update(
             measurement=measurements[j], predicted_state=bern.state)
         r_post = 1
+        wupd[i, j + 1] = bern.r * pd(state_post) * l_mb[j]
         mb_hypos[j+1].append(r=r_post, state=state_post)
 
     # Create a new track for each measurement by updating PPP with measurement
