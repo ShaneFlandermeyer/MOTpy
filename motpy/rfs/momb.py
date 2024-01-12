@@ -149,15 +149,14 @@ class MOMBP:
       wupd[i, 0] = 1 - bern.r + bern.r * (1 - pd_bern)
       mb_hypos[i, 0] = Bernoulli(r=r_post, state=state_post)
 
-      valid_meas, valid_inds = state_estimator.gate(
+      valid_meas, in_gate_mb[i] = state_estimator.gate(
           measurements=measurements, predicted_state=bern.state, pg=self.pg)
-      in_gate_mb[i, valid_inds] = True
       # Create hypotheses with measurement updates
-      if len(valid_meas) > 0:
+      if np.any(in_gate_mb[i]):
         l_mb = np.zeros(m)
-        l_mb[valid_inds] = state_estimator.likelihood(
+        l_mb[in_gate_mb[i]] = state_estimator.likelihood(
             measurement=valid_meas, predicted_state=bern.state)
-      for j in valid_inds:
+      for j in np.nonzero(in_gate_mb[i])[0]:
         state_post = state_estimator.update(
             measurement=measurements[j], predicted_state=bern.state)
         r_post = 1
@@ -176,11 +175,10 @@ class MOMBP:
       pd_ppp[k] = pd(state)
       if pd_ppp[k] == 0:
         continue
-      valid_meas, valid_inds = state_estimator.gate(
+      valid_meas, in_gate_poisson[k] = state_estimator.gate(
           measurements=measurements, predicted_state=state, pg=self.pg)
-      in_gate_poisson[k, valid_inds] = True
-      if len(valid_meas) > 0:
-        l_ppp[k, valid_inds] = state_estimator.likelihood(
+      if np.any(in_gate_poisson[k]):
+        l_ppp[k, in_gate_poisson[k]] = state_estimator.likelihood(
             measurement=valid_meas, predicted_state=state)
 
     for j in range(m):

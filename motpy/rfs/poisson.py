@@ -131,38 +131,6 @@ class Poisson:
 
     TODO: Only supports mahalanobis distance for now.
     """
-    merged = Poisson(birth_weights=self.birth_weights,
-                     birth_states=self.birth_states)
-    old_weights = self.weights.copy()
-
-    old_means = np.array([s.mean for s in self.states])
-    old_covars = np.array([s.covar for s in self.states])
-    while len(old_weights) > 0:
-      # Find components that are close to each other
-      dists = mahalanobis(
-          mean=old_means[0], covar=old_covars[0], points=old_means)
-      similar = dists < threshold
-      # Mix components that are close to each other
-      if np.any(similar):
-        new_weight = np.sum(old_weights[similar])
-        mix_mean, mix_covar = mix_gaussians(
-            means=old_means[similar],
-            covars=old_covars[similar],
-            weights=old_weights[similar])
-        mix_state = GaussianState(mean=mix_mean, covar=mix_covar)
-        merged.append(weight=new_weight, state=mix_state)
-        # Remove components that have been merged
-        old_weights = old_weights[~similar]
-        old_means = old_means[~similar]
-        old_covars = old_covars[~similar]
-      else:
-        # No components are close to each other
-        merged.weights.append(old_weights[0])
-        merged.states.append(GaussianState(
-            mean=old_means[0], covar=old_covars[0]))
-        old_weights = old_weights[1:]
-
-    return merged
 
   def intensity(self, grid: np.ndarray, H: np.ndarray) -> np.ndarray:
     """

@@ -16,7 +16,7 @@ class EllipsoidalGate:
                innovation_covar: np.ndarray
                ) -> Tuple[List[np.ndarray], np.ndarray]:
     if self.pg == 1:
-      return measurements, np.arange(len(measurements))
+      return measurements, np.ones(len(measurements), dtype=bool)
 
     z = np.array(measurements).reshape((-1, self.ndim, 1))
     z_pred = predicted_measurement.reshape((-1, 1))
@@ -30,9 +30,8 @@ class EllipsoidalGate:
     # Return measurements in the gate and their indices
     t = self.threshold(pg=self.pg, ndim=self.ndim)
     in_gate = dist < t
-    valid_inds = np.where(in_gate)[0]
-    valid_meas = [z[i].reshape(measurements[0].shape) for i in valid_inds]
-    return valid_meas, valid_inds
+    valid_meas = list(z[in_gate].reshape((-1, *measurements[0].shape)))
+    return valid_meas, in_gate
 
   @staticmethod
   @functools.lru_cache
