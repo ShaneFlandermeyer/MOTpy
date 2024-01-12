@@ -139,9 +139,12 @@ class MOMBP:
 
     # Update existing tracks
     wupd = np.zeros((n, m + 1))
+    l_mb = np.zeros((n, m))
+    
     # We create one MB hypothesis for each measurement, plus one missed detection hypothesis
     mb_hypos = [MultiBernoulli() for _ in range(m+1)]
     in_gate_mb = np.zeros((n, m), dtype=bool)
+    
 
     for i, bern in enumerate(self.mb):
       # Create missed detection hypothesis
@@ -155,15 +158,17 @@ class MOMBP:
           measurements=measurements, predicted_state=bern.state, pg=self.pg)
       # Create hypotheses with measurement updates
       if np.any(in_gate_mb[i]):
-        l_mb = np.zeros(m)
-        l_mb[in_gate_mb[i]] = state_estimator.likelihood(
+        l_mb[i, in_gate_mb[i]] = state_estimator.likelihood(
             measurement=valid_meas, predicted_state=bern.state)
-        
-      for j in np.nonzero(in_gate_mb[i])[0]:
+
+    for j in range(m):
+      if np.any(in_gate_mb[:, j]):
+        valid_mb = self.mb[in_gate_mb[:, j]]
         state_post = state_estimator.update(
-            measurement=measurements[j], predicted_state=bern.state)
-        r_post = 1
-        wupd[i, j + 1] = bern.r * pd(state_post) * l_mb[j]
+            measurement=measurements[j],
+            predicted_state=valid_mb.state)
+        r_post = np.ones(len(state_post))
+        wupd[:, j + 1] = valid_mb.r * pd_bern * l_mb[:, j]
         mb_hypos[j+1].append(r=r_post, state=state_post)
 
     # Create a new track for each measurement by updating PPP with measurement
@@ -198,7 +203,6 @@ class MOMBP:
     # Update (i.e., thin) intensity of unknown targets
     poisson_upd = copy.copy(self.poisson)
     poisson_upd.weights *= 1 - pd_ppp
-    # poisson_upd.states = self.poisson.states.copy()
 
     # TODO: This requires m > 0
     if wupd.size == 0:
@@ -261,7 +265,7 @@ class MOMBP:
         Pupd = mb_hypos[j+1].state.covar
         pr = np.append(pupd[valid, j+1]*rupd, pnew[j]*new_berns[j].r)
         r = np.sum(pr)
-        
+
         xmix = np.append(xupd, new_berns[j].state.mean, axis=0)
         Pmix = np.append(Pupd, new_berns[j].state.covar, axis=0)
         x, P = mix_gaussians(means=xmix, covars=Pmix, weights=pr)
