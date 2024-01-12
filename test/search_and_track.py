@@ -2,6 +2,7 @@ import copy
 from typing import Dict, List, Optional, Tuple, Union
 import gymnasium as gym
 from motpy.rfs.momb import MOMBP
+from motpy.rfs.tomb import TOMBP
 import numpy as np
 from motpy.distributions.gaussian import GaussianState
 from motpy.kalman import KalmanFilter
@@ -33,12 +34,12 @@ class SearchAndTrackEnv(gym.Env):
     self.max_set_size = 512
     self.state_dim = 2*4+1
     self.extents = np.array([[-100, 100],
-                             [-0.1, 0.1],
+                             [-1, 1],
                              [-100, 100],
-                             [-0.1, 0.1]])
+                             [-1, 1]])
     self.volume = np.prod(self.extents[[0, 2], 1] - self.extents[[0, 2], 0])
     self.dt = 1
-    self.birth_rate = 1e-2
+    self.birth_rate = 1e-3
     self.ps = 0.999
     self.beamwidth = 2*np.pi/5
     self.n_expected_init = 10
@@ -52,13 +53,13 @@ class SearchAndTrackEnv(gym.Env):
     xgrid, ygrid = birth_grid[0].flatten(), birth_grid[1].flatten()
     self.birth_states = GaussianState(
         mean=np.array([[x, 0, y, 0] for x, y in zip(xgrid, ygrid)]),
-        covar=(np.diag([100/ngrid, 0.1, 100/ngrid, 0.1])[None, ...]
+        covar=(np.diag([100/ngrid, 1, 100/ngrid, 1])[None, ...]
                ** 2).repeat(ngrid**2, axis=0)
     )
     self.birth_weights = np.full(
         len(self.birth_states), self.birth_rate/len(self.birth_states))
 
-    self.pg = 1.0
+    self.pg = 0.99
     self.w_min = None
     self.r_min = 1e-4
     self.merge_poisson = True
@@ -90,7 +91,7 @@ class SearchAndTrackEnv(gym.Env):
       x = self.np_random.uniform(self.extents[:, 0], self.extents[:, 1])
       self.ground_truth.append([x])
 
-    self.momb = MOMBP(birth_weights=self.birth_weights,
+    self.momb = TOMBP(birth_weights=self.birth_weights,
                       birth_states=self.birth_states,
                       pg=self.pg,
                       w_min=self.w_min,
@@ -120,14 +121,14 @@ class SearchAndTrackEnv(gym.Env):
     angle = action[0] * (2*np.pi)
 
     def pd(state):
-      return 0.9
+      # return 0.9
       x = state.mean if isinstance(
           state, GaussianState) else np.atleast_2d(state)
       obj_angle = np.arctan2(x[0, 2], x[0, 0])
       # Check if object is within beamwidth
       angle_diff = wrap_to_interval(angle-obj_angle, -np.pi, np.pi)
       if abs(angle_diff) < self.beamwidth/2:
-        return 0.9
+        return 0.8
       else:
         return 0.0
       
@@ -233,7 +234,7 @@ if __name__ == '__main__':
   # plt.figure()
   action = np.array([0.0])
   for i in range(int(1e5)):
-    action = (action + 0.15) % 1
+    action = (action + 0.1) % 1
     # action = env.action_space.sample()
     # action = np.array([0.25])
     # Steer to a random target
@@ -259,9 +260,9 @@ if __name__ == '__main__':
       p = np.array(path)
       plt.plot(p[:, 0], p[:, 2], 'r--')
     # Plot high-confidence tracks
-    for bern in env.momb.mb:
-      if bern.r > env.r_estimate_threshold:
-        plt.plot(bern.state.mean[:, 0], bern.state.mean[:, 2], 'k^')
+    if np.count_nonzero(env.momb.mb.r > env.r_estimate_threshold):
+      for bern in env.momb.mb[env.momb.mb.r > env.r_estimate_threshold]:
+          plt.plot(bern.state.mean[:, 0], bern.state.mean[:, 2], 'k^')
 
     plt.xlim(xmin, xmax)
     plt.ylim(ymin, ymax)
@@ -273,8 +274,7 @@ if __name__ == '__main__':
     print(f"PPP: {len(env.momb.poisson)}")
     print(
         f"MB: {len([bern for bern in env.momb.mb if bern.r > env.r_estimate_threshold])}")
-    # Print max r
-    print(f"r: {env.momb.mb.r}")
+    print(f"r: {env.momb.mb.r[env.momb.mb.r > env.r_estimate_threshold]}")
     print(f"True: {len(env.ground_truth)}")
     print(f"Undetected: {np.sum(env.momb.poisson.weights)}")
 
