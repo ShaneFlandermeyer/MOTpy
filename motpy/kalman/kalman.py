@@ -61,10 +61,10 @@ class KalmanFilter():
     return post_state
 
   def gate(self,
-           measurements: List[np.ndarray],
+           measurements: np.ndarray,
            predicted_state: GaussianState,
            pg: float = 0.999,
-           ) -> Tuple[List[np.ndarray], np.ndarray]:
+           ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Gate measurements using the predicted state
 
@@ -83,12 +83,15 @@ class KalmanFilter():
         Measurements in the gate and their indices
     """
     assert self.measurement_model is not None
+
+    if pg == 1.0:
+      return measurements, np.ones((len(measurements),), dtype=bool)
+
     x, P = predicted_state.mean, predicted_state.covar
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
     z_pred = x @ H.T
     S = H @ P @ H.T + R
-
     gate = EllipsoidalGate(pg=pg, ndim=measurements[0].size)
     return gate(measurements=measurements,
                 predicted_measurement=z_pred,

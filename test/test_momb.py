@@ -75,6 +75,7 @@ def test_scenario():
       y = np.random.uniform(-100, 100)
       zk.append(np.array([x, y]))
 
+    zk = np.array(zk)
     # Shuffle zk
     np.random.shuffle(zk)
 
@@ -85,7 +86,7 @@ def test_scenario():
                birth_states=GaussianState(
                    mean=np.array([0, 0, 0, 0]),
                    covar=np.diag([100, 1, 100, 1])**2),
-               pg=1.0,
+               pg=1,
                w_min=1e-4,
                r_min=1e-4,
                r_estimate_threshold=0.5)

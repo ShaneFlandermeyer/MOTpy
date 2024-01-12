@@ -108,7 +108,7 @@ class MOMBP:
     return pred_mb, pred_poisson
 
   def update(self,
-             measurements: List[np.ndarray],
+             measurements: np.ndarray,
              state_estimator: KalmanFilter,
              pd: Callable,
              lambda_fa: float):
