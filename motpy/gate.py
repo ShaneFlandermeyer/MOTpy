@@ -25,7 +25,7 @@ class EllipsoidalGate:
     Si = np.linalg.inv(S)
 
     # Compute the distance for all measurements
-    dist = np.einsum('nji, ii, nij -> n', y.swapaxes(-1, -2), Si, y)
+    dist = np.einsum('...ji, ...ii, ...ij', y.swapaxes(-1, -2), Si, y)
 
     # Return measurements in the gate and their indices
     t = self.threshold(pg=self.pg, ndim=self.ndim)

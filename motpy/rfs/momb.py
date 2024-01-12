@@ -35,7 +35,7 @@ class MOMBP:
                pg: float = None,
                w_min: float = None,
                r_min: float = None,
-               poisson_merge_threshold: float = None,
+               merge_poisson: bool = False,
                r_estimate_threshold: float = None,
                ):
     """
@@ -63,7 +63,7 @@ class MOMBP:
     self.pg = pg
     self.w_min = w_min
     self.r_min = r_min
-    self.poisson_merge_threshold = poisson_merge_threshold
+    self.merge_poisson = merge_poisson
     self.r_estimate_threshold = r_estimate_threshold
 
   def predict(self,
@@ -101,8 +101,10 @@ class MOMBP:
     # Not shown in paper--truncate low weight components
     if self.w_min is not None:
       pred_poisson = pred_poisson.prune(threshold=self.w_min)
-    if self.poisson_merge_threshold is not None:
-      pred_poisson = pred_poisson.merge(threshold=self.poisson_merge_threshold)
+    # TODO: Update the merge function, assuming Poisson components are Gaussian
+    if self.merge_poisson:
+      assert self.w_min is not None, "Poisson merging currently assumes there is no pruning"
+      pred_poisson = pred_poisson.merge(threshold=None)
     return pred_mb, pred_poisson
 
   def update(self,
@@ -141,10 +143,11 @@ class MOMBP:
     in_gate_mb = np.zeros((n, m), dtype=bool)
     for i, bern in enumerate(self.mb):
       # Create missed detection hypothesis
-      wupd[i, 0] = 1 - bern.r + bern.r * (1 - pd(bern.state))
-      mb_hypos[i, 0] = bern.update(measurement=None,
-                                   pd=pd(bern.state),
-                                   state_estimator=state_estimator)
+      pd_bern = pd(bern.state)
+      state_post = bern.state
+      r_post = bern.r * (1 - pd_bern) / (1 - bern.r + bern.r * (1 - pd_bern))
+      wupd[i, 0] = 1 - bern.r + bern.r * (1 - pd_bern)
+      mb_hypos[i, 0] = Bernoulli(r=r_post, state=state_post)
 
       valid_meas, valid_inds = state_estimator.gate(
           measurements=measurements, predicted_state=bern.state, pg=self.pg)
@@ -155,9 +158,11 @@ class MOMBP:
         l_mb[valid_inds] = state_estimator.likelihood(
             measurement=valid_meas, predicted_state=bern.state)
       for j in valid_inds:
-        mb_hypos[i, j + 1] = bern.update(
-            pd=pd, measurement=measurements[j], state_estimator=state_estimator)
-        wupd[i, j + 1] = bern.r * pd(mb_hypos[i, j+1].state) * l_mb[j]
+        state_post = state_estimator.update(
+            measurement=measurements[j], predicted_state=bern.state)
+        r_post = 1
+        wupd[i, j + 1] = bern.r * pd(state_post) * l_mb[j]
+        mb_hypos[i, j + 1] = Bernoulli(r=r_post, state=state_post)
 
     # Create a new track for each measurement by updating PPP with measurement
     wnew = np.zeros(m)
@@ -252,6 +257,8 @@ class MOMBP:
         r = pnew[j]*new_berns[j].r
       else:
         valid = in_gate_mb[:, j]
+        if np.count_nonzero(valid) == 0:
+          continue
         rupd = np.array([bern.r for bern in mb_hypos[valid, j+1]])
         xupd = np.concatenate(
             [bern.state.mean for bern in mb_hypos[valid, j+1]])
