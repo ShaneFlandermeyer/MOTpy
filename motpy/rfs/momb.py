@@ -140,40 +140,42 @@ class MOMBP:
     # Update existing tracks
     wupd = np.zeros((n, m + 1))
     l_mb = np.zeros((n, m))
-    
+
     # We create one MB hypothesis for each measurement, plus one missed detection hypothesis
     mb_hypos = [MultiBernoulli() for _ in range(m+1)]
     in_gate_mb = np.zeros((n, m), dtype=bool)
-    
 
+    # Create missed detection hypothesis
+    wupd[:, 0] = 1 - self.mb.r + self.mb.r * (1 - pd(self.mb.state))
+    r_post = self.mb.r * (1 - pd(self.mb.state)) / wupd[:, 0]
+    state_post = self.mb.state
+    mb_hypos[0].append(r=r_post, state=state_post)
+
+    # Gate MB components and compute likelihoods for state-measurement pairs
     for i, bern in enumerate(self.mb):
-      # Create missed detection hypothesis
-      pd_bern = pd(bern.state)
-      state_post = bern.state
-      r_post = bern.r * (1 - pd_bern) / (1 - bern.r + bern.r * (1 - pd_bern))
-      wupd[i, 0] = 1 - bern.r + bern.r * (1 - pd_bern)
-      mb_hypos[0].append(r=r_post, state=state_post)
-
+      if pd(bern.state) == 0:
+        continue
       valid_meas, in_gate_mb[i] = state_estimator.gate(
           measurements=measurements, predicted_state=bern.state, pg=self.pg)
-      # Create hypotheses with measurement updates
       if np.any(in_gate_mb[i]):
         l_mb[i, in_gate_mb[i]] = state_estimator.likelihood(
             measurement=valid_meas, predicted_state=bern.state)
 
+    # Create hypotheses for each state-measurement pair
     for j in range(m):
       if np.any(in_gate_mb[:, j]):
-        valid_mb = self.mb[in_gate_mb[:, j]]
+        valid = in_gate_mb[:, j]
+
+        wupd[valid, j + 1] = self.mb[valid].r * \
+            pd(self.mb[valid].state) * l_mb[valid, j]
+
+        r_post = np.ones(np.count_nonzero(valid))
         state_post = state_estimator.update(
             measurement=measurements[j],
-            predicted_state=valid_mb.state)
-        r_post = np.ones(len(state_post))
-        wupd[:, j + 1] = valid_mb.r * pd_bern * l_mb[:, j]
+            predicted_state=self.mb[valid].state)
         mb_hypos[j+1].append(r=r_post, state=state_post)
 
     # Create a new track for each measurement by updating PPP with measurement
-    wnew = np.zeros(m)
-    new_berns = MultiBernoulli()
 
     # Gate PPP components and pre-compute likelihoods
     in_gate_poisson = np.zeros((nu, m), dtype=bool)
@@ -183,12 +185,15 @@ class MOMBP:
       pd_ppp[k] = pd(state)
       if pd_ppp[k] == 0:
         continue
+
       valid_meas, in_gate_poisson[k] = state_estimator.gate(
           measurements=measurements, predicted_state=state, pg=self.pg)
       if np.any(in_gate_poisson[k]):
         l_ppp[k, in_gate_poisson[k]] = state_estimator.likelihood(
             measurement=valid_meas, predicted_state=state)
 
+    wnew = np.zeros(m)
+    new_berns = MultiBernoulli()
     for j in range(m):
       bern, wnew[j] = self.poisson.update(
           measurement=measurements[j],
@@ -260,6 +265,8 @@ class MOMBP:
         r = pnew[j]*new_berns[j].r
       else:
         valid = in_gate_mb[:, j]
+        if not np.any(valid):
+          continue
         rupd = mb_hypos[j+1].r
         xupd = mb_hypos[j+1].state.mean
         Pupd = mb_hypos[j+1].state.covar
