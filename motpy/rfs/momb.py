@@ -146,10 +146,11 @@ class MOMBP:
     in_gate_mb = np.zeros((n, m), dtype=bool)
 
     # Create missed detection hypothesis
-    wupd[:, 0] = 1 - self.mb.r + self.mb.r * (1 - pd(self.mb.state))
-    r_post = self.mb.r * (1 - pd(self.mb.state)) / wupd[:, 0]
-    state_post = self.mb.state
-    mb_hypos[0].append(r=r_post, state=state_post)
+    if len(self.mb) > 0:
+        wupd[:, 0] = 1 - self.mb.r + self.mb.r * (1 - pd(self.mb.state))
+        r_post = self.mb.r * (1 - pd(self.mb.state)) / wupd[:, 0]
+        state_post = self.mb.state
+        mb_hypos[0].append(r=r_post, state=state_post)
 
     # Gate MB components and compute likelihoods for state-measurement pairs
     for i, bern in enumerate(self.mb):
@@ -280,7 +281,8 @@ class MOMBP:
       momb_mb.append(r=r, state=GaussianState(mean=x, covar=P))
 
     # Truncate tracks with low probability of existence (not shown in algorithm)
-    momb_mb = momb_mb[momb_mb.r > self.r_min]
+    if len(momb_mb) > 0 and self.r_min is not None:
+        momb_mb = momb_mb[momb_mb.r > self.r_min]
 
     return momb_mb
 

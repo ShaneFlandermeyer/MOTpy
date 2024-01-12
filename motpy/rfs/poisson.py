@@ -141,7 +141,7 @@ class Poisson:
     # Sum birth and consistent components, mix their distributions
     wmix = np.concatenate(
         (persistent_weights[:, None], birth_weights[:, None]), axis=1)
-    wmix = wmix / np.sum(wmix + 1e-15, axis=1)
+    wmix = wmix / np.sum(wmix + 1e-15, axis=1, keepdims=True)
     Pmix = np.concatenate(
         (persistent_states.covar[None, ...], birth_states.covar[None, ...]), axis=0)
     merged.states = GaussianState(

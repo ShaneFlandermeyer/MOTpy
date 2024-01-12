@@ -131,5 +131,5 @@ def test_scenario_merge():
   assert np.allclose(momb.mb[51].r, 0.9980263987614411, atol=1e-6)
 
 if __name__ == '__main__':
-  test_scenario_merge()
-  # pytest.main([__file__])
+  # test_scenario_merge()
+  pytest.main([__file__])
