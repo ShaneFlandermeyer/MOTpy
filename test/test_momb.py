@@ -114,8 +114,8 @@ def test_scenario_merge():
                r_min=1e-4,
                r_estimate_threshold=0.5,
                )
-  momb.poisson.states.append(momb.poisson.birth_states[0])
-  momb.poisson.weights = np.append(momb.poisson.weights, 10)
+  momb.poisson.states.append(momb.poisson.birth_states)
+  momb.poisson.weights = np.append(momb.poisson.weights, 5)
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 
@@ -131,4 +131,5 @@ def test_scenario_merge():
   assert np.allclose(momb.mb[51].r, 0.9980263987614411, atol=1e-6)
 
 if __name__ == '__main__':
-  pytest.main([__file__])
+  test_scenario_merge()
+  # pytest.main([__file__])

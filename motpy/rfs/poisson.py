@@ -143,10 +143,10 @@ class Poisson:
         (persistent_weights[:, None], birth_weights[:, None]), axis=1)
     wmix = wmix / np.sum(wmix + 1e-15, axis=1)
     Pmix = np.concatenate(
-        (persistent_states.covar, birth_states.covar), axis=0)
+        (persistent_states.covar[None, ...], birth_states.covar[None, ...]), axis=0)
     merged.states = GaussianState(
         mean=persistent_states.mean,
-        covar=np.tensordot(wmix, Pmix, axes=1))
+        covar=np.einsum('...i, i...jk -> ...jk', wmix, Pmix))
     merged.weights = birth_weights + persistent_weights
     return merged
 
