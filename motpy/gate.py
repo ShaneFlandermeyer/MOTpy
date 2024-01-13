@@ -11,28 +11,24 @@ class EllipsoidalGate:
     self.ndim = ndim
 
   def __call__(self,
-               measurements: List[np.ndarray],
+               measurements: np.ndarray,
                predicted_measurement: np.ndarray,
                innovation_covar: np.ndarray
-               ) -> Tuple[List[np.ndarray], np.ndarray]:
-    if self.pg == 1:
-      return measurements, np.arange(len(measurements))
-
-    z = np.array(measurements).reshape((-1, self.ndim, 1))
-    z_pred = predicted_measurement.reshape((-1, 1))
+               ) -> Tuple[np.ndarray, np.ndarray]:
+    z = measurements
+    z_pred = predicted_measurement
     S = innovation_covar
     y = z - z_pred
     Si = np.linalg.inv(S)
 
     # Compute the distance for all measurements
-    dist = np.einsum('nji, ii, nij -> n', y.swapaxes(-1, -2), Si, y)
+    dist = np.einsum('...i, ...ii, i...', y, Si, y.swapaxes(-1, -2))
 
     # Return measurements in the gate and their indices
     t = self.threshold(pg=self.pg, ndim=self.ndim)
     in_gate = dist < t
-    valid_inds = np.where(in_gate)[0]
-    valid_meas = [z[i].reshape(measurements[0].shape) for i in valid_inds]
-    return valid_meas, valid_inds
+    valid_meas = z[in_gate]
+    return valid_meas, in_gate
 
   @staticmethod
   @functools.lru_cache

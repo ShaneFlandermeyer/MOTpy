@@ -1,3 +1,4 @@
+from __future__ import annotations
 import datetime
 from typing import List, Tuple, Union, Dict
 
@@ -9,24 +10,31 @@ class GaussianState():
       self,
       mean: np.ndarray,
       covar: np.ndarray,
-      timestamp: Union[float, datetime.datetime] = {},
-      metadata: Dict = None,
-      **kwargs
   ):
-    self.mean = mean
-    self.covar = covar
-    self.timestamp = timestamp
-    self.metadata = metadata if metadata is not None else {}
+    self.state_dim = mean.shape[-1]
+    self.mean = np.atleast_2d(mean)
+    self.covar = covar.reshape(-1, self.state_dim, self.state_dim)
+
+    
 
   def __repr__(self):
     return f"""GaussianState(
       mean={self.mean}
       covar=\n{self.covar})
-      meta={self.metadata})"""
+      """
 
+  def __len__(self):
+    return len(self.mean)
 
-def mix_gaussians(means: List[np.ndarray],
-                  covars: List[np.ndarray],
+  def __getitem__(self, idx):
+    return GaussianState(mean=self.mean[idx], covar=self.covar[idx])
+
+  def append(self, state: GaussianState) -> None:
+    self.mean = np.concatenate((self.mean, state.mean), axis=0)
+    self.covar = np.concatenate((self.covar, state.covar), axis=0)
+
+def mix_gaussians(means: np.ndarray,
+                  covars: np.ndarray,
                   weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
   """
   Compute a Gaussian mixture as a weighted sum of N Gaussian distributions, each with dimension D.
@@ -46,16 +54,13 @@ def mix_gaussians(means: List[np.ndarray],
     Mixture PDF mean and covariance
 
   """
-  assert len(means) == len(covars) == len(weights)
-
-  N = len(weights)
-  x = np.array(means)
-  P = np.array(covars)
+  x = means
+  P = covars
   w = weights / (np.sum(weights) + 1e-15)
 
   mix_mean = np.dot(w, x)
-  mix_covar = np.zeros((x.shape[1], x.shape[1]))
-  mix_covar = np.einsum('i,ijk->jk', w, P) + np.einsum('i,ij,ik->jk', w, x, x)
+  mix_covar = np.einsum('i, ijk->jk', w, P)
+  mix_covar += np.einsum('i,ij,ik->jk', w, x, x)
   mix_covar -= np.outer(mix_mean, mix_mean)
   return mix_mean, mix_covar
 
@@ -66,13 +71,11 @@ def likelihood(z: np.ndarray,
                H: np.ndarray,
                R: np.ndarray,
                ) -> float:
-  z = np.atleast_2d(z)
-  z_pred = z_pred.flatten()
   S = H @ P_pred @ H.T + R
   Si = np.linalg.inv(S)
 
-  k = z_pred.size
+  k = z_pred.shape[-1]
   den = np.sqrt((2 * np.pi) ** k * np.linalg.det(S))
   x = z - z_pred
-  l = np.squeeze(np.exp(-0.5 * x[..., None, :] @ Si @ x[..., None])) / den
+  l = np.exp(-0.5 * np.einsum('...i, ...ij, j...', x, Si, x.T)) / den
   return l
