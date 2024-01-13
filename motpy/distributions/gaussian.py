@@ -11,11 +11,8 @@ class GaussianState():
       mean: np.ndarray,
       covar: np.ndarray,
   ):
-    self.state_dim = mean.shape[-1]
-    self.mean = np.atleast_2d(mean)
-    self.covar = covar.reshape(-1, self.state_dim, self.state_dim)
-
-    
+    self.mean = mean
+    self.covar = covar
 
   def __repr__(self):
     return f"""GaussianState(
@@ -23,15 +20,36 @@ class GaussianState():
       covar=\n{self.covar})
       """
 
+class GaussianMixture():
+  def __init__(
+      self,
+      means: np.ndarray,
+      covars: np.ndarray,
+      weights: np.ndarray,
+  ):
+    self.state_dim = means.shape[-1]
+    self.means = means.reshape(-1, self.state_dim)
+    self.covars = covars.reshape(-1, self.state_dim, self.state_dim)
+    self.weights = np.atleast_1d(weights)
+
+  def __repr__(self):
+    return f"""GaussianMixture(
+      n_components={len(self)},
+      means={self.means}
+      covars=\n{self.covars})
+      weights={self.weights}
+      """
+
   def __len__(self):
-    return len(self.mean)
+    return len(self.means)
 
   def __getitem__(self, idx):
-    return GaussianState(mean=self.mean[idx], covar=self.covar[idx])
+    return GaussianMixture(means=self.means[idx], covars=self.covars[idx], weights=self.weights[idx])
 
-  def append(self, state: GaussianState) -> None:
-    self.mean = np.concatenate((self.mean, state.mean), axis=0)
-    self.covar = np.concatenate((self.covar, state.covar), axis=0)
+  def append(self, state: GaussianMixture) -> None:
+    self.means = np.concatenate((self.means, state.means), axis=0)
+    self.covars = np.concatenate((self.covars, state.covars), axis=0)
+    self.weights = np.concatenate((self.weights, state.weights), axis=0)
 
 def mix_gaussians(means: np.ndarray,
                   covars: np.ndarray,
