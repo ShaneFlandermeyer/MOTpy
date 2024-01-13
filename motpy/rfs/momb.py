@@ -164,17 +164,20 @@ class MOMBP:
 
         # Create hypotheses for each state-measurement pair
       for j in range(m):
+        valid = in_gate_mb[:, j]
         if np.any(in_gate_mb[:, j]):
-          valid = in_gate_mb[:, j]
-
-          wupd[valid, j + 1] = self.mb[valid].r * \
-              pd(self.mb[valid].state) * l_mb[valid, j]
-
+          
+          
           r_post = np.ones(np.count_nonzero(valid))
           state_post = state_estimator.update(
               measurement=measurements[j],
               predicted_state=self.mb[valid].state)
           mb_hypos[j+1].append(r=r_post, state=state_post)
+
+          wupd[valid, j + 1] = self.mb[valid].r * \
+              pd(state_post) * l_mb[valid, j]
+
+          
 
     # Create a new track for each measurement by updating PPP with measurement
 

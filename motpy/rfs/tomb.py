@@ -169,15 +169,16 @@ class TOMBP:
         valid = in_gate_mb[:, j]
         valid_inds = np.nonzero(valid)[0]
         if np.any(valid):
-          wupd[valid, j + 1] = self.mb[valid].r * \
-              pd(self.mb[valid].state) * l_mb[valid, j]
-
+            
           r_post = np.ones(np.count_nonzero(valid))
           state_post = state_estimator.update(
               measurement=measurements[j],
               predicted_state=self.mb[valid].state)
           for i in range(np.count_nonzero(valid)):
             mb_hypos[valid_inds[i]].append(r=r_post[i], state=state_post[i])
+            
+          wupd[valid, j + 1] = self.mb[valid].r * \
+              pd(state_post) * l_mb[valid, j]
 
     # Create a new track for each measurement by updating PPP with measurement
 

@@ -41,13 +41,13 @@ class SearchAndTrackEnv(gym.Env):
     self.dt = 1
     self.birth_rate = 1e-2
     self.ps = 0.999
-    self.beamwidth = 2*np.pi/20
+    self.beamwidth = 2*np.pi/10
     self.n_expected_init = 10
     self.lambda_c = 10
 
     # MOMB params
     # Arange birth distribution
-    ngrid = 10
+    ngrid = 30
     birth_grid = np.meshgrid(np.linspace(-100, 100, ngrid),
                              np.linspace(-100, 100, ngrid))
     xgrid, ygrid = birth_grid[0].flatten(), birth_grid[1].flatten()
@@ -121,18 +121,18 @@ class SearchAndTrackEnv(gym.Env):
     angle = action[0] * (2*np.pi)
 
     def pd(state):
-      return 0.9
+      # return 0.9
       x = state.mean if isinstance(
           state, GaussianState) else np.atleast_2d(state)
-      obj_angle = np.arctan2(x[0, 2], x[0, 0])
+      obj_angle = np.arctan2(x[:, 2], x[:, 0])
       # Check if object is within beamwidth
       angle_diff = wrap_to_interval(angle-obj_angle, -np.pi, np.pi)
-      if abs(angle_diff) < self.beamwidth/2:
-        return 0.8
-      else:
-        return 0.0
       
-    
+      out = np.zeros(len(x))
+      out[np.abs(angle_diff) < self.beamwidth/2] = 1.0
+      out[np.logical_and(np.abs(angle_diff) > self.beamwidth/2,
+          np.abs(angle_diff) < self.beamwidth)] = 0.5
+      return out
 
     # Collect measurements from existing objects
     alive = np.ones(len(self.ground_truth), dtype=bool)
@@ -152,7 +152,7 @@ class SearchAndTrackEnv(gym.Env):
             path[-1], noise=True))
     self.ground_truth = [path for i, path in enumerate(
         self.ground_truth) if alive[i]]
-    
+
     # Clutter measurements
     # TODO: Forcing Nc > 0
     Nc = self.np_random.poisson(self.lambda_c)
@@ -234,8 +234,8 @@ if __name__ == '__main__':
   # plt.figure()
   action = np.array([0.0])
   for i in range(int(1e5)):
-    # action = (action + 0.1) % 1
-    action = env.action_space.sample()
+    action = (action + 0.1) % 1
+    # action = env.action_space.sample()
     # action = np.array([0.25])
     # Steer to a random target
     # if i % 1 == 0:
@@ -252,7 +252,7 @@ if __name__ == '__main__':
     plt.clf()
     intensity = env.momb.poisson.intensity(
         grid=grid, H=env.state_estimator.measurement_model.matrix())
-    
+
     plt.imshow(intensity, extent=(xmin, xmax, ymin, ymax),
                origin='lower', aspect='auto')
     # Plot trajectories in env.ground_truth
@@ -262,7 +262,7 @@ if __name__ == '__main__':
     # Plot high-confidence tracks
     if np.count_nonzero(env.momb.mb.r > env.r_estimate_threshold):
       for bern in env.momb.mb[env.momb.mb.r > env.r_estimate_threshold]:
-          plt.plot(bern.state.mean[:, 0], bern.state.mean[:, 2], 'k^')
+        plt.plot(bern.state.mean[:, 0], bern.state.mean[:, 2], 'k^')
 
     plt.xlim(xmin, xmax)
     plt.ylim(ymin, ymax)
