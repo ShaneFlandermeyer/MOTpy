@@ -55,7 +55,6 @@ class MOMBP:
     r_estimate_threshold : float, optional
         The threshold for the probability of existence above which an object is estimated to exist, by default None.
     """
-    self.ndim_state = birth_distribution.state_dim
     self.poisson = Poisson(birth_distribution=birth_distribution)
     self.mb = MultiBernoulli()
 

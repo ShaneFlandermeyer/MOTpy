@@ -121,7 +121,7 @@ def test_scenario_merge():
   init_dist = GaussianMixture(
       means=birth_dist.means,
       covars=birth_dist.covars,
-      weights=10.0)
+      weights=[10.0])
   momb = MOMBP(birth_distribution=birth_dist,
                pg=1,
                w_min=None,

@@ -118,7 +118,7 @@ def test_scenario_merge():
   init_dist = GaussianMixture(
       means=birth_dist.means,
       covars=birth_dist.covars,
-      weights=[10.0])
+      weights=[5.0])
   tomb = TOMBP(birth_distribution=birth_dist,
                pg=1,
                w_min=None,
@@ -149,12 +149,12 @@ def test_scenario_merge():
     # plt.draw()
     # plt.pause(0.01)
 
-  assert len(tomb.mb) == 54
+  assert len(tomb.mb) == 53
   assert len(tomb.poisson) == 1
   assert np.allclose(tomb.mb[0].r, 0.9999935076418562, atol=1e-6)
   assert np.allclose(tomb.mb[3].r, 0.9999901057591115, atol=1e-6)
 
 
 if __name__ == '__main__':
-  test_scenario_merge()
-  # pytest.main([__file__])
+  # test_scenario_merge()
+  pytest.main([__file__])

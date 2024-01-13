@@ -55,7 +55,6 @@ class TOMBP:
     r_estimate_threshold : float, optional
         The threshold for the probability of existence above which an object is estimated to exist, by default None.
     """
-    self.ndim_state = birth_distribution.state_dim
     self.poisson = Poisson(birth_distribution=birth_distribution)
     self.mb = MultiBernoulli()
 
@@ -206,7 +205,7 @@ class TOMBP:
         new_berns.append(r=bern.r, state=bern.state)
 
     # Update (i.e., thin) intensity of unknown targets
-    poisson_upd = copy.copy(self.poisson)
+    poisson_upd = copy.deepcopy(self.poisson)
     poisson_upd.distribution.weights *= 1 - pd_ppp
 
     if wupd.size == 0:
