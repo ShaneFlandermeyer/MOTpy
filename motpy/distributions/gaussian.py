@@ -89,7 +89,7 @@ def likelihood(z: np.ndarray,
                H: np.ndarray,
                R: np.ndarray,
                ) -> float:
-  S = H @ P_pred @ H.T + R
+  S = H @ P_pred @ H.swapaxes(-1, -2) + R
   Si = np.linalg.inv(S)
 
   k = z_pred.shape[-1]
