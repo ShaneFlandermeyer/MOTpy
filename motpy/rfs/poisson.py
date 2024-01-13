@@ -32,14 +32,14 @@ class Poisson:
       )
 
   def __repr__(self):
-    return f"Poisson(weights={self.weights.tolist()}, \nstates={self.states})"
+    return f"""Poisson(birth_distribution={self.birth_distribution},
+  distribution={self.distribution})"""
 
   def __len__(self):
-    assert len(self.weights) == len(self.states)
-    return len(self.weights)
+    return len(self.distribution)
 
-  def __iter__(self):
-    return zip(self.weights, self.states)
+  def __getitem__(self, idx):
+    return self.distribution[idx]
 
   def append(self,
              weight: Union[float, np.ndarray],
@@ -113,7 +113,7 @@ class Poisson:
   def prune(self, threshold: float) -> Poisson:
     pruned = copy.deepcopy(self)
     # Prune components with existence probability below threshold
-    keep = self.weights > threshold
+    keep = self.distribution.weights > threshold
     pruned.distribution = self.distribution[keep]
 
     return pruned
@@ -124,30 +124,26 @@ class Poisson:
 
     TODO: Currently assumes there is no thresholding
     """
-    raise NotImplementedError(
-        "Merging currently not supported with GaussianMixture API")
-    nbirth = len(self.birth_states)
-    assert len(self.states) == 2 * \
-        nbirth, "Merging currently only supported when PPP states come directly from birth states"
+    assert len(self) == 2 * len(self.birth_distribution)
 
-    birth_states = self.states[-nbirth:]
-    birth_weights = self.weights[-nbirth:]
-    persistent_states = self.states[:-nbirth]
-    persistent_weights = self.weights[:-nbirth]
+    nbirth = len(self.birth_distribution)
+    dist = self.distribution[:nbirth]
+    birth_dist = self.birth_distribution
 
-    merged = Poisson(birth_weights=birth_weights, birth_states=birth_states)
-    # Sum birth and consistent components, mix their distributions
     wmix = np.concatenate(
-        (persistent_weights[:, None], birth_weights[:, None]), axis=1)
-    wmix = wmix / np.sum(wmix + 1e-15, axis=1, keepdims=True)
+        (dist.weights[None, ...], birth_dist.weights[None, ...]), axis=0)
+    wmix /= np.sum(wmix + 1e-15, axis=0)
     Pmix = np.concatenate(
-        (persistent_states.covar[None, ...], birth_states.covar[None, ...]), axis=0)
-    merged.states = GaussianState(
-        mean=persistent_states.mean,
-        covar=np.einsum('...i, i...jk -> ...jk', wmix, Pmix))
-    merged.weights = birth_weights + persistent_weights
+        (dist.covars[None, ...], birth_dist.covars[None, ...]), axis=0)
+    merged_distribution = GaussianMixture(
+        means=dist.means,
+        covars=np.einsum('i..., i...jk -> ...jk', wmix, Pmix),
+        weights=dist.weights + birth_dist.weights,
+    )
+    merged = Poisson(birth_distribution=self.birth_distribution,
+                     init_distribution=merged_distribution)
     return merged
-
+  
   def intensity(self, grid: np.ndarray, H: np.ndarray) -> np.ndarray:
     """
     Compute the intensity of the Poisson process at a grid of points.

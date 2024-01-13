@@ -3,7 +3,7 @@ from typing import Callable, List, Tuple
 
 import numpy as np
 
-from motpy.distributions.gaussian import GaussianState, mix_gaussians
+from motpy.distributions.gaussian import GaussianMixture, GaussianState, mix_gaussians
 from motpy.kalman import KalmanFilter
 from motpy.rfs.bernoulli import Bernoulli, MultiBernoulli
 from motpy.rfs.poisson import Poisson
@@ -30,8 +30,7 @@ class MOMBP:
   """
 
   def __init__(self,
-               birth_weights: np.ndarray,
-               birth_states: GaussianState,
+               birth_distribution: GaussianMixture,
                pg: float = None,
                w_min: float = None,
                r_min: float = None,
@@ -56,9 +55,8 @@ class MOMBP:
     r_estimate_threshold : float, optional
         The threshold for the probability of existence above which an object is estimated to exist, by default None.
     """
-    self.ndim_state = birth_states.state_dim
-    self.poisson = Poisson(birth_weights=birth_weights,
-                           birth_states=birth_states)
+    self.ndim_state = birth_distribution.state_dim
+    self.poisson = Poisson(birth_distribution=birth_distribution)
     self.mb = MultiBernoulli()
 
     self.pg = pg
@@ -149,6 +147,7 @@ class MOMBP:
       wupd[:, 0] = 1 - self.mb.r + self.mb.r * (1 - pd(self.mb.state))
       r_post = self.mb.r * (1 - pd(self.mb.state)) / wupd[:, 0]
       state_post = self.mb.state
+      state_post.weights = wupd[:, 0]
       mb_hypos[0].append(r=r_post, state=state_post)
 
     # Gate MB components and compute likelihoods for state-measurement pairs
@@ -167,7 +166,6 @@ class MOMBP:
         valid = in_gate_mb[:, j]
         if np.any(in_gate_mb[:, j]):
           
-          
           r_post = np.ones(np.count_nonzero(valid))
           state_post = state_estimator.update(
               measurement=measurements[j],
@@ -185,7 +183,7 @@ class MOMBP:
     in_gate_poisson = np.zeros((nu, m), dtype=bool)
     l_ppp = np.zeros((nu, m))
     pd_ppp = np.zeros(nu)
-    for k, state in enumerate(self.poisson.states):
+    for k, state in enumerate(self.poisson):
       pd_ppp[k] = pd(state)
       if pd_ppp[k] == 0:
         continue
@@ -207,11 +205,11 @@ class MOMBP:
           state_estimator=state_estimator,
           clutter_intensity=lambda_fa)
       if wnew[j] > 0:
-        new_berns.append(r=bern.r, state=bern.state)
+        new_berns.append(r=bern.r, state=bern.state, weight=wnew[j])
 
     # Update (i.e., thin) intensity of unknown targets
     poisson_upd = copy.copy(self.poisson)
-    poisson_upd.weights *= 1 - pd_ppp
+    poisson_upd.distribution.weights *= 1 - pd_ppp
 
     if wupd.size == 0:
       pupd = np.zeros_like(wupd)
@@ -261,29 +259,30 @@ class MOMBP:
 
     # Create tracks for "missed detection" hypotheses
     momb_mb = MultiBernoulli()
-    r_missed = mb_hypos[0].r
-    p_missed = pupd[:, 0]
-    momb_mb.append(r=r_missed*p_missed, state=mb_hypos[0].state)
+    if n > 0:
+      r_missed = mb_hypos[0].r
+      p_missed = pupd[:, 0]
+      momb_mb.append(r=r_missed*p_missed, state=mb_hypos[0].state, weight=None)
 
     for j in range(len(new_berns)):
       if n == 0:
-        x, P = new_berns[j].state.mean, new_berns[j].state.covar
-        r = pnew[j]*new_berns[j].r
+        x, P = new_berns.state.means[j], new_berns.state.covars[j]
+        r = pnew[j]*new_berns.r[j]
       else:
         valid = in_gate_mb[:, j]
         if not np.any(valid):
           continue
         rupd = mb_hypos[j+1].r
-        xupd = mb_hypos[j+1].state.mean
-        Pupd = mb_hypos[j+1].state.covar
-        pr = np.append(pupd[valid, j+1]*rupd, pnew[j]*new_berns[j].r)
+        xupd = mb_hypos[j+1].state.means
+        Pupd = mb_hypos[j+1].state.covars
+        pr = np.append(pupd[valid, j+1]*rupd, pnew[j]*new_berns.r[j])
         r = np.sum(pr)
 
-        xmix = np.append(xupd, new_berns[j].state.mean, axis=0)
-        Pmix = np.append(Pupd, new_berns[j].state.covar, axis=0)
+        xmix = np.append(xupd, new_berns.state[j].means, axis=0)
+        Pmix = np.append(Pupd, new_berns.state[j].covars, axis=0)
         x, P = mix_gaussians(means=xmix, covars=Pmix, weights=pr)
 
-      momb_mb.append(r=r, state=GaussianState(mean=x, covar=P))
+      momb_mb.append(r=r, state=GaussianState(mean=x, covar=P), weight=None)
 
     # Truncate tracks with low probability of existence (not shown in algorithm)
     if len(momb_mb) > 0 and self.r_min is not None:
