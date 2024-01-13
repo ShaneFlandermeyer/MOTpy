@@ -39,9 +39,9 @@ class SearchAndTrackEnv(gym.Env):
                              [-1, 1]])
     self.volume = np.prod(self.extents[[0, 2], 1] - self.extents[[0, 2], 0])
     self.dt = 1
-    self.birth_rate = 1e-3
+    self.birth_rate = 1e-2
     self.ps = 0.999
-    self.beamwidth = 2*np.pi/5
+    self.beamwidth = 2*np.pi/20
     self.n_expected_init = 10
     self.lambda_c = 10
 
@@ -53,13 +53,13 @@ class SearchAndTrackEnv(gym.Env):
     xgrid, ygrid = birth_grid[0].flatten(), birth_grid[1].flatten()
     self.birth_states = GaussianState(
         mean=np.array([[x, 0, y, 0] for x, y in zip(xgrid, ygrid)]),
-        covar=(np.diag([100/ngrid, 1, 100/ngrid, 1])[None, ...]
+        covar=(np.diag([100/ngrid/1, 1, 100/ngrid/1, 1])[None, ...]
                ** 2).repeat(ngrid**2, axis=0)
     )
     self.birth_weights = np.full(
         len(self.birth_states), self.birth_rate/len(self.birth_states))
 
-    self.pg = 0.99
+    self.pg = 0.999
     self.w_min = None
     self.r_min = 1e-4
     self.merge_poisson = True
@@ -102,7 +102,7 @@ class SearchAndTrackEnv(gym.Env):
     self.momb.poisson.weights = np.append(
         self.momb.poisson.weights, self.init_ppp_weights)
     cv = ConstantVelocity(ndim_pos=2,
-                          q=0.01,
+                          q=0.001,
                           position_mapping=[0, 2],
                           velocity_mapping=[1, 3],
                           seed=seed)
@@ -121,7 +121,7 @@ class SearchAndTrackEnv(gym.Env):
     angle = action[0] * (2*np.pi)
 
     def pd(state):
-      # return 0.9
+      return 0.9
       x = state.mean if isinstance(
           state, GaussianState) else np.atleast_2d(state)
       obj_angle = np.arctan2(x[0, 2], x[0, 0])
@@ -146,7 +146,7 @@ class SearchAndTrackEnv(gym.Env):
         path[-1][[1, 3]] *= -1
 
       path.append(self.state_estimator.transition_model(
-          path[-1], dt=self.dt, noise=True))
+          path[-1], dt=self.dt, noise=False))
       if self.np_random.uniform() < pd(path[-1]):
         Zk.append(self.state_estimator.measurement_model(
             path[-1], noise=True))
@@ -234,8 +234,8 @@ if __name__ == '__main__':
   # plt.figure()
   action = np.array([0.0])
   for i in range(int(1e5)):
-    action = (action + 0.1) % 1
-    # action = env.action_space.sample()
+    # action = (action + 0.1) % 1
+    action = env.action_space.sample()
     # action = np.array([0.25])
     # Steer to a random target
     # if i % 1 == 0:
