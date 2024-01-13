@@ -145,9 +145,9 @@ class MOMBP:
     # Create missed detection hypothesis
     if len(self.mb) > 0:
       wupd[:, 0] = 1 - self.mb.r + self.mb.r * (1 - pd(self.mb.state))
+      
       r_post = self.mb.r * (1 - pd(self.mb.state)) / wupd[:, 0]
       state_post = self.mb.state
-      state_post.weights = wupd[:, 0]
       mb_hypos[0].append(r=r_post, state=state_post)
 
     # Gate MB components and compute likelihoods for state-measurement pairs
@@ -165,17 +165,15 @@ class MOMBP:
       for j in range(m):
         valid = in_gate_mb[:, j]
         if np.any(in_gate_mb[:, j]):
-          
+
           r_post = np.ones(np.count_nonzero(valid))
           state_post = state_estimator.update(
               measurement=measurements[j],
               predicted_state=self.mb[valid].state)
           mb_hypos[j+1].append(r=r_post, state=state_post)
-
+          
           wupd[valid, j + 1] = self.mb[valid].r * \
               pd(state_post) * l_mb[valid, j]
-
-          
 
     # Create a new track for each measurement by updating PPP with measurement
 
@@ -282,7 +280,8 @@ class MOMBP:
         Pmix = np.append(Pupd, new_berns.state[j].covars, axis=0)
         x, P = mix_gaussians(means=xmix, covars=Pmix, weights=pr)
 
-      momb_mb.append(r=r, state=GaussianState(mean=x, covar=P), weight=None)
+      momb_mb.append(r=r, state=GaussianMixture(
+          means=x, covars=P, weights=None))
 
     # Truncate tracks with low probability of existence (not shown in algorithm)
     if len(momb_mb) > 0 and self.r_min is not None:

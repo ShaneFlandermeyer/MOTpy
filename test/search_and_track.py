@@ -4,7 +4,7 @@ import gymnasium as gym
 from motpy.rfs.momb import MOMBP
 from motpy.rfs.tomb import TOMBP
 import numpy as np
-from motpy.distributions.gaussian import GaussianState
+from motpy.distributions.gaussian import GaussianMixture, GaussianState
 from motpy.kalman import KalmanFilter
 from motpy.models.measurement import LinearMeasurementModel
 from motpy.models.transition import ConstantVelocity
@@ -43,7 +43,7 @@ class SearchAndTrackEnv(gym.Env):
     self.ps = 0.999
     self.beamwidth = 2*np.pi/10
     self.n_expected_init = 10
-    self.lambda_c = 10
+    self.lambda_c = 0
 
     # MOMB params
     # Arange birth distribution
@@ -51,22 +51,19 @@ class SearchAndTrackEnv(gym.Env):
     birth_grid = np.meshgrid(np.linspace(-100, 100, ngrid),
                              np.linspace(-100, 100, ngrid))
     xgrid, ygrid = birth_grid[0].flatten(), birth_grid[1].flatten()
-    self.birth_states = GaussianState(
-        mean=np.array([[x, 0, y, 0] for x, y in zip(xgrid, ygrid)]),
-        covar=(np.diag([100/ngrid/1, 1, 100/ngrid/1, 1])[None, ...]
-               ** 2).repeat(ngrid**2, axis=0)
+    self.birth_dist = GaussianMixture(
+        means=np.array([[x, 0, y, 0] for x, y in zip(xgrid, ygrid)]),
+        covars=(np.diag([100/ngrid/1, 1, 100/ngrid/1, 1])[None, ...]
+               ** 2).repeat(ngrid**2, axis=0),
+        weights=np.full(ngrid**2, self.birth_rate/ngrid**2),
     )
-    self.birth_weights = np.full(
-        len(self.birth_states), self.birth_rate/len(self.birth_states))
 
     self.pg = 0.999
     self.w_min = None
     self.r_min = 1e-4
     self.merge_poisson = True
     self.r_estimate_threshold = 0.5
-    self.init_ppp_states = copy.deepcopy(self.birth_states)
-    self.init_ppp_weights = np.full(
-        len(self.birth_states), self.n_expected_init/len(self.birth_states))
+    self.init_ppp_dist = copy.deepcopy(self.birth_dist)
 
     # Observations are as follows:
     #   - tracked: object state vector, covariance diagonal elements, existence probability
@@ -91,16 +88,13 @@ class SearchAndTrackEnv(gym.Env):
       x = self.np_random.uniform(self.extents[:, 0], self.extents[:, 1])
       self.ground_truth.append([x])
 
-    self.momb = TOMBP(birth_weights=self.birth_weights,
-                      birth_states=self.birth_states,
+    self.momb = TOMBP(birth_distribution=self.birth_dist,
                       pg=self.pg,
                       w_min=self.w_min,
                       r_min=self.r_min,
                       merge_poisson=self.merge_poisson,
                       r_estimate_threshold=self.r_estimate_threshold)
-    self.momb.poisson.states.append(self.init_ppp_states)
-    self.momb.poisson.weights = np.append(
-        self.momb.poisson.weights, self.init_ppp_weights)
+    self.momb.poisson.distribution = self.init_ppp_dist
     cv = ConstantVelocity(ndim_pos=2,
                           q=0.001,
                           position_mapping=[0, 2],
@@ -122,12 +116,11 @@ class SearchAndTrackEnv(gym.Env):
 
     def pd(state):
       # return 0.9
-      x = state.mean if isinstance(
-          state, GaussianState) else np.atleast_2d(state)
+      x = np.atleast_2d(state) if isinstance(state, np.ndarray) else state.means
       obj_angle = np.arctan2(x[:, 2], x[:, 0])
       # Check if object is within beamwidth
       angle_diff = wrap_to_interval(angle-obj_angle, -np.pi, np.pi)
-      
+
       out = np.zeros(len(x))
       out[np.abs(angle_diff) < self.beamwidth/2] = 1.0
       out[np.logical_and(np.abs(angle_diff) > self.beamwidth/2,
@@ -202,6 +195,7 @@ class SearchAndTrackEnv(gym.Env):
     return obs
 
   def _get_reward(self, momb) -> float:
+    return 0
     c = 50
     p = 2
     eta = c**p / 2
@@ -232,10 +226,10 @@ if __name__ == '__main__':
   grid = np.dstack((xmesh, ymesh))
 
   # plt.figure()
-  action = np.array([0.0])
+  # action = np.array([0.0])
   for i in range(int(1e5)):
-    action = (action + 0.1) % 1
-    # action = env.action_space.sample()
+    # action = (action + 0.05) % 1
+    action = env.action_space.sample()
     # action = np.array([0.25])
     # Steer to a random target
     # if i % 1 == 0:
@@ -249,34 +243,34 @@ if __name__ == '__main__':
 
     print(f"Action: {action*360}")
 
-    plt.clf()
-    intensity = env.momb.poisson.intensity(
-        grid=grid, H=env.state_estimator.measurement_model.matrix())
+    # plt.clf()
+    # # intensity = env.momb.poisson.intensity(
+    # #     grid=grid, H=env.state_estimator.measurement_model.matrix())
 
-    plt.imshow(intensity, extent=(xmin, xmax, ymin, ymax),
-               origin='lower', aspect='auto')
-    # Plot trajectories in env.ground_truth
-    for path in env.ground_truth:
-      p = np.array(path)
-      plt.plot(p[:, 0], p[:, 2], 'r--')
-    # Plot high-confidence tracks
-    if np.count_nonzero(env.momb.mb.r > env.r_estimate_threshold):
-      for bern in env.momb.mb[env.momb.mb.r > env.r_estimate_threshold]:
-        plt.plot(bern.state.mean[:, 0], bern.state.mean[:, 2], 'k^')
+    # # plt.imshow(intensity, extent=(xmin, xmax, ymin, ymax),
+    # #            origin='lower', aspect='auto')
+    # # Plot trajectories in env.ground_truth
+    # for path in env.ground_truth:
+    #   p = np.array(path)
+    #   plt.plot(p[:, 0], p[:, 2], 'r--')
+    # # Plot high-confidence tracks
+    # if np.count_nonzero(env.momb.mb.r > env.r_estimate_threshold):
+    #   for bern in env.momb.mb[env.momb.mb.r > env.r_estimate_threshold]:
+    #     plt.plot(bern.state.means[:, 0], bern.state.means[:, 2], 'k^')
 
-    plt.xlim(xmin, xmax)
-    plt.ylim(ymin, ymax)
+    # plt.xlim(xmin, xmax)
+    # plt.ylim(ymin, ymax)
 
-    # plt.clim([0, 1e-6])
-    plt.colorbar()
-    plt.draw()
-    plt.pause(0.001)
+    # # plt.clim([0, 1e-6])
+    # # plt.colorbar()
+    # plt.draw()
+    # plt.pause(0.001)
     print(f"PPP: {len(env.momb.poisson)}")
     print(
         f"MB: {len([bern for bern in env.momb.mb if bern.r > env.r_estimate_threshold])}")
     print(f"r: {env.momb.mb.r[env.momb.mb.r > env.r_estimate_threshold]}")
     print(f"True: {len(env.ground_truth)}")
-    print(f"Undetected: {np.sum(env.momb.poisson.weights)}")
+    # print(f"Undetected: {np.sum(env.momb.poisson.weights)}")
 
     print(i)
 

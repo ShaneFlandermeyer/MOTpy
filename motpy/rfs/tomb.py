@@ -3,7 +3,7 @@ from typing import Callable, List, Tuple
 
 import numpy as np
 
-from motpy.distributions.gaussian import GaussianState, mix_gaussians
+from motpy.distributions.gaussian import GaussianMixture, GaussianState, mix_gaussians
 from motpy.kalman import KalmanFilter
 from motpy.rfs.bernoulli import Bernoulli, MultiBernoulli
 from motpy.rfs.poisson import Poisson
@@ -30,8 +30,7 @@ class TOMBP:
   """
 
   def __init__(self,
-               birth_weights: np.ndarray,
-               birth_states: GaussianState,
+               birth_distribution: GaussianMixture,
                pg: float = None,
                w_min: float = None,
                r_min: float = None,
@@ -56,9 +55,8 @@ class TOMBP:
     r_estimate_threshold : float, optional
         The threshold for the probability of existence above which an object is estimated to exist, by default None.
     """
-    self.ndim_state = birth_states.state_dim
-    self.poisson = Poisson(birth_weights=birth_weights,
-                           birth_states=birth_states)
+    self.ndim_state = birth_distribution.state_dim
+    self.poisson = Poisson(birth_distribution=birth_distribution)
     self.mb = MultiBernoulli()
 
     self.pg = pg
@@ -141,7 +139,6 @@ class TOMBP:
     l_mb = np.zeros((n, m))
 
     # We create one MB hypothesis for each measurement, plus one missed detection hypothesis
-    # mb_hypos = [MultiBernoulli() for _ in range(m + 1)]
     mb_hypos = [MultiBernoulli() for _ in range(n)]
 
     in_gate_mb = np.zeros((n, m), dtype=bool)
@@ -164,21 +161,19 @@ class TOMBP:
           l_mb[i, in_gate_mb[i]] = state_estimator.likelihood(
               measurement=valid_meas, predicted_state=bern.state)
 
-        # Create hypotheses for each state-measurement pair
+      # Create hypotheses for each state-measurement pair
       for j in range(m):
         valid = in_gate_mb[:, j]
         valid_inds = np.nonzero(valid)[0]
         if np.any(valid):
-            
           r_post = np.ones(np.count_nonzero(valid))
           state_post = state_estimator.update(
               measurement=measurements[j],
               predicted_state=self.mb[valid].state)
-          for i in range(np.count_nonzero(valid)):
-            mb_hypos[valid_inds[i]].append(r=r_post[i], state=state_post[i])
-            
           wupd[valid, j + 1] = self.mb[valid].r * \
               pd(state_post) * l_mb[valid, j]
+          for i in range(np.count_nonzero(valid)):
+            mb_hypos[valid_inds[i]].append(r=r_post[i], state=state_post[i])
 
     # Create a new track for each measurement by updating PPP with measurement
 
@@ -186,7 +181,7 @@ class TOMBP:
     in_gate_poisson = np.zeros((nu, m), dtype=bool)
     l_ppp = np.zeros((nu, m))
     pd_ppp = np.zeros(nu)
-    for k, state in enumerate(self.poisson.states):
+    for k, state in enumerate(self.poisson):
       pd_ppp[k] = pd(state)
       if pd_ppp[k] == 0:
         continue
@@ -212,7 +207,7 @@ class TOMBP:
 
     # Update (i.e., thin) intensity of unknown targets
     poisson_upd = copy.copy(self.poisson)
-    poisson_upd.weights *= 1 - pd_ppp
+    poisson_upd.distribution.weights *= 1 - pd_ppp
 
     if wupd.size == 0:
       pupd = np.zeros_like(wupd)
@@ -266,13 +261,14 @@ class TOMBP:
       if not np.any(valid):
         continue
       rupd = mb_hypos[i].r
-      xupd = mb_hypos[i].state.mean
-      Pupd = mb_hypos[i].state.covar
+      xupd = mb_hypos[i].state.means
+      Pupd = mb_hypos[i].state.covars
       pr = pupd[i, valid] * rupd
       r = np.sum(pr)
       x, P = mix_gaussians(means=xupd, covars=Pupd, weights=pr)
 
-      tomb_mb.append(r=r, state=GaussianState(mean=x, covar=P))
+      tomb_mb.append(r=r, 
+                     state=GaussianMixture(means=x, covars=P, weights=None))
 
     # Form new tracks (already single hypothesis)
     # TODO: new_berns and pnew have different shapes

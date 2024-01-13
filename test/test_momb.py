@@ -66,7 +66,7 @@ def test_scenario_prune():
   paths, Z, cv, linear = make_data(
       dt=dt, lambda_c=lambda_c, pd=pd, n_steps=n_steps)
 
-  # Initialize TOMB filter
+  # Initialize filter
   birth_dist = GaussianMixture(
       means=np.array([[0, 0, 0, 0]]),
       covars=np.array([np.diag([100, 1, 100, 1])**2]),
@@ -75,7 +75,7 @@ def test_scenario_prune():
   init_dist = GaussianMixture(
       means=birth_dist.means,
       covars=birth_dist.covars,
-      weights=10.0)
+      weights=[10.0])
   momb = MOMBP(birth_distribution=birth_dist,
                pg=1,
                w_min=1e-4,

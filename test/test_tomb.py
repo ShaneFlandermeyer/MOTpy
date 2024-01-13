@@ -1,12 +1,10 @@
-import time
 from motpy.rfs.tomb import TOMBP
 import pytest
 import numpy as np
-from motpy.distributions.gaussian import GaussianState
+from motpy.distributions.gaussian import GaussianMixture
 from motpy.kalman import KalmanFilter
 from motpy.models.measurement import LinearMeasurementModel
 from motpy.models.transition import ConstantVelocity
-import matplotlib.pyplot as plt
 
 
 def make_data(dt, lambda_c, pd, n_steps):
@@ -67,19 +65,23 @@ def test_scenario_prune():
       dt=dt, lambda_c=lambda_c, pd=pd, n_steps=n_steps)
 
   # Initialize TOMB filter
-  tomb = TOMBP(birth_weights=np.array([0.05]),
-               birth_states=GaussianState(
-                   mean=np.array([0, 0, 0, 0]),
-                   covar=np.diag([100, 1, 100, 1])**2),
+  birth_dist = GaussianMixture(
+      means=np.array([[0, 0, 0, 0]]),
+      covars=np.array([np.diag([100, 1, 100, 1])**2]),
+      weights=np.array([0.05]),
+  )
+  init_dist = GaussianMixture(
+      means=birth_dist.means,
+      covars=birth_dist.covars,
+      weights=[10.0])
+  tomb = TOMBP(birth_distribution=birth_dist,
                pg=1,
                w_min=1e-4,
                merge_poisson=False,
                r_min=1e-4,
                r_estimate_threshold=0.5,
                )
-  tomb.poisson.states.append(tomb.poisson.birth_states[0])
-  tomb.poisson.weights = np.append(tomb.poisson.weights, 10)
-
+  tomb.poisson.distribution = init_dist
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 
   for k in range(n_steps):
@@ -108,18 +110,23 @@ def test_scenario_merge():
       dt=dt, lambda_c=lambda_c, pd=pd, n_steps=n_steps)
 
   # Initialize TOMB filter
-  tomb = TOMBP(birth_weights=np.array([0.05]),
-               birth_states=GaussianState(
-                   mean=np.array([0, 0, 0, 0]),
-                   covar=np.diag([100, 1, 100, 1])**2),
+  birth_dist = GaussianMixture(
+      means=np.array([[0, 0, 0, 0]]),
+      covars=np.array([np.diag([100, 1, 100, 1])**2]),
+      weights=np.array([0.05]),
+  )
+  init_dist = GaussianMixture(
+      means=birth_dist.means,
+      covars=birth_dist.covars,
+      weights=[10.0])
+  tomb = TOMBP(birth_distribution=birth_dist,
                pg=1,
                w_min=None,
                merge_poisson=True,
                r_min=1e-4,
                r_estimate_threshold=0.5,
                )
-  tomb.poisson.states.append(tomb.poisson.birth_states)
-  tomb.poisson.weights = np.append(tomb.poisson.weights, 5)
+  tomb.poisson.distribution = init_dist
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 
@@ -135,19 +142,19 @@ def test_scenario_merge():
     #   plt.plot([p[0] for p in path], [p[2] for p in path], 'k--', linewidth=1)
 
     # # Plot tracks above threshold as red triangle
-    
+
     # plt.plot(tomb.mb.state.mean[tomb.mb.r > 0.5, 0], tomb.mb.state.mean[tomb.mb.r > 0.5, 2], 'r^', linewidth=1)
     # plt.xlim([-100, 100])
     # plt.ylim([-100, 100])
     # plt.draw()
     # plt.pause(0.01)
 
-  assert len(tomb.mb) == 53
+  assert len(tomb.mb) == 54
   assert len(tomb.poisson) == 1
   assert np.allclose(tomb.mb[0].r, 0.9999935076418562, atol=1e-6)
   assert np.allclose(tomb.mb[3].r, 0.9999901057591115, atol=1e-6)
 
 
 if __name__ == '__main__':
-  # test_scenario_prune()
-  pytest.main([__file__])
+  test_scenario_merge()
+  # pytest.main([__file__])
