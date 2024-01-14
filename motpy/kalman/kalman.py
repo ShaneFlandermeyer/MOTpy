@@ -71,35 +71,40 @@ class KalmanFilter():
 
   def gate(self,
            measurements: np.ndarray,
-           predicted_state: GaussianState,
+           predicted_state: Union[GaussianState, GaussianMixture],
            pg: float = 0.999,
-           ) -> Tuple[np.ndarray, np.ndarray]:
+           ) -> np.ndarray:
     """
-    Gate measurements using the predicted state
+    Gate a set of measurements with respect to one or more Gaussian components using the squared mahalanobis distance.
 
     Parameters
     ----------
     measurements : np.ndarray
-        Measurements
-    predicted_state : GaussianState
-        Predicted state
-    pg : float
-        Gate probability
+        Measurements to gate. Shape: (M, nz)
+    predicted_state : Union[GaussianState, GaussianMixture]
+        Predicted state distribution.
+    pg : float, optional
+        Gate probability, by default 0.999
 
     Returns
     -------
-    Tuple[np.ndarray, np.ndarray]
-        Measurements in the gate and their indices
+    Boolean array indicating whether each measurement is within the gate.
     """
     assert self.measurement_model is not None
 
     if pg == 1.0:
-      return measurements, np.ones((len(measurements),), dtype=bool)
+      if isinstance(predicted_state, GaussianMixture):
+        return np.ones((len(predicted_state), len(measurements)), dtype=bool)
+      elif isinstance(predicted_state, GaussianState):
+        return np.ones((len(measurements)), dtype=bool)
 
     if isinstance(predicted_state, GaussianMixture):
       x, P = predicted_state.means, predicted_state.covars
     elif isinstance(predicted_state, GaussianState):
       x, P = predicted_state.mean, predicted_state.covar
+    else:
+      raise ValueError('Invalid predicted state type')
+
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
     z_pred = x @ H.T
@@ -107,7 +112,7 @@ class KalmanFilter():
     gate = EllipsoidalGate(pg=pg, ndim=measurements[0].size)
     return gate(measurements=measurements,
                 predicted_measurement=z_pred,
-                innovation_covar=S)
+                innovation_covar=S)[0]
 
   def likelihood(
       self,
@@ -134,6 +139,8 @@ class KalmanFilter():
       x, P = predicted_state.means, predicted_state.covars
     elif isinstance(predicted_state, GaussianState):
       x, P = predicted_state.mean, predicted_state.covar
+    else:
+      raise ValueError('Invalid predicted state type')
 
     H = self.measurement_model.matrix()
     return gaussian.likelihood(

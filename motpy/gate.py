@@ -4,6 +4,8 @@ from typing import List, Tuple
 from scipy.stats import norm, chi2
 import math
 
+from motpy.measures import mahalanobis
+
 
 class EllipsoidalGate:
   def __init__(self, pg: float, ndim: int):
@@ -15,20 +17,34 @@ class EllipsoidalGate:
                predicted_measurement: np.ndarray,
                innovation_covar: np.ndarray
                ) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Gate a set of measurements with respect to one or more predicted measurements.
+
+    Parameters
+    ----------
+    measurements : np.ndarray
+        Measurements to gate. Shape: (M, nz)
+    predicted_measurement : np.ndarray
+        Predicted measurements (mahalanobis mean) to be gated. Shape: (N, nz)
+        TODO: Rename this param to predicted_measurementS
+    innovation_covar : np.ndarray
+        Innovation covariance matrix for predicted states. Shape: (N, nz, nz)
+
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray]
+        - in_gate: Boolean array indicating whether each measurement is within the gate.
+        - dist: Squared Mahalanobis distance for each measurement.
+    """
     z = measurements
     z_pred = predicted_measurement
     S = innovation_covar
-    y = z - z_pred
-    Si = np.linalg.inv(S)
 
-    # Compute the distance for all measurements
-    dist = np.einsum('...i, ...ii, i...', y, Si, y.swapaxes(-1, -2))
-
-    # Return measurements in the gate and their indices
+    # Thresholding for all prediction/measurement pairs
+    dist = mahalanobis(mean=z_pred, covar=S, points=z)**2
     t = self.threshold(pg=self.pg, ndim=self.ndim)
     in_gate = dist < t
-    valid_meas = z[in_gate]
-    return valid_meas, in_gate
+    return in_gate, dist
 
   @staticmethod
   @functools.lru_cache
@@ -78,9 +94,9 @@ def gate_probability(threshold: float, ndim: int) -> float:
 
 
 if __name__ == '__main__':
-  measurements = [np.array([1, 1]), np.array([2, 2]), np.array([3, 3])]
-  z_pred = np.array([1, 1])
-  S = np.eye(2)
+  measurements = np.array([[1, 1], [2, 2], [3, 3]])
+  z_pred = np.array([[1, 1], [2, 2]])
+  S = np.array([np.eye(2)]*2)
   pg = 0.99
 
   gate = EllipsoidalGate(pg=pg, ndim=2)
