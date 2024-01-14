@@ -189,7 +189,7 @@ class TOMBP:
       in_gate_poisson = state_estimator.gate(
           measurements=measurements,
           predicted_state=self.poisson.distribution,
-          pg=self.pg) if m > 0 else np.zeros((nu, m), dtype=bool)
+          pg=self.pg)
 
       # Compute likelihoods for PPP components with at least one measurement in the gate and measurements in at least one gate
       l_ppp = np.zeros((nu, m))

@@ -143,10 +143,10 @@ class KalmanFilter():
       raise ValueError('Invalid predicted state type')
 
     H = self.measurement_model.matrix()
+    R = self.measurement_model.covar()
+    S = H @ P @ H.swapaxes(-1, -2) + R
     return gaussian.likelihood(
         z=measurement,
         z_pred=x @ H.T,
-        P_pred=P,
-        H=self.measurement_model.matrix(),
-        R=self.measurement_model.covar(),
+        S=S
     )

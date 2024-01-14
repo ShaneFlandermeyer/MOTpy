@@ -87,14 +87,10 @@ def mix_gaussians(means: np.ndarray,
 
 def likelihood(z: np.ndarray,
                z_pred: np.ndarray,
-               P_pred: np.ndarray,
-               H: np.ndarray,
-               R: np.ndarray,
+               S: np.ndarray
                ) -> np.ndarray:
   """
   Compute the likelihood for a set of measurement/state pairs.
-
-  TODO: Replace P_pred, H, and R with innovation covariance matrix S
 
   Parameters
   ----------
@@ -102,19 +98,14 @@ def likelihood(z: np.ndarray,
       Array of measurements. Shape: (M, nz)
   z_pred : np.ndarray
       Array of predicted measurements. Shape: (N, nz)
-  P_pred : np.ndarray
-      Predicted state covariance. Shape: (N, nx, nx)
-  H : np.ndarray
-      Measurement model matrix. Shape: (nz, nx)
-  R : np.ndarray
-      Measurement noise covariance. Shape: (nz, nz)
+  S : np.ndarray
+      Innovation covariance. Shape: (N, nz, nz)
 
   Returns
   -------
   np.ndarray
       Likelihood for each measurement/state pair. Shape: (M, N)
   """
-  S = H @ P_pred @ H.swapaxes(-1, -2) + R
   Si = np.linalg.inv(S)
 
   z_pred = np.atleast_2d(z_pred)
