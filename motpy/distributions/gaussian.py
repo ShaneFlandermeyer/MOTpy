@@ -20,6 +20,7 @@ class GaussianState():
       covar=\n{self.covar})
       """
 
+
 class GaussianMixture():
   def __init__(
       self,
@@ -50,6 +51,7 @@ class GaussianMixture():
     self.means = np.concatenate((self.means, state.means), axis=0)
     self.covars = np.concatenate((self.covars, state.covars), axis=0)
     self.weights = np.concatenate((self.weights, state.weights), axis=0)
+
 
 def mix_gaussians(means: np.ndarray,
                   covars: np.ndarray,
@@ -88,12 +90,44 @@ def likelihood(z: np.ndarray,
                P_pred: np.ndarray,
                H: np.ndarray,
                R: np.ndarray,
-               ) -> float:
+               ) -> np.ndarray:
+  """
+  Compute the likelihood for a set of measurement/state pairs.
+
+  TODO: Replace P_pred, H, and R with innovation covariance matrix S
+
+  Parameters
+  ----------
+  z : np.ndarray
+      Array of measurements. Shape: (M, nz)
+  z_pred : np.ndarray
+      Array of predicted measurements. Shape: (N, nz)
+  P_pred : np.ndarray
+      Predicted state covariance. Shape: (N, nx, nx)
+  H : np.ndarray
+      Measurement model matrix. Shape: (nz, nx)
+  R : np.ndarray
+      Measurement noise covariance. Shape: (nz, nz)
+
+  Returns
+  -------
+  np.ndarray
+      Likelihood for each measurement/state pair. Shape: (M, N)
+  """
   S = H @ P_pred @ H.swapaxes(-1, -2) + R
   Si = np.linalg.inv(S)
 
-  k = z_pred.shape[-1]
-  den = np.sqrt((2 * np.pi) ** k * np.linalg.det(S))
-  x = z - z_pred
-  l = np.exp(-0.5 * np.einsum('...i, ...ij, j...', x, Si, x.T)) / den
+  z_pred = np.atleast_2d(z_pred)
+  z = np.atleast_2d(z)
+  n, d = z_pred.shape
+  m, _ = z.shape
+  Si = Si.reshape(n, d, d)
+
+  den = np.sqrt((2 * np.pi) ** d * np.linalg.det(S))[:, None]
+  x = z.reshape(1, m, d) - z_pred.reshape(n, 1, d)
+  l = np.exp(
+      -0.5 * np.einsum('nmi, nii, nim -> nm', x, Si, x.swapaxes(-1, -2))) / den
+  if z_pred.ndim == 1:
+    l = l.squeeze(0)
+
   return l

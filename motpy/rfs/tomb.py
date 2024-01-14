@@ -142,67 +142,73 @@ class TOMBP:
 
     in_gate_mb = np.zeros((n, m), dtype=bool)
     # Create missed detection hypothesis
-    if len(self.mb) > 0:
+    if n > 0:
       wupd[:, 0] = 1 - self.mb.r + self.mb.r * (1 - pd(self.mb.state))
       r_post = self.mb.r * (1 - pd(self.mb.state)) / wupd[:, 0]
       state_post = self.mb.state
       for i in range(n):
         mb_hypos[i].append(r=r_post[i], state=state_post[i])
 
-    # Gate MB components and compute likelihoods for state-measurement pairs
-    if m > 0:
-      for i, bern in enumerate(self.mb):
-        if pd(bern.state) == 0:
-          continue
-        valid_meas, in_gate_mb[i] = state_estimator.gate(
-            measurements=measurements, predicted_state=bern.state, pg=self.pg)
-        if np.any(in_gate_mb[i]):
-          l_mb[i, in_gate_mb[i]] = state_estimator.likelihood(
-              measurement=valid_meas, predicted_state=bern.state)
+      # Gate MB components and compute likelihoods for state-measurement pairs
+      if m > 0:
+        in_gate_mb = state_estimator.gate(
+            measurements=measurements, predicted_state=self.mb.state, pg=self.pg)
 
-      # Create hypotheses for each state-measurement pair
-      for j in range(m):
-        valid = in_gate_mb[:, j]
-        valid_inds = np.nonzero(valid)[0]
-        if np.any(valid):
-          r_post = np.ones(np.count_nonzero(valid))
-          state_post = state_estimator.update(
-              measurement=measurements[j],
-              predicted_state=self.mb[valid].state)
-          wupd[valid, j + 1] = self.mb[valid].r * \
-              pd(state_post) * l_mb[valid, j]
-          for i in range(np.count_nonzero(valid)):
-            mb_hypos[valid_inds[i]].append(r=r_post[i], state=state_post[i])
+        l_mb = np.zeros((n, m))
+        used_meas = np.argwhere(np.any(in_gate_mb, axis=0)).flatten()
+        used_mb = np.argwhere(np.any(in_gate_mb, axis=1)).flatten()
+        l_mb[np.ix_(used_mb, used_meas)] = state_estimator.likelihood(
+            measurement=measurements[used_meas], 
+            predicted_state=self.mb.state[used_mb])
+
+        # Create hypotheses for each state-measurement pair
+        for j in range(m):
+          valid = in_gate_mb[:, j]
+          valid_inds = np.nonzero(valid)[0]
+          if np.any(valid):
+            r_post = np.ones(np.count_nonzero(valid))
+            state_post = state_estimator.update(
+                measurement=measurements[j],
+                predicted_state=self.mb[valid].state)
+            wupd[valid, j + 1] = self.mb[valid].r * \
+                pd(state_post) * l_mb[valid, j]
+            for i in range(np.count_nonzero(valid)):
+              mb_hypos[valid_inds[i]].append(r=r_post[i], state=state_post[i])
 
     # Create a new track for each measurement by updating PPP with measurement
-
-    # Gate PPP components and pre-compute likelihoods
-    in_gate_poisson = np.zeros((nu, m), dtype=bool)
-    l_ppp = np.zeros((nu, m))
-    pd_ppp = np.zeros(nu)
-    for k, state in enumerate(self.poisson):
-      pd_ppp[k] = pd(state)
-      if pd_ppp[k] == 0:
-        continue
-      if m > 0:
-        valid_meas, in_gate_poisson[k] = state_estimator.gate(
-            measurements=measurements, predicted_state=state, pg=self.pg)
-        if np.any(in_gate_poisson[k]):
-          l_ppp[k, in_gate_poisson[k]] = state_estimator.likelihood(
-              measurement=valid_meas, predicted_state=state)
-
     wnew = np.zeros(m)
     new_berns = MultiBernoulli()
-    for j in range(m):
-      bern, wnew[j] = self.poisson.update(
-          measurement=measurements[j],
-          pd=pd_ppp,
-          likelihoods=l_ppp[:, j],
-          in_gate=in_gate_poisson[:, j],
-          state_estimator=state_estimator,
-          clutter_intensity=lambda_fa)
-      if wnew[j] > 0:
-        new_berns.append(r=bern.r, state=bern.state)
+    
+    # TODO: Vectorize pd func
+    pd_ppp = pd(self.poisson.distribution)
+    if isinstance(pd_ppp, float):
+      pd_ppp = np.full(nu, pd_ppp)
+      
+    if m > 0:
+      # Gate PPP components
+      in_gate_poisson = state_estimator.gate(
+          measurements=measurements,
+          predicted_state=self.poisson.distribution,
+          pg=self.pg) if m > 0 else np.zeros((nu, m), dtype=bool)
+
+      # Compute likelihoods for PPP components with at least one measurement in the gate and measurements in at least one gate
+      l_ppp = np.zeros((nu, m))
+      used_meas = np.argwhere(np.any(in_gate_poisson, axis=0)).flatten()
+      used_ppp = np.argwhere(np.any(in_gate_poisson, axis=1)).flatten()
+      l_ppp[np.ix_(used_ppp, used_meas)] = state_estimator.likelihood(
+          measurement=measurements[used_meas], 
+          predicted_state=self.poisson.distribution[used_ppp])
+
+      for j in range(m):
+        bern, wnew[j] = self.poisson.update(
+            measurement=measurements[j],
+            pd=pd_ppp,
+            likelihoods=l_ppp[:, j],
+            in_gate=in_gate_poisson[:, j],
+            state_estimator=state_estimator,
+            clutter_intensity=lambda_fa)
+        if wnew[j] > 0:
+          new_berns.append(r=bern.r, state=bern.state)
 
     # Update (i.e., thin) intensity of unknown targets
     poisson_upd = copy.deepcopy(self.poisson)
@@ -266,11 +272,10 @@ class TOMBP:
       r = np.sum(pr)
       x, P = mix_gaussians(means=xupd, covars=Pupd, weights=pr)
 
-      tomb_mb.append(r=r, 
+      tomb_mb.append(r=r,
                      state=GaussianMixture(means=x, covars=P, weights=None))
 
     # Form new tracks (already single hypothesis)
-    # TODO: new_berns and pnew have different shapes
     if len(new_berns) > 0:
       tomb_mb.append(r=pnew*new_berns.r, state=new_berns.state)
 
