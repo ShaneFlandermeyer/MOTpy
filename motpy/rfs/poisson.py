@@ -1,12 +1,12 @@
 from __future__ import annotations
 import copy
 import numpy as np
-from typing import Callable, List, Tuple, Union
+from typing import Callable, List, Optional, Tuple, Union
 
 from motpy.kalman import KalmanFilter
 from motpy.measures import mahalanobis
 from motpy.rfs.bernoulli import Bernoulli
-from motpy.distributions.gaussian import mix_gaussians, GaussianState
+from motpy.distributions.gaussian import GaussianMixture, mix_gaussians, GaussianState
 from scipy.stats import multivariate_normal
 
 
@@ -17,26 +17,29 @@ class Poisson:
 
   def __init__(
       self,
-      birth_weights: np.ndarray = None,
-      birth_states: GaussianState = None,
+      birth_distribution: GaussianMixture,
+      init_distribution: Optional[GaussianMixture] = None,
   ):
-    self.birth_weights = birth_weights
-    self.birth_states = birth_states
+    self.birth_distribution = birth_distribution
 
-    self.weights = np.array([])
-    self.states = GaussianState(
-        mean=np.empty([0, birth_states.state_dim]),
-        covar=np.empty([0, birth_states.state_dim, birth_states.state_dim]))
+    self.distribution = init_distribution
+    if init_distribution is None:
+      state_dim = birth_distribution.state_dim
+      self.distribution = GaussianMixture(
+          means=np.empty([0, state_dim]),
+          covars=np.empty([0, state_dim, state_dim]),
+          weights=np.array([]),
+      )
 
   def __repr__(self):
-    return f"Poisson(weights={self.weights.tolist()}, \nstates={self.states})"
+    return f"""Poisson(birth_distribution={self.birth_distribution},
+  distribution={self.distribution})"""
 
   def __len__(self):
-    assert len(self.weights) == len(self.states)
-    return len(self.weights)
+    return len(self.distribution)
 
-  def __iter__(self):
-    return zip(self.weights, self.states)
+  def __getitem__(self, idx):
+    return self.distribution[idx]
 
   def append(self,
              weight: Union[float, np.ndarray],
@@ -66,12 +69,12 @@ class Poisson:
               ps: float,
               dt: float) -> Poisson:
     # Predict existing PPP density
-    pred_ppp = Poisson(birth_weights=self.birth_weights,
-                       birth_states=self.birth_states)
-    pred_ppp.weights = np.concatenate((self.weights*ps, self.birth_weights))
+    pred_ppp = copy.copy(self)
 
-    pred_ppp.states = state_estimator.predict(state=self.states, dt=dt)
-    pred_ppp.states.append(self.birth_states)
+    pred_ppp.distribution.weights *= ps
+    pred_ppp.distribution = state_estimator.predict(
+        state=pred_ppp.distribution, dt=dt)
+    pred_ppp.distribution.append(pred_ppp.birth_distribution)
 
     return pred_ppp
 
@@ -89,36 +92,29 @@ class Poisson:
       # No measurements in gate
       return None, 0
 
-    gate_states = self.states[in_gate]
-    gate_weights = self.weights[in_gate]
-    likelihoods = likelihoods[in_gate]
-    pds = pd[in_gate]
-
     # If a measurement is associated to a PPP component, we create a new Bernoulli whose existence probability depends on likelihood of measurement
-    state_up = state_estimator.update(measurement=measurement,
-                                      predicted_state=gate_states)
-    weight_up = gate_weights * likelihoods * pds
+    mixture_up = state_estimator.update(
+        measurement=measurement, predicted_state=self.distribution[in_gate])
+    mixture_up.weights *= likelihoods[in_gate] * pd[in_gate]
 
     # Create a new Bernoulli component based on updated weights
-    sum_w_up = np.sum(weight_up)
+    sum_w_up = np.sum(mixture_up.weights)
     sum_w_total = sum_w_up + clutter_intensity
     r = sum_w_up / sum_w_total
 
     # Compute the state using moment matching across all PPP components
     mean, covar = mix_gaussians(
-        means=state_up.mean,
-        covars=state_up.covar,
-        weights=weight_up)
+        means=mixture_up.means,
+        covars=mixture_up.covars,
+        weights=mixture_up.weights)
     bern = Bernoulli(r=r, state=GaussianState(mean=mean, covar=covar))
     return bern, sum_w_total
 
   def prune(self, threshold: float) -> Poisson:
-    pruned = Poisson(birth_weights=self.birth_weights,
-                     birth_states=self.birth_states)
+    pruned = copy.copy(self)
     # Prune components with existence probability below threshold
-    keep = self.weights > threshold
-    pruned.weights = self.weights[keep]
-    pruned.states = self.states[keep]
+    keep = self.distribution.weights > threshold
+    pruned.distribution = self.distribution[keep]
 
     return pruned
 
@@ -128,28 +124,26 @@ class Poisson:
 
     TODO: Currently assumes there is no thresholding
     """
-    nbirth = len(self.birth_states)
-    assert len(self.states) == 2 * \
-        nbirth, "Merging currently only supported when PPP states come directly from birth states"
+    assert len(self) == 2 * len(self.birth_distribution)
 
-    birth_states = self.states[-nbirth:]
-    birth_weights = self.weights[-nbirth:]
-    persistent_states = self.states[:-nbirth]
-    persistent_weights = self.weights[:-nbirth]
+    nbirth = len(self.birth_distribution)
+    dist = self.distribution[:nbirth]
+    birth_dist = self.birth_distribution
 
-    merged = Poisson(birth_weights=birth_weights, birth_states=birth_states)
-    # Sum birth and consistent components, mix their distributions
     wmix = np.concatenate(
-        (persistent_weights[:, None], birth_weights[:, None]), axis=1)
-    wmix = wmix / np.sum(wmix + 1e-15, axis=1, keepdims=True)
+        (dist.weights[None, ...], birth_dist.weights[None, ...]), axis=0)
+    wmix /= np.sum(wmix + 1e-15, axis=0)
     Pmix = np.concatenate(
-        (persistent_states.covar[None, ...], birth_states.covar[None, ...]), axis=0)
-    merged.states = GaussianState(
-        mean=persistent_states.mean,
-        covar=np.einsum('...i, i...jk -> ...jk', wmix, Pmix))
-    merged.weights = birth_weights + persistent_weights
+        (dist.covars[None, ...], birth_dist.covars[None, ...]), axis=0)
+    merged_distribution = GaussianMixture(
+        means=dist.means,
+        covars=np.einsum('i..., i...jk -> ...jk', wmix, Pmix),
+        weights=dist.weights + birth_dist.weights,
+    )
+    merged = Poisson(birth_distribution=self.birth_distribution,
+                     init_distribution=merged_distribution)
     return merged
-
+  
   def intensity(self, grid: np.ndarray, H: np.ndarray) -> np.ndarray:
     """
     Compute the intensity of the Poisson process at a grid of points.
@@ -166,6 +160,8 @@ class Poisson:
     np.ndarray
         Intensity grid
     """
+    raise NotImplementedError(
+        "Intensity currently not supported with GaussianMixture API")
     intensity = np.zeros(grid.shape[:-1])
     for i, state in enumerate(self.states):
       mean = H @ state.mean[0]

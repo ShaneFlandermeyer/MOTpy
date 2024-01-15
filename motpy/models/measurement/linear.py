@@ -13,15 +13,16 @@ class LinearMeasurementModel(MeasurementModel):
                measured_dims: np.ndarray = None,
                seed: int = np.random.randint(0, 2**32-1),
                ):
-    if measured_dims is None:
-      measured_dims = np.arange(self.noise_covar.shape[0])
     
     self.ndim_state = ndim_state  
-    self.noise_covar = np.array(covar)
+    self.noise_covar = np.array(covar, dtype=float)
+    self.np_random = np.random.RandomState(seed)
+    
+    if measured_dims is None:
+      measured_dims = np.arange(self.noise_covar.shape[0])
     self.measured_dims = np.array(measured_dims, dtype=int)
     self.ndim = len(measured_dims)
-    self.np_random = np.random.RandomState(seed)
-
+    
   def __call__(self,
                x: List[np.ndarray],
                noise: bool = False) -> List[np.ndarray]:

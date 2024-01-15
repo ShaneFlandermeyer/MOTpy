@@ -2,14 +2,14 @@ from __future__ import annotations
 import copy
 import numpy as np
 from motpy.kalman import KalmanFilter
-from motpy.distributions.gaussian import GaussianState
-from typing import Tuple, Optional, List
+from motpy.distributions.gaussian import GaussianMixture, GaussianState
+from typing import Tuple, Optional, List, Union
 
 
 class MultiBernoulli():
   def __init__(self,
                r: np.ndarray = None,
-               state: GaussianState = None):
+               state: GaussianMixture = None):
     self.r = r if r is not None else np.empty(0)
     self.state = state
 
@@ -26,19 +26,25 @@ class MultiBernoulli():
 
   def append(self,
              r: np.ndarray,
-             state: GaussianState) -> None:
-    self.r = np.append(self.r, r)
+             state: Union[GaussianState, GaussianMixture],
+             weight: float = None) -> None:
+    if isinstance(state, GaussianState):
+      state = GaussianMixture(
+          means=state.mean, covars=state.covar, weights=weight)
+      
     if self.state is None:
       self.state = state
     else:
       self.state.append(state)
+      
+    self.r = np.append(self.r, r)
 
   def predict(self,
               state_estimator: KalmanFilter,
               dt: float,
               ps: float) -> MultiBernoulli:
     if len(self) == 0:
-      return copy.deepcopy(self)
+      return copy.copy(self)
 
     return MultiBernoulli(
         r=self.r * ps,

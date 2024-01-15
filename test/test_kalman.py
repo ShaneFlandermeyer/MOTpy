@@ -4,6 +4,12 @@ from filterpy.kalman import predict, update
 
 from motpy.distributions.gaussian import GaussianState
 from motpy.kalman import KalmanFilter
+import numpy as np
+
+from motpy.distributions import GaussianMixture, GaussianState
+from motpy.kalman import KalmanFilter
+from motpy.models.transition import ConstantVelocity
+from motpy.models.measurement import LinearMeasurementModel
 
 
 class TestLinearTransitionModel():
@@ -73,6 +79,29 @@ def test_kalman_update():
   x_expected, P_expected = update(x=state.mean, P=state.covar, z=z, R=R, H=H)
   assert np.allclose(state_post.mean, x_expected)
   assert np.allclose(state_post.covar, P_expected)
+  
+def test_gaussian_mixture_input():
+  cv = ConstantVelocity(ndim_pos=1, q=0.01)
+  linear = LinearMeasurementModel(ndim_state=2, covar=np.eye(2))
+  kf = KalmanFilter(transition_model=cv, measurement_model=linear)
+
+  state = GaussianState(mean=np.ones(2), covar=np.eye(2))
+  mixture = GaussianMixture(means=np.ones(2), covars=np.eye(2), weights=1)
+
+  # Test predict
+  dt = 1
+  pred_state = kf.predict(state=state, dt=dt)
+  pred_mixture = kf.predict(state=mixture, dt=dt)
+  assert np.allclose(pred_state.mean, pred_mixture.means)
+  assert np.allclose(pred_state.covar, pred_mixture.covars)
+  assert pred_mixture.weights == mixture.weights
+
+  z = np.ones(2)
+  up_state = kf.update(measurement=z, predicted_state=pred_state)
+  up_mixture = kf.update(measurement=z, predicted_state=pred_mixture)
+  assert np.allclose(up_state.mean, up_mixture.means)
+  assert np.allclose(up_state.covar, up_mixture.covars)
+  assert up_mixture.weights == mixture.weights
 
 
 if __name__ == '__main__':

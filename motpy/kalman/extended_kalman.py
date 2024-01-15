@@ -1,17 +1,18 @@
 import datetime
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 import numpy as np
+from motpy.distributions import gaussian
+from motpy.gate import EllipsoidalGate
 
 from motpy.models.measurement import MeasurementModel
 from motpy.models.transition import TransitionModel
-from motpy.distributions.gaussian import GaussianState
-import motpy.distributions.gaussian as gaussian
+from motpy.distributions.gaussian import GaussianState, GaussianMixture
 
 
 class ExtendedKalmanFilter():
   def __init__(self,
-               transition_model: TransitionModel = None,
-               measurement_model: MeasurementModel = None,
+               transition_model: Optional[TransitionModel] = None,
+               measurement_model: Optional[MeasurementModel] = None,
                state_residual_fn: callable = np.subtract,
                measurement_residual_fn: callable = np.subtract,
                ):
@@ -22,38 +23,102 @@ class ExtendedKalmanFilter():
     self.measurement_residual_fn = measurement_residual_fn
 
   def predict(self,
-              state: GaussianState,
+              state: Union[GaussianState, GaussianMixture],
               dt: float,
-              ) -> GaussianState:
-    mean_pred, covar_pred = self.ekf_predict(
-        x=state.mean,
-        P=state.covar,
-        F=self.transition_model.matrix(x=state.mean, dt=dt),
-        Q=self.transition_model.covar(dt=dt),
-        f=self.transition_model,
-        dt=dt,
-    )
-    return GaussianState(mean=mean_pred, covar=covar_pred)
+              ) -> Union[GaussianState, GaussianMixture]:
+    if isinstance(state, GaussianMixture):
+      x, P = state.means, state.covars
+    elif isinstance(state, GaussianState):
+      x, P = state.mean, state.covar
+    else:
+      raise ValueError(f"Unknown state type {type(state)}")
+
+    F = self.transition_model.matrix(x=x, dt=dt)
+    Q = self.transition_model.covar(dt=dt)
+    x_pred = self.transition_model(x, dt=dt, noise=False)
+
+    P_pred = F @ P @ F.swapaxes(-1, -2) + Q
+
+    if isinstance(state, GaussianMixture):
+      return GaussianMixture(means=x_pred, covars=P_pred, weights=state.weights)
+    elif isinstance(state, GaussianState):
+      return GaussianState(mean=x_pred, covar=P_pred)
 
   def update(self,
              measurement: np.ndarray,
              predicted_state: GaussianState) -> Tuple[np.ndarray, np.ndarray]:
-    x_post, P_post, S, K, z_pred = self.ekf_update(
-        x_pred=predicted_state.mean,
-        P_pred=predicted_state.covar,
-        z=measurement,
-        H=self.measurement_model.matrix(x=predicted_state.mean),
-        R=self.measurement_model.covar(),
-        h=self.measurement_model,
-        residual_fn=self.measurement_residual_fn,
-    )
-    return GaussianState(mean=x_post, covar=P_post,
-                         metadata=dict(S=S, K=K, z_pred=z_pred))
+    assert self.measurement_model is not None
+
+    if isinstance(predicted_state, GaussianMixture):
+      x_pred, P_pred = predicted_state.means, predicted_state.covars
+    elif isinstance(predicted_state, GaussianState):
+      x_pred, P_pred = predicted_state.mean, predicted_state.covar
+
+    z = measurement
+    H = self.measurement_model.matrix(x=x_pred)
+    R = self.measurement_model.covar()
+
+    S = H @ P_pred @ H.swapaxes(-1, -2) + R
+    K = P_pred @ H.swapaxes(-1, -2) @ np.linalg.inv(S)
+    P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
+    P_post = (P_post + P_post.swapaxes(-1, -2)) / 2
+
+    z_pred = self.measurement_model(x_pred, noise=False)
+    y = self.measurement_residual_fn(z, z_pred)
+    x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, y)
+
+    if isinstance(predicted_state, GaussianMixture):
+      return GaussianMixture(
+          means=x_post, covars=P_post, weights=predicted_state.weights)
+    elif isinstance(predicted_state, GaussianState):
+      post_state = GaussianState(mean=x_post, covar=P_post)
+
+    return post_state
+
+  def gate(self,
+           measurements: np.ndarray,
+           predicted_state: GaussianState,
+           pg: float = 0.999,
+           ) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Gate measurements using the predicted state
+
+    Parameters
+    ----------
+    measurements : np.ndarray
+        Measurements
+    predicted_state : GaussianState
+        Predicted state
+    pg : float
+        Gate probability
+
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray]
+        Measurements in the gate and their indices
+    """
+    assert self.measurement_model is not None
+
+    if pg == 1.0:
+      return measurements, np.ones((len(measurements),), dtype=bool)
+
+    if isinstance(predicted_state, GaussianMixture):
+      x, P = predicted_state.means, predicted_state.covars
+    elif isinstance(predicted_state, GaussianState):
+      x, P = predicted_state.mean, predicted_state.covar
+    H = self.measurement_model.matrix()
+    R = self.measurement_model.covar()
+    z_pred = x @ H.T
+    S = H @ P @ H.T + R
+    gate = EllipsoidalGate(pg=pg, ndim=measurements[0].size)
+    return gate(measurements=measurements,
+                predicted_measurement=z_pred,
+                innovation_covar=S)
 
   def likelihood(
       self,
       measurement: np.ndarray,
-      predicted_state: GaussianState,
+      predicted_state: Union[GaussianState, GaussianMixture],
   ) -> float:
     """
     Compute the likelihood of a measurement given the predicted state
@@ -71,47 +136,17 @@ class ExtendedKalmanFilter():
         Likelihood
     """
 
-    x, P = predicted_state.mean, predicted_state.covar
+    if isinstance(predicted_state, GaussianMixture):
+      x, P = predicted_state.means, predicted_state.covars
+    elif isinstance(predicted_state, GaussianState):
+      x, P = predicted_state.mean, predicted_state.covar
+
+    H = self.measurement_model.matrix(x=x)
+    R = self.measurement_model.covar()
     return gaussian.likelihood(
         z=measurement,
         z_pred=self.measurement_model(x, noise=False),
         P_pred=P,
-        H=self.measurement_model.matrix(x),
-        R=self.measurement_model.covar(),
+        H=H,
+        R=R,
     )
-
-  @staticmethod
-  def ekf_predict(x: np.ndarray,
-                  P: np.ndarray,
-                  F: np.ndarray,
-                  Q: np.ndarray,
-                  f: callable,
-                  dt: float
-                  ) -> Tuple[np.ndarray, np.ndarray]:
-    # Propagate the state forward in time
-    x_pred = f(x, dt=dt, noise=False)
-    P_pred = F @ P @ F.T + Q
-
-    return x_pred, P_pred
-
-  @staticmethod
-  def ekf_update(x_pred: np.ndarray,
-                 P_pred: np.ndarray,
-                 z: np.ndarray,
-                 H: np.ndarray,
-                 R: np.ndarray,
-                 h: callable,
-                 residual_fn: callable,
-                 ) -> Tuple[np.ndarray, np.ndarray]:
-    z_pred = h(x_pred, noise=False)
-    y = residual_fn(z, z_pred)
-
-    # Compute the Kalman gain
-    S = H @ P_pred @ H.T + R
-    K = P_pred @ H.T @ np.linalg.inv(S)
-
-    # Compute the updated state and covariance
-    x_post = x_pred + K @ y
-    P_post = P_pred - K @ S @ K.T
-
-    return x_post, P_post, S, K, z_pred
