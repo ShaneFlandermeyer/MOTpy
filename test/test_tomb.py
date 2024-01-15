@@ -88,7 +88,7 @@ def test_scenario_prune():
     tomb.mb, tomb.poisson = tomb.predict(state_estimator=kf, dt=dt, ps=0.999)
 
     tomb.mb, tomb.poisson = tomb.update(
-        measurements=Z[k], pd=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
+        measurements=Z[k], pd_func=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
 
   assert len(tomb.mb) == 54
   assert len(tomb.poisson) == 4
@@ -134,7 +134,7 @@ def test_scenario_merge():
     tomb.mb, tomb.poisson = tomb.predict(state_estimator=kf, dt=dt, ps=0.999)
 
     tomb.mb, tomb.poisson = tomb.update(
-        measurements=Z[k], pd=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
+        measurements=Z[k], pd_func=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
 
     # plt.clf()
     # # Plot ground truth as black dotted line

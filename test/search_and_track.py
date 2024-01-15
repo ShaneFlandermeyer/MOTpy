@@ -63,7 +63,7 @@ class SearchAndTrackEnv(gym.Env):
     self.r_min = 1e-4
     self.merge_poisson = True
     self.r_estimate_threshold = 0.5
-    self.init_ppp_dist = copy.deepcopy(self.birth_dist)
+    self.init_ppp_dist = self.birth_dist
 
     # Observations are as follows:
     #   - tracked: object state vector, covariance diagonal elements, existence probability
@@ -116,7 +116,7 @@ class SearchAndTrackEnv(gym.Env):
 
     def pd(state):
       # return 0.9
-      x = np.atleast_2d(state) if isinstance(state, np.ndarray) else state.means
+      x = state.means if isinstance(state, GaussianMixture) else np.atleast_2d(state)
       obj_angle = np.arctan2(x[:, 2], x[:, 0])
       # Check if object is within beamwidth
       angle_diff = wrap_to_interval(angle-obj_angle, -np.pi, np.pi)
@@ -166,7 +166,7 @@ class SearchAndTrackEnv(gym.Env):
     self.momb.mb, self.momb.poisson = self.momb.predict(
         state_estimator=self.state_estimator, dt=self.dt, ps=self.ps)
     self.momb.mb, self.momb.poisson = self.momb.update(
-        measurements=Zk, state_estimator=self.state_estimator, lambda_fa=self.lambda_c/self.volume, pd=pd)
+        measurements=Zk, state_estimator=self.state_estimator, lambda_fa=self.lambda_c/self.volume, pd_func=pd)
 
     obs = self._get_obs(momb=self.momb)
     reward = self._get_reward(momb=self.momb)

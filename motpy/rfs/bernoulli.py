@@ -44,7 +44,7 @@ class MultiBernoulli():
               dt: float,
               ps: float) -> MultiBernoulli:
     if len(self) == 0:
-      return copy.deepcopy(self)
+      return copy.copy(self)
 
     return MultiBernoulli(
         r=self.r * ps,

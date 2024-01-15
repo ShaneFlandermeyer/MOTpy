@@ -69,7 +69,7 @@ class Poisson:
               ps: float,
               dt: float) -> Poisson:
     # Predict existing PPP density
-    pred_ppp = copy.deepcopy(self)
+    pred_ppp = copy.copy(self)
 
     pred_ppp.distribution.weights *= ps
     pred_ppp.distribution = state_estimator.predict(
@@ -111,7 +111,7 @@ class Poisson:
     return bern, sum_w_total
 
   def prune(self, threshold: float) -> Poisson:
-    pruned = copy.deepcopy(self)
+    pruned = copy.copy(self)
     # Prune components with existence probability below threshold
     keep = self.distribution.weights > threshold
     pruned.distribution = self.distribution[keep]
