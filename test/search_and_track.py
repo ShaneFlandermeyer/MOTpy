@@ -33,11 +33,12 @@ class SearchAndTrackEnv(gym.Env):
   def __init__(self):
     # Env params
     self.max_set_size = 512
-    self.state_dim = 2*4+1
     self.extents = np.array([[-1000, 1000],
                              [-1, 1],
                              [-1000, 1000],
                              [-1, 1]], dtype=float)
+    self.state_dim = self.extents.shape[0]
+    self.obs_dim = 2 * self.state_dim + 1
     self.volume = np.prod(self.extents[[0, 2], 1] - self.extents[[0, 2], 0])
     self.dt = 1
     self.birth_rate = 1e-2
@@ -64,7 +65,7 @@ class SearchAndTrackEnv(gym.Env):
         means=np.stack(
             (xgrid, np.zeros(ngrid**2), ygrid, np.zeros(ngrid**2)), axis=1),
         covars=np.broadcast_to(
-            np.diag(birth_sigmas), shape=(ngrid**2, 4, 4)),
+            np.diag(birth_sigmas), shape=(ngrid**2, self.state_dim, self.state_dim)),
         weights=np.full(ngrid**2, self.birth_rate/ngrid**2),
     )
     self.init_ppp_dist = self.birth_dist
@@ -74,9 +75,9 @@ class SearchAndTrackEnv(gym.Env):
     #   - untracked: object state vector, covariance diagonal elements, Gaussian mixture weight
     self.observation_space = gym.spaces.Dict({
         "tracked": gym.spaces.Box(low=-np.inf, high=np.inf, shape=(
-            self.max_set_size, self.state_dim), dtype=np.float32),
+            self.max_set_size, self.obs_dim), dtype=np.float32),
         "untracked": gym.spaces.Box(low=-np.inf, high=np.inf, shape=(
-            self.max_set_size, self.state_dim), dtype=np.float32),
+            self.max_set_size, self.obs_dim), dtype=np.float32),
         "n_tracked": gym.spaces.Box(low=0, high=np.inf, shape=(), dtype=int),
         "n_untracked": gym.spaces.Box(low=0, high=1, shape=(), dtype=int),
     })
@@ -85,10 +86,13 @@ class SearchAndTrackEnv(gym.Env):
   def reset(self,
             seed: Optional[int] = None,
             options: Optional[Dict] = None) -> Tuple[Dict, Dict]:
+    self.np_random = np.random.RandomState(seed)
+
     # Initialize objects in the environment
     self.ground_truth = []
     n_init = self.np_random.poisson(self.n_expected_init)
-    xs = self.np_random.uniform(self.extents[:, 0], self.extents[:, 1], size=(n_init, 4))
+    xs = self.np_random.uniform(
+        self.extents[:, 0], self.extents[:, 1], size=(n_init, self.state_dim))
     self.ground_truth = [[x] for x in xs]
 
     self.tracker = TOMBP(birth_distribution=self.birth_dist,
@@ -105,7 +109,7 @@ class SearchAndTrackEnv(gym.Env):
                           velocity_mapping=[1, 3],
                           seed=seed)
     linear = LinearMeasurementModel(
-        ndim_state=4, covar=np.eye(2), measured_dims=[0, 2], seed=seed)
+        ndim_state=self.state_dim, covar=np.eye(2), measured_dims=[0, 2], seed=seed)
     self.state_estimator = KalmanFilter(transition_model=cv,
                                         measurement_model=linear)
 
@@ -124,7 +128,7 @@ class SearchAndTrackEnv(gym.Env):
       elif isinstance(state, np.ndarray):
         state = np.atleast_2d(state)
         if state.shape[-1] == 2:
-          x = np.zeros((len(state), 4))
+          x = np.zeros((len(state), self.state_dim))
           x[:, [0, 2]] = state
         else:
           x = state
@@ -145,7 +149,7 @@ class SearchAndTrackEnv(gym.Env):
       elif isinstance(state, np.ndarray):
         state = np.atleast_2d(state)
         if state.shape[-1] == 2:
-          x = np.zeros((len(state), 4))
+          x = np.zeros((len(state), self.state_dim))
           x[:, [0, 2]] = state
         else:
           x = state
@@ -175,26 +179,23 @@ class SearchAndTrackEnv(gym.Env):
     self.ground_truth = [path for i, path in enumerate(
         self.ground_truth) if survived[i]]
 
+    # New object birth
+    Nb = self.np_random.poisson(self.birth_rate)
+    xb = self.np_random.uniform(
+        self.extents[:, 0], self.extents[:, 1], size=(Nb, self.state_dim))
+    self.ground_truth.extend([[x] for x in xb])
+
     # Clutter measurements
     Nc = self.np_random.poisson(self.lambda_c)
     zc = self.np_random.uniform(
         self.extents[[0, 2], 0], self.extents[[0, 2], 1], size=(Nc, 2))
     Zk.extend(list(zc))
 
-    # New object birth
-    Nb = self.np_random.poisson(self.birth_rate)
-    xb = self.np_random.uniform(
-        self.extents[:, 0], self.extents[:, 1], size=(Nb, 4))
-    for x in xb:
-      self.ground_truth.append([x])
-
-    Zk = np.array(Zk)
-
     # Update filter state
     self.tracker.mb, self.tracker.poisson = self.tracker.predict(
         state_estimator=self.state_estimator, dt=self.dt, ps_func=ps)
     self.tracker.mb, self.tracker.poisson = self.tracker.update(
-        measurements=Zk, state_estimator=self.state_estimator, lambda_fa=self.lambda_c/self.volume, pd_func=pd)
+        measurements=np.array(Zk), state_estimator=self.state_estimator, lambda_fa=self.lambda_c/self.volume, pd_func=pd)
 
     obs = self._get_obs(tracker=self.tracker)
     reward = self._get_reward(momb=self.tracker)
@@ -247,6 +248,7 @@ if __name__ == '__main__':
   seed = 0
   np.random.seed(seed)
   env.reset(seed=seed)
+  env.action_space.seed(seed)
 
   xmin, xmax = env.extents[0]
   ymin, ymax = env.extents[2]
@@ -258,8 +260,6 @@ if __name__ == '__main__':
   for i in range(int(1e5)):
     action = env.action_space.sample()
     obs, reward, term, trunc, info = env.step(action)
-
-    
 
     plt.clf()
     intensity = env.tracker.poisson.intensity(
@@ -277,11 +277,11 @@ if __name__ == '__main__':
         plt.plot(bern.state.means[:, 0], bern.state.means[:, 2], 'k^')
     plt.xlim(xmin, xmax)
     plt.ylim(ymin, ymax)
-    # # plt.clim([0, 1e-6])
-    # # plt.colorbar()
+    # plt.clim([0, np.max(env.tracker.poisson.birth_distribution.weights)])
+    plt.colorbar()
     plt.draw()
     plt.pause(0.001)
-    
+
     print(f"Action: {action*360}")
     print(f"PPP: {len(env.tracker.poisson)}")
     print(
