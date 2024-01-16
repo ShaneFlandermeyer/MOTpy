@@ -1,5 +1,6 @@
 import copy
 from math import sqrt
+import time
 from typing import Dict, List, Optional, Tuple, Union
 import gymnasium as gym
 from motpy.rfs.momb import MOMBP
@@ -32,7 +33,7 @@ def wrap_to_interval(x: Union[float, np.ndarray],
 class SearchAndTrackEnv(gym.Env):
   def __init__(self):
     # Env params
-    self.max_set_size = 512
+    self.max_set_size = 256
     self.extents = np.array([[-1000, 1000],
                              [-1, 1],
                              [-1000, 1000],
@@ -42,10 +43,9 @@ class SearchAndTrackEnv(gym.Env):
     self.volume = np.prod(self.extents[[0, 2], 1] - self.extents[[0, 2], 0])
     self.dt = 1
     self.birth_rate = 1e-2
-    # self.ps = 0.999
     self.beamwidth = np.radians(10)
     self.n_expected_init = 10
-    self.lambda_c = 1
+    self.lambda_c = 0
     self.pg = 0.999
     self.w_min = None
     self.r_min = 1e-4
@@ -54,7 +54,7 @@ class SearchAndTrackEnv(gym.Env):
 
     # MOMB params
     # Arange birth distribution
-    ngrid = 20
+    ngrid = 16
     self.birth_grid = np.meshgrid(np.linspace(*self.extents[0], ngrid),
                                   np.linspace(*self.extents[2], ngrid))
     xgrid, ygrid = self.birth_grid[0].flatten(), self.birth_grid[1].flatten()
@@ -170,7 +170,7 @@ class SearchAndTrackEnv(gym.Env):
         survived[i] = False
         continue
       path.append(self.state_estimator.transition_model(
-          path[-1], dt=self.dt, noise=False))
+          path[-1], dt=self.dt, noise=True))
 
       if self.np_random.uniform() < pd(path[-1]):
         Zk.append(self.state_estimator.measurement_model(
@@ -205,41 +205,51 @@ class SearchAndTrackEnv(gym.Env):
     return obs, reward, terminated, truncated, info
 
   def _get_obs(self, tracker) -> Dict:
-    return None  # TODO: Fix obs length
     obs = {}
     obs['n_tracked'] = len(tracker.mb)
     obs['n_untracked'] = len(tracker.poisson)
 
-    obs['tracked'] = np.empty(
-        self.observation_space['tracked'].shape, dtype=np.float32)
-    obs['untracked'] = np.empty(
-        self.observation_space['untracked'].shape, dtype=np.float32)
+    pos_inds = [0, 2]
+    vel_inds = [1, 3]
+    if len(tracker.mb) > 0:
+      state_inds = np.arange(len(tracker.mb))
+      
+      state = tracker.mb.state
+      r = tracker.mb.r.reshape(-1, 1)
+      means = state.means
+      pos_covar = state.covars[np.ix_(state_inds, pos_inds, pos_inds)]
+      covar_diags = np.diagonal(pos_covar, axis1=-2, axis2=-1)
+      obs['tracked'] = np.concatenate((means, covar_diags, r), axis=1)
+    else:
+      obs['tracked'] = np.full((self.max_set_size, self.obs_dim), np.nan)
 
-    for i, bern in enumerate(tracker.mb):
-      obs['tracked'][i] = np.append(self._state_to_obs(bern.state), bern.r)
-
-    for i, (w, state) in enumerate(tracker.poisson):
-      obs['untracked'][i] = np.append(self._state_to_obs(state), w)
+    if len(tracker.poisson) > 0:
+      state_inds = np.arange(len(tracker.poisson))
+      
+      # TODO: 
+      state = tracker.poisson.distribution
+      weights = state.weights.reshape(-1, 1)
+      means = state.means
+      pos_covar = state.covars[np.ix_(state_inds, pos_inds, pos_inds)]
+      covar_diags = np.diagonal(pos_covar, axis1=-2, axis2=-1)
+      obs['untracked'] = np.concatenate((means, covar_diags, weights), axis=1)
+    else:
+      obs['untracked'] = np.full((self.max_set_size, self.obs_dim), np.nan)
 
     return obs
 
   def _get_reward(self, momb) -> float:
-    return 0
     c = 50
     p = 2
     eta = c**p / 2
+    print(np.sum(momb.poisson.distribution.weights))
     # Track loss is the sum of the trace of the covariance matrices of the tracked objects
 
-    track_loss = np.sum([np.trace(bern.state.covar)
-                        for bern in momb.mb if bern.r > self.r_estimate_threshold])
+    # track_loss = np.sum([np.trace(bern.state.covar)
+    #                     for bern in momb.mb if bern.r > self.r_estimate_threshold])
 
     # TODO: Bostrom rost reward
     return 0
-
-  def _state_to_obs(self, state: GaussianState) -> np.ndarray:
-    mean = state.mean
-    covar_diag = np.diag(state.covar)
-    return np.concatenate([mean, covar_diag])
 
 
 if __name__ == '__main__':
@@ -256,41 +266,46 @@ if __name__ == '__main__':
   xmesh, ymesh = np.meshgrid(
       np.linspace(xmin, xmax, ngrid), np.linspace(ymin, ymax, ngrid))
   grid = np.dstack((xmesh, ymesh))
-
-  for i in range(int(1e5)):
+  fps = 0
+  for i in range(1, int(1e5)):
     action = env.action_space.sample()
+    # action = np.array([0])
+    start = time.time()
     obs, reward, term, trunc, info = env.step(action)
+    fps = i / (i + 1) * fps + 1 / (i + 1) * (1 / (time.time() - start))
 
-    plt.clf()
-    intensity = env.tracker.poisson.intensity(
-        grid=grid, H=env.state_estimator.measurement_model.matrix())
+    # plt.clf()
+    # intensity = env.tracker.poisson.intensity(
+    #     grid=grid, H=env.state_estimator.measurement_model.matrix())
 
-    plt.imshow(intensity, extent=(xmin, xmax, ymin, ymax),
-               origin='lower', aspect='auto')
-    # Plot trajectories in env.ground_truth
-    for path in env.ground_truth:
-      p = np.array(path)
-      plt.plot(p[:, 0], p[:, 2], 'r--')
-    # Plot high-confidence tracks
-    if np.count_nonzero(env.tracker.mb.r > env.r_estimate_threshold):
-      for bern in env.tracker.mb[env.tracker.mb.r > env.r_estimate_threshold]:
-        plt.plot(bern.state.means[:, 0], bern.state.means[:, 2], 'k^')
-    plt.xlim(xmin, xmax)
-    plt.ylim(ymin, ymax)
-    # plt.clim([0, np.max(env.tracker.poisson.birth_distribution.weights)])
-    plt.colorbar()
-    plt.draw()
-    plt.pause(0.001)
+    # plt.imshow(np.log(intensity), extent=(xmin, xmax, ymin, ymax),
+    #            origin='lower', aspect='auto')
+    # # Plot trajectories in env.ground_truth
+    # for path in env.ground_truth:
+    #   p = np.array(path)
+    #     f"MB: {len(env.tracke
+    #   plt.plot(p[:, 0], p[:, 2], 'r--')
+    # # Plot high-confidence tracks
+    # if np.count_nonzero(env.tracker.mb.r > env.r_estimate_threshold):
+    #   for bern in env.tracker.mb[env.tracker.mb.r > env.r_estimate_threshold]:
+    #     plt.plot(bern.state.means[:, 0], bern.state.means[:, 2], 'k^')
+    # plt.xlim(xmin, xmax)
+    # plt.ylim(ymin, ymax)
+    # # plt.clim([0, np.max(env.tracker.poisson.birth_distribution.weights)])
+    # plt.colorbar()
+    # plt.draw()
+    # plt.pause(0.001)
 
     print(f"Action: {action*360}")
-    print(f"PPP: {len(env.tracker.poisson)}")
-    print(
-        f"MB: {len(env.tracker.mb)}")
+    print(f"MB: {obs['tracked'].shape}")
+    print(f"PPP: {obs['untracked'].shape}")
+    # print(f"PPP: {len(env.tracker.poisson)}")
+    # print(
+    #     f"MB: {len(env.tracker.mb)}")
     print(
         f"r: {env.tracker.mb.r}")
     print(f"True: {len(env.ground_truth)}")
+    print(f"FPS: {fps}")
     # print(f"Undetected: {np.sum(env.momb.poisson.weights)}")
 
     print(i)
-
-    # plt.draw()
