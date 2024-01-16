@@ -1,4 +1,5 @@
 import copy
+from math import sqrt
 from typing import Dict, List, Optional, Tuple, Union
 import gymnasium as gym
 from motpy.rfs.momb import MOMBP
@@ -41,9 +42,9 @@ class SearchAndTrackEnv(gym.Env):
     self.dt = 1
     self.birth_rate = 1e-2
     # self.ps = 0.999
-    self.beamwidth = 2*np.pi/20
+    self.beamwidth = np.radians(10)
     self.n_expected_init = 10
-    self.lambda_c = 0
+    self.lambda_c = 1
     self.pg = 0.999
     self.w_min = None
     self.r_min = 1e-4
@@ -52,10 +53,10 @@ class SearchAndTrackEnv(gym.Env):
 
     # MOMB params
     # Arange birth distribution
-    ngrid = 10
-    birth_grid = np.meshgrid(np.linspace(*self.extents[0], ngrid),
-                             np.linspace(*self.extents[2], ngrid))
-    xgrid, ygrid = birth_grid[0].flatten(), birth_grid[1].flatten()
+    ngrid = 20
+    self.birth_grid = np.meshgrid(np.linspace(*self.extents[0], ngrid),
+                                  np.linspace(*self.extents[2], ngrid))
+    xgrid, ygrid = self.birth_grid[0].flatten(), self.birth_grid[1].flatten()
     # Birth sigmas are uniformly spaced in position, and cover the entire velocity space
     birth_sigmas = np.max(self.extents, axis=1)
     birth_sigmas[[0, 2]] /= ngrid
@@ -87,9 +88,8 @@ class SearchAndTrackEnv(gym.Env):
     # Initialize objects in the environment
     self.ground_truth = []
     n_init = self.np_random.poisson(self.n_expected_init)
-    for i in range(n_init):
-      x = self.np_random.uniform(self.extents[:, 0], self.extents[:, 1])
-      self.ground_truth.append([x])
+    xs = self.np_random.uniform(self.extents[:, 0], self.extents[:, 1], size=(n_init, 4))
+    self.ground_truth = [[x] for x in xs]
 
     self.tracker = TOMBP(birth_distribution=self.birth_dist,
                          pg=self.pg,
@@ -119,7 +119,6 @@ class SearchAndTrackEnv(gym.Env):
     angle = action[0] * (2*np.pi)
 
     def pd(state):
-      # return 0.9
       if isinstance(state, GaussianMixture):
         x = state.means
       elif isinstance(state, np.ndarray):
@@ -135,9 +134,9 @@ class SearchAndTrackEnv(gym.Env):
       angle_diff = wrap_to_interval(angle-obj_angle, -np.pi, np.pi)
 
       out = np.zeros(len(x))
-      out[np.abs(angle_diff) < self.beamwidth/2] = 1.0
-      out[np.logical_and(np.abs(angle_diff) > self.beamwidth/2,
-          np.abs(angle_diff) < self.beamwidth)] = 0.5
+      out[np.abs(angle_diff) < self.beamwidth/2] = 0.8
+      out[(np.abs(angle_diff) > self.beamwidth/2) &
+          (np.abs(angle_diff) < self.beamwidth)] = 0.4
       return out
 
     def ps(state):
@@ -152,8 +151,10 @@ class SearchAndTrackEnv(gym.Env):
           x = state
 
       out = np.zeros(len(x))
-      out[np.logical_and(np.abs(x[:, 0]) < self.extents[0, 1],
-          np.abs(x[:, 2]) < self.extents[2, 1])] = 0.999
+      xmin, ymin = self.extents[[0, 2], 0]
+      xmax, ymax = self.extents[[0, 2], 1]
+      out[np.logical_and(x[:, 0] >= xmin, x[:, 0] <= xmax) &
+          np.logical_and(x[:, 1] >= ymin, x[:, 2] <= ymax)] = 1.0
       return out
 
     # Collect measurements from existing objects
@@ -241,41 +242,31 @@ class SearchAndTrackEnv(gym.Env):
 
 
 if __name__ == '__main__':
-  seed = 0
-  np.random.seed(seed)
 
   env = SearchAndTrackEnv()
-  env.reset()
+  seed = 0
+  np.random.seed(seed)
+  env.reset(seed=seed)
+
   xmin, xmax = env.extents[0]
   ymin, ymax = env.extents[2]
+  ngrid = int(sqrt(len(env.tracker.poisson)))
   xmesh, ymesh = np.meshgrid(
-      np.linspace(xmin, xmax, 25), np.linspace(ymin, ymax, 25))
+      np.linspace(xmin, xmax, ngrid), np.linspace(ymin, ymax, ngrid))
   grid = np.dstack((xmesh, ymesh))
 
-  # plt.figure()
-  # action = np.array([0.0])
   for i in range(int(1e5)):
-    # action = (action + 0.05) % 1
     action = env.action_space.sample()
-    # action = np.array([0.25])
-    # Steer to a random target
-    # if i % 1 == 0:
-    # object_ind = np.random.randint(len(env.ground_truth))
-    # object_path = env.ground_truth[object_ind]
-    # object_pos = object_path[-1][[0, 2]]
-    # angle = np.arctan2(object_pos[1], object_pos[0])
-    # action = np.array([angle/(2*np.pi)])
-
     obs, reward, term, trunc, info = env.step(action)
 
-    print(f"Action: {action*360}")
+    
 
     plt.clf()
-    # intensity = env.momb.poisson.intensity(
-    #     grid=grid, H=env.state_estimator.measurement_model.matrix())
+    intensity = env.tracker.poisson.intensity(
+        grid=grid, H=env.state_estimator.measurement_model.matrix())
 
-    # plt.imshow(intensity, extent=(xmin, xmax, ymin, ymax),
-    #            origin='lower', aspect='auto')
+    plt.imshow(intensity, extent=(xmin, xmax, ymin, ymax),
+               origin='lower', aspect='auto')
     # Plot trajectories in env.ground_truth
     for path in env.ground_truth:
       p = np.array(path)
@@ -284,19 +275,19 @@ if __name__ == '__main__':
     if np.count_nonzero(env.tracker.mb.r > env.r_estimate_threshold):
       for bern in env.tracker.mb[env.tracker.mb.r > env.r_estimate_threshold]:
         plt.plot(bern.state.means[:, 0], bern.state.means[:, 2], 'k^')
-
     plt.xlim(xmin, xmax)
     plt.ylim(ymin, ymax)
-
     # # plt.clim([0, 1e-6])
     # # plt.colorbar()
     plt.draw()
     plt.pause(0.001)
+    
+    print(f"Action: {action*360}")
     print(f"PPP: {len(env.tracker.poisson)}")
     print(
-        f"MB: {len([bern for bern in env.tracker.mb if bern.r > env.r_estimate_threshold])}")
+        f"MB: {len(env.tracker.mb)}")
     print(
-        f"r: {env.tracker.mb.r[env.tracker.mb.r > env.r_estimate_threshold]}")
+        f"r: {env.tracker.mb.r}")
     print(f"True: {len(env.ground_truth)}")
     # print(f"Undetected: {np.sum(env.momb.poisson.weights)}")
 
