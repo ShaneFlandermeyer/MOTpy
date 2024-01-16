@@ -147,10 +147,10 @@ class TOMBP:
             measurements=measurements, predicted_state=self.mb.state, pg=self.pg)
 
         l_mb = np.zeros((n, m))
-        used_meas = np.argwhere(np.any(in_gate_mb, axis=0)).flatten()
+        used_meas_mb = np.argwhere(np.any(in_gate_mb, axis=0)).flatten()
         used_mb = np.argwhere(np.any(in_gate_mb, axis=1)).flatten()
-        l_mb[np.ix_(used_mb, used_meas)] = state_estimator.likelihood(
-            measurement=measurements[used_meas],
+        l_mb[np.ix_(used_mb, used_meas_mb)] = state_estimator.likelihood(
+            measurement=measurements[used_meas_mb],
             predicted_state=self.mb.state[used_mb])
 
         # Create hypotheses for each state-measurement pair
@@ -186,10 +186,10 @@ class TOMBP:
 
       # Compute likelihoods for PPP components with at least one measurement in the gate and measurements in at least one gate
       l_ppp = np.zeros((nu, m))
-      used_meas = np.argwhere(np.any(in_gate_poisson, axis=0)).flatten()
+      used_meas_ppp = np.argwhere(np.any(in_gate_poisson, axis=0)).flatten()
       used_ppp = np.argwhere(np.any(in_gate_poisson, axis=1)).flatten()
-      l_ppp[np.ix_(used_ppp, used_meas)] = state_estimator.likelihood(
-          measurement=measurements[used_meas],
+      l_ppp[np.ix_(used_ppp, used_meas_ppp)] = state_estimator.likelihood(
+          measurement=measurements[used_meas_ppp],
           predicted_state=self.poisson.distribution[used_ppp])
 
       for j in range(m):

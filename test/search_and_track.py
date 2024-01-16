@@ -39,7 +39,7 @@ class SearchAndTrackEnv(gym.Env):
                              [-1000, 1000],
                              [-1, 1]], dtype=float)
     self.state_dim = self.extents.shape[0]
-    self.obs_dim = 2 * self.state_dim + 1
+    self.obs_dim = self.state_dim + self.state_dim // 2 + 1
     self.volume = np.prod(self.extents[[0, 2], 1] - self.extents[[0, 2], 0])
     self.dt = 1
     self.birth_rate = 1e-2
@@ -52,27 +52,24 @@ class SearchAndTrackEnv(gym.Env):
     self.merge_poisson = True
     self.r_estimate_threshold = 0.5
 
-    # MOMB params
-    # Arange birth distribution
+    # Define birth distribution
     ngrid = 16
+    nbirth = ngrid**2
     self.birth_grid = np.meshgrid(np.linspace(*self.extents[0], ngrid),
                                   np.linspace(*self.extents[2], ngrid))
     xgrid, ygrid = self.birth_grid[0].flatten(), self.birth_grid[1].flatten()
-    # Birth sigmas are uniformly spaced in position, and cover the entire velocity space
     birth_sigmas = np.max(self.extents, axis=1)
     birth_sigmas[[0, 2]] /= ngrid
     self.birth_dist = GaussianMixture(
         means=np.stack(
-            (xgrid, np.zeros(ngrid**2), ygrid, np.zeros(ngrid**2)), axis=1),
+            (xgrid, np.zeros(nbirth), ygrid, np.zeros(nbirth)), axis=1),
         covars=np.broadcast_to(
-            np.diag(birth_sigmas), shape=(ngrid**2, self.state_dim, self.state_dim)),
-        weights=np.full(ngrid**2, self.birth_rate/ngrid**2),
+            np.diag(birth_sigmas), shape=(nbirth, self.state_dim, self.state_dim)),
+        weights=np.full(nbirth, self.birth_rate/nbirth),
     )
     self.init_ppp_dist = self.birth_dist
 
-    # Observations are as follows:
-    #   - tracked: object state vector, covariance diagonal elements, existence probability
-    #   - untracked: object state vector, covariance diagonal elements, Gaussian mixture weight
+    # Spaces
     self.observation_space = gym.spaces.Dict({
         "tracked": gym.spaces.Box(low=-np.inf, high=np.inf, shape=(
             self.max_set_size, self.obs_dim), dtype=np.float32),
@@ -205,35 +202,38 @@ class SearchAndTrackEnv(gym.Env):
     return obs, reward, terminated, truncated, info
 
   def _get_obs(self, tracker) -> Dict:
+    n_mb = len(tracker.mb)
+    n_ppp = len(tracker.poisson)
+
     obs = {}
-    obs['n_tracked'] = len(tracker.mb)
-    obs['n_untracked'] = len(tracker.poisson)
+    obs['n_tracked'] = n_mb
+    obs['n_untracked'] = n_ppp
+    obs['tracked'] = np.zeros((self.max_set_size, self.obs_dim))
+    obs['untracked'] = np.zeros((self.max_set_size, self.obs_dim))
 
     pos_inds = [0, 2]
     vel_inds = [1, 3]
-    if len(tracker.mb) > 0:
-      state_inds = np.arange(len(tracker.mb))
-      
+
+    if n_mb > 0:
+      state_inds = np.arange(n_mb)
+
       state = tracker.mb.state
       r = tracker.mb.r.reshape(-1, 1)
       means = state.means
       pos_covar = state.covars[np.ix_(state_inds, pos_inds, pos_inds)]
       covar_diags = np.diagonal(pos_covar, axis1=-2, axis2=-1)
-      obs['tracked'] = np.concatenate((means, covar_diags, r), axis=1)
-    else:
-      obs['tracked'] = np.full((self.max_set_size, self.obs_dim), np.nan)
+      obs['tracked'][:n_mb] = np.concatenate((means, covar_diags, r), axis=1)
 
-    if len(tracker.poisson) > 0:
-      state_inds = np.arange(len(tracker.poisson))
-      
+    if n_ppp > 0:
+      state_inds = np.arange(n_ppp)
+
       state = tracker.poisson.distribution
       weights = state.weights.reshape(-1, 1)
       means = state.means
       pos_covar = state.covars[np.ix_(state_inds, pos_inds, pos_inds)]
       covar_diags = np.diagonal(pos_covar, axis1=-2, axis2=-1)
-      obs['untracked'] = np.concatenate((means, covar_diags, weights), axis=1)
-    else:
-      obs['untracked'] = np.full((self.max_set_size, self.obs_dim), np.nan)
+      obs['untracked'][:n_ppp] = np.concatenate(
+          (means, covar_diags, weights), axis=1)
 
     return obs
 
@@ -241,7 +241,7 @@ class SearchAndTrackEnv(gym.Env):
     c = 50
     p = 2
     eta = c**p / 2
-    
+
     # Track loss is the sum of the trace of the covariance matrices of the tracked objects
     if len(tracker.mb) == 0:
       track_loss = 0
@@ -249,15 +249,15 @@ class SearchAndTrackEnv(gym.Env):
       r = tracker.mb.r
       covars = tracker.mb.state.covars
       track_loss = np.sum(r*np.trace(covars, axis1=-2, axis2=-1))
-      
-    # Search loss is the sum 
+
+    # Search loss is the sum
     search_loss = np.sum(tracker.poisson.distribution.weights)
-    
+
     # Note: For stability reasons, I'm scaling this DOWN by eta
     reward = -(track_loss/eta + search_loss)
     print(f"Track loss: {track_loss/eta}")
     print(f"Search loss: {search_loss}")
-    
+
     return reward
 
 
@@ -277,8 +277,8 @@ if __name__ == '__main__':
   grid = np.dstack((xmesh, ymesh))
   fps = 0
   for i in range(1, int(1e5)):
-    # action = env.action_space.sample()
-    action = np.array([0])
+    action = env.action_space.sample()
+    # action = np.array([0])
     start = time.time()
     obs, reward, term, trunc, info = env.step(action)
     fps = i / (i + 1) * fps + 1 / (i + 1) * (1 / (time.time() - start))
@@ -308,13 +308,9 @@ if __name__ == '__main__':
     print(f"Reward: {reward}")
     print(f"MB: {obs['tracked'].shape}")
     print(f"PPP: {obs['untracked'].shape}")
-    # print(f"PPP: {len(env.tracker.poisson)}")
-    # print(
-    #     f"MB: {len(env.tracker.mb)}")
     print(
         f"r: {env.tracker.mb.r}")
     print(f"True: {len(env.ground_truth)}")
     print(f"FPS: {fps}")
-    # print(f"Undetected: {np.sum(env.momb.poisson.weights)}")
 
     print(i)
