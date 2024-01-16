@@ -33,36 +33,39 @@ class SearchAndTrackEnv(gym.Env):
     # Env params
     self.max_set_size = 512
     self.state_dim = 2*4+1
-    self.extents = np.array([[-100, 100],
+    self.extents = np.array([[-1000, 1000],
                              [-1, 1],
-                             [-100, 100],
-                             [-1, 1]])
+                             [-1000, 1000],
+                             [-1, 1]], dtype=float)
     self.volume = np.prod(self.extents[[0, 2], 1] - self.extents[[0, 2], 0])
     self.dt = 1
     self.birth_rate = 1e-2
-    self.ps = 0.999
-    self.beamwidth = 2*np.pi/10
+    # self.ps = 0.999
+    self.beamwidth = 2*np.pi/20
     self.n_expected_init = 10
     self.lambda_c = 0
-
-    # MOMB params
-    # Arange birth distribution
-    ngrid = 30
-    birth_grid = np.meshgrid(np.linspace(-100, 100, ngrid),
-                             np.linspace(-100, 100, ngrid))
-    xgrid, ygrid = birth_grid[0].flatten(), birth_grid[1].flatten()
-    self.birth_dist = GaussianMixture(
-        means=np.array([[x, 0, y, 0] for x, y in zip(xgrid, ygrid)]),
-        covars=(np.diag([100/ngrid/1, 1, 100/ngrid/1, 1])[None, ...]
-               ** 2).repeat(ngrid**2, axis=0),
-        weights=np.full(ngrid**2, self.birth_rate/ngrid**2),
-    )
-
     self.pg = 0.999
     self.w_min = None
     self.r_min = 1e-4
     self.merge_poisson = True
     self.r_estimate_threshold = 0.5
+
+    # MOMB params
+    # Arange birth distribution
+    ngrid = 10
+    birth_grid = np.meshgrid(np.linspace(*self.extents[0], ngrid),
+                             np.linspace(*self.extents[2], ngrid))
+    xgrid, ygrid = birth_grid[0].flatten(), birth_grid[1].flatten()
+    # Birth sigmas are uniformly spaced in position, and cover the entire velocity space
+    birth_sigmas = np.max(self.extents, axis=1)
+    birth_sigmas[[0, 2]] /= ngrid
+    self.birth_dist = GaussianMixture(
+        means=np.stack(
+            (xgrid, np.zeros(ngrid**2), ygrid, np.zeros(ngrid**2)), axis=1),
+        covars=np.broadcast_to(
+            np.diag(birth_sigmas), shape=(ngrid**2, 4, 4)),
+        weights=np.full(ngrid**2, self.birth_rate/ngrid**2),
+    )
     self.init_ppp_dist = self.birth_dist
 
     # Observations are as follows:
@@ -88,13 +91,14 @@ class SearchAndTrackEnv(gym.Env):
       x = self.np_random.uniform(self.extents[:, 0], self.extents[:, 1])
       self.ground_truth.append([x])
 
-    self.momb = TOMBP(birth_distribution=self.birth_dist,
-                      pg=self.pg,
-                      w_min=self.w_min,
-                      r_min=self.r_min,
-                      merge_poisson=self.merge_poisson,
-                      r_estimate_threshold=self.r_estimate_threshold)
-    self.momb.poisson.distribution = self.init_ppp_dist
+    self.tracker = TOMBP(birth_distribution=self.birth_dist,
+                         pg=self.pg,
+                         w_min=self.w_min,
+                         r_min=self.r_min,
+                         merge_poisson=self.merge_poisson,
+                         r_estimate_threshold=self.r_estimate_threshold)
+    self.tracker.poisson.distribution = self.init_ppp_dist
+
     cv = ConstantVelocity(ndim_pos=2,
                           q=0.001,
                           position_mapping=[0, 2],
@@ -105,7 +109,7 @@ class SearchAndTrackEnv(gym.Env):
     self.state_estimator = KalmanFilter(transition_model=cv,
                                         measurement_model=linear)
 
-    obs = self._get_obs(momb=self.momb)
+    obs = self._get_obs(tracker=self.tracker)
     info = {}
 
     return obs, info
@@ -116,7 +120,16 @@ class SearchAndTrackEnv(gym.Env):
 
     def pd(state):
       # return 0.9
-      x = state.means if isinstance(state, GaussianMixture) else np.atleast_2d(state)
+      if isinstance(state, GaussianMixture):
+        x = state.means
+      elif isinstance(state, np.ndarray):
+        state = np.atleast_2d(state)
+        if state.shape[-1] == 2:
+          x = np.zeros((len(state), 4))
+          x[:, [0, 2]] = state
+        else:
+          x = state
+
       obj_angle = np.arctan2(x[:, 2], x[:, 0])
       # Check if object is within beamwidth
       angle_diff = wrap_to_interval(angle-obj_angle, -np.pi, np.pi)
@@ -127,27 +140,41 @@ class SearchAndTrackEnv(gym.Env):
           np.abs(angle_diff) < self.beamwidth)] = 0.5
       return out
 
+    def ps(state):
+      if isinstance(state, GaussianMixture):
+        x = state.means
+      elif isinstance(state, np.ndarray):
+        state = np.atleast_2d(state)
+        if state.shape[-1] == 2:
+          x = np.zeros((len(state), 4))
+          x[:, [0, 2]] = state
+        else:
+          x = state
+
+      out = np.zeros(len(x))
+      out[np.logical_and(np.abs(x[:, 0]) < self.extents[0, 1],
+          np.abs(x[:, 2]) < self.extents[2, 1])] = 0.999
+      return out
+
     # Collect measurements from existing objects
-    alive = np.ones(len(self.ground_truth), dtype=bool)
+    survived = np.ones(len(self.ground_truth), dtype=bool)
     Zk = []
     for i, path in enumerate(self.ground_truth):
-      if self.np_random.uniform() > self.ps:
-        alive[i] = False
-        continue
-      if not np.all(np.logical_and(self.extents[:, 0] <= path[-1],
-                                   path[-1] <= self.extents[:, 1])):
-        path[-1][[1, 3]] *= -1
 
+      if self.np_random.uniform() > ps(path[-1]):
+        survived[i] = False
+        continue
       path.append(self.state_estimator.transition_model(
           path[-1], dt=self.dt, noise=False))
+
       if self.np_random.uniform() < pd(path[-1]):
         Zk.append(self.state_estimator.measurement_model(
             path[-1], noise=True))
+
     self.ground_truth = [path for i, path in enumerate(
-        self.ground_truth) if alive[i]]
+        self.ground_truth) if survived[i]]
 
     # Clutter measurements
-    # TODO: Forcing Nc > 0
     Nc = self.np_random.poisson(self.lambda_c)
     zc = self.np_random.uniform(
         self.extents[[0, 2], 0], self.extents[[0, 2], 1], size=(Nc, 2))
@@ -163,33 +190,33 @@ class SearchAndTrackEnv(gym.Env):
     Zk = np.array(Zk)
 
     # Update filter state
-    self.momb.mb, self.momb.poisson = self.momb.predict(
-        state_estimator=self.state_estimator, dt=self.dt, ps=self.ps)
-    self.momb.mb, self.momb.poisson = self.momb.update(
+    self.tracker.mb, self.tracker.poisson = self.tracker.predict(
+        state_estimator=self.state_estimator, dt=self.dt, ps_func=ps)
+    self.tracker.mb, self.tracker.poisson = self.tracker.update(
         measurements=Zk, state_estimator=self.state_estimator, lambda_fa=self.lambda_c/self.volume, pd_func=pd)
 
-    obs = self._get_obs(momb=self.momb)
-    reward = self._get_reward(momb=self.momb)
+    obs = self._get_obs(tracker=self.tracker)
+    reward = self._get_reward(momb=self.tracker)
     terminated = False
     truncated = False
     info = {}
     return obs, reward, terminated, truncated, info
 
-  def _get_obs(self, momb) -> Dict:
+  def _get_obs(self, tracker) -> Dict:
     return None  # TODO: Fix obs length
     obs = {}
-    obs['n_tracked'] = len(momb.mb)
-    obs['n_untracked'] = len(momb.poisson)
+    obs['n_tracked'] = len(tracker.mb)
+    obs['n_untracked'] = len(tracker.poisson)
 
     obs['tracked'] = np.empty(
         self.observation_space['tracked'].shape, dtype=np.float32)
     obs['untracked'] = np.empty(
         self.observation_space['untracked'].shape, dtype=np.float32)
 
-    for i, bern in enumerate(momb.mb):
+    for i, bern in enumerate(tracker.mb):
       obs['tracked'][i] = np.append(self._state_to_obs(bern.state), bern.r)
 
-    for i, (w, state) in enumerate(momb.poisson):
+    for i, (w, state) in enumerate(tracker.poisson):
       obs['untracked'][i] = np.append(self._state_to_obs(state), w)
 
     return obs
@@ -243,32 +270,33 @@ if __name__ == '__main__':
 
     print(f"Action: {action*360}")
 
-    # plt.clf()
-    # # intensity = env.momb.poisson.intensity(
-    # #     grid=grid, H=env.state_estimator.measurement_model.matrix())
+    plt.clf()
+    # intensity = env.momb.poisson.intensity(
+    #     grid=grid, H=env.state_estimator.measurement_model.matrix())
 
-    # # plt.imshow(intensity, extent=(xmin, xmax, ymin, ymax),
-    # #            origin='lower', aspect='auto')
-    # # Plot trajectories in env.ground_truth
-    # for path in env.ground_truth:
-    #   p = np.array(path)
-    #   plt.plot(p[:, 0], p[:, 2], 'r--')
-    # # Plot high-confidence tracks
-    # if np.count_nonzero(env.momb.mb.r > env.r_estimate_threshold):
-    #   for bern in env.momb.mb[env.momb.mb.r > env.r_estimate_threshold]:
-    #     plt.plot(bern.state.means[:, 0], bern.state.means[:, 2], 'k^')
+    # plt.imshow(intensity, extent=(xmin, xmax, ymin, ymax),
+    #            origin='lower', aspect='auto')
+    # Plot trajectories in env.ground_truth
+    for path in env.ground_truth:
+      p = np.array(path)
+      plt.plot(p[:, 0], p[:, 2], 'r--')
+    # Plot high-confidence tracks
+    if np.count_nonzero(env.tracker.mb.r > env.r_estimate_threshold):
+      for bern in env.tracker.mb[env.tracker.mb.r > env.r_estimate_threshold]:
+        plt.plot(bern.state.means[:, 0], bern.state.means[:, 2], 'k^')
 
-    # plt.xlim(xmin, xmax)
-    # plt.ylim(ymin, ymax)
+    plt.xlim(xmin, xmax)
+    plt.ylim(ymin, ymax)
 
     # # plt.clim([0, 1e-6])
     # # plt.colorbar()
-    # plt.draw()
-    # plt.pause(0.001)
-    print(f"PPP: {len(env.momb.poisson)}")
+    plt.draw()
+    plt.pause(0.001)
+    print(f"PPP: {len(env.tracker.poisson)}")
     print(
-        f"MB: {len([bern for bern in env.momb.mb if bern.r > env.r_estimate_threshold])}")
-    print(f"r: {env.momb.mb.r[env.momb.mb.r > env.r_estimate_threshold]}")
+        f"MB: {len([bern for bern in env.tracker.mb if bern.r > env.r_estimate_threshold])}")
+    print(
+        f"r: {env.tracker.mb.r[env.tracker.mb.r > env.r_estimate_threshold]}")
     print(f"True: {len(env.ground_truth)}")
     # print(f"Undetected: {np.sum(env.momb.poisson.weights)}")
 

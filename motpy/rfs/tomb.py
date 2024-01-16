@@ -54,7 +54,7 @@ class TOMBP:
   def predict(self,
               state_estimator: KalmanFilter,
               dt: float,
-              ps: float):
+              ps_func: float):
     """
     Predicts the state of the multi-object system in the next time step.
 
@@ -76,11 +76,17 @@ class TOMBP:
     # Implement prediction algorithm
 
     # Predict existing tracks
-    pred_mb = self.mb.predict(state_estimator=state_estimator, ps=ps, dt=dt)
+    if len(self.mb) > 0:
+      ps_mb = ps_func(self.mb.state)
+      pred_mb = self.mb.predict(
+          state_estimator=state_estimator, ps=ps_mb, dt=dt)
+    else:
+      pred_mb = MultiBernoulli()
 
     # Predict existing PPP intensity
+    ps_poisson = ps_func(self.poisson.distribution)
     pred_poisson = self.poisson.predict(
-        state_estimator=state_estimator, ps=ps, dt=dt)
+        state_estimator=state_estimator, ps=ps_poisson, dt=dt)
 
     # Not shown in paper--truncate low weight components
     if self.w_min is not None:
