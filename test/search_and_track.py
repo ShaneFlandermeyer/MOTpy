@@ -198,7 +198,7 @@ class SearchAndTrackEnv(gym.Env):
         measurements=np.array(Zk), state_estimator=self.state_estimator, lambda_fa=self.lambda_c/self.volume, pd_func=pd)
 
     obs = self._get_obs(tracker=self.tracker)
-    reward = self._get_reward(momb=self.tracker)
+    reward = self._get_reward(tracker=self.tracker)
     terminated = False
     truncated = False
     info = {}
@@ -226,7 +226,6 @@ class SearchAndTrackEnv(gym.Env):
     if len(tracker.poisson) > 0:
       state_inds = np.arange(len(tracker.poisson))
       
-      # TODO: 
       state = tracker.poisson.distribution
       weights = state.weights.reshape(-1, 1)
       means = state.means
@@ -238,18 +237,28 @@ class SearchAndTrackEnv(gym.Env):
 
     return obs
 
-  def _get_reward(self, momb) -> float:
+  def _get_reward(self, tracker) -> float:
     c = 50
     p = 2
     eta = c**p / 2
-    print(np.sum(momb.poisson.distribution.weights))
+    
     # Track loss is the sum of the trace of the covariance matrices of the tracked objects
-
-    # track_loss = np.sum([np.trace(bern.state.covar)
-    #                     for bern in momb.mb if bern.r > self.r_estimate_threshold])
-
-    # TODO: Bostrom rost reward
-    return 0
+    if len(tracker.mb) == 0:
+      track_loss = 0
+    else:
+      r = tracker.mb.r
+      covars = tracker.mb.state.covars
+      track_loss = np.sum(r*np.trace(covars, axis1=-2, axis2=-1))
+      
+    # Search loss is the sum 
+    search_loss = np.sum(tracker.poisson.distribution.weights)
+    
+    # Note: For stability reasons, I'm scaling this DOWN by eta
+    reward = -(track_loss/eta + search_loss)
+    print(f"Track loss: {track_loss/eta}")
+    print(f"Search loss: {search_loss}")
+    
+    return reward
 
 
 if __name__ == '__main__':
@@ -268,35 +277,35 @@ if __name__ == '__main__':
   grid = np.dstack((xmesh, ymesh))
   fps = 0
   for i in range(1, int(1e5)):
-    action = env.action_space.sample()
-    # action = np.array([0])
+    # action = env.action_space.sample()
+    action = np.array([0])
     start = time.time()
     obs, reward, term, trunc, info = env.step(action)
     fps = i / (i + 1) * fps + 1 / (i + 1) * (1 / (time.time() - start))
 
-    # plt.clf()
-    # intensity = env.tracker.poisson.intensity(
-    #     grid=grid, H=env.state_estimator.measurement_model.matrix())
+    plt.clf()
+    intensity = env.tracker.poisson.intensity(
+        grid=grid, H=env.state_estimator.measurement_model.matrix())
 
-    # plt.imshow(np.log(intensity), extent=(xmin, xmax, ymin, ymax),
-    #            origin='lower', aspect='auto')
-    # # Plot trajectories in env.ground_truth
-    # for path in env.ground_truth:
-    #   p = np.array(path)
-    #     f"MB: {len(env.tracke
-    #   plt.plot(p[:, 0], p[:, 2], 'r--')
-    # # Plot high-confidence tracks
-    # if np.count_nonzero(env.tracker.mb.r > env.r_estimate_threshold):
-    #   for bern in env.tracker.mb[env.tracker.mb.r > env.r_estimate_threshold]:
-    #     plt.plot(bern.state.means[:, 0], bern.state.means[:, 2], 'k^')
-    # plt.xlim(xmin, xmax)
-    # plt.ylim(ymin, ymax)
-    # # plt.clim([0, np.max(env.tracker.poisson.birth_distribution.weights)])
-    # plt.colorbar()
-    # plt.draw()
-    # plt.pause(0.001)
+    plt.imshow(np.log(intensity), extent=(xmin, xmax, ymin, ymax),
+               origin='lower', aspect='auto')
+    # Plot trajectories in env.ground_truth
+    for path in env.ground_truth:
+      p = np.array(path)
+      plt.plot(p[:, 0], p[:, 2], 'r--')
+    # Plot high-confidence tracks
+    if np.count_nonzero(env.tracker.mb.r > env.r_estimate_threshold):
+      for bern in env.tracker.mb[env.tracker.mb.r > env.r_estimate_threshold]:
+        plt.plot(bern.state.means[:, 0], bern.state.means[:, 2], 'k^')
+    plt.xlim(xmin, xmax)
+    plt.ylim(ymin, ymax)
+    # plt.clim([0, np.max(env.tracker.poisson.birth_distribution.weights)])
+    plt.colorbar()
+    plt.draw()
+    plt.pause(0.001)
 
     print(f"Action: {action*360}")
+    print(f"Reward: {reward}")
     print(f"MB: {obs['tracked'].shape}")
     print(f"PPP: {obs['untracked'].shape}")
     # print(f"PPP: {len(env.tracker.poisson)}")
