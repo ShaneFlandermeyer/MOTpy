@@ -100,7 +100,7 @@ class Poisson:
     # Create a new Bernoulli component based on updated weights
     sum_w_up = np.sum(mixture_up.weights)
     sum_w_total = sum_w_up + clutter_intensity
-    r = sum_w_up / sum_w_total
+    r = sum_w_up / (sum_w_total + 1e-15)
 
     # Compute the state using moment matching across all PPP components
     mean, covar = mix_gaussians(
@@ -160,12 +160,10 @@ class Poisson:
     np.ndarray
         Intensity grid
     """
-    raise NotImplementedError(
-        "Intensity currently not supported with GaussianMixture API")
     intensity = np.zeros(grid.shape[:-1])
-    for i, state in enumerate(self.states):
-      mean = H @ state.mean[0]
-      cov = H @ state.covar[0] @ H.T
-      rv = multivariate_normal(mean=mean, cov=cov)
-      intensity += self.weights[i] * rv.pdf(grid)
+    means = self.distribution.means @ H.T
+    covars = H @ self.distribution.covars @ H.T
+    for i in range(len(self)):
+      rv = multivariate_normal(mean=means[i], cov=covars[i], allow_singular=True)
+      intensity += self.distribution.weights[i] * rv.pdf(grid)
     return intensity

@@ -136,7 +136,7 @@ class TOMBP:
     # Create missed detection hypothesis
     if n > 0:
       wupd[:, 0] = 1 - self.mb.r + self.mb.r * (1 - pd_func(self.mb.state))
-      r_post = self.mb.r * (1 - pd_func(self.mb.state)) / wupd[:, 0]
+      r_post = self.mb.r * (1 - pd_func(self.mb.state)) / (wupd[:, 0] + 1e-15)
       state_post = self.mb.state
       for i in range(n):
         mb_hypos[i].append(r=r_post[i], state=state_post[i])
