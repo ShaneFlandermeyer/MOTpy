@@ -42,15 +42,16 @@ class SearchAndTrackEnv(gym.Env):
     self.obs_dim = self.state_dim + self.state_dim // 2 + 1
     self.volume = np.prod(self.extents[[0, 2], 1] - self.extents[[0, 2], 0])
     self.dt = 1
-    self.birth_rate = 1e-2
+    self.birth_rate = 1e-3
     self.beamwidth = np.radians(10)
     self.n_expected_init = 10
-    self.lambda_c = 0
+    self.lambda_c = 1
     self.pg = 0.999
     self.w_min = None
     self.r_min = 1e-4
     self.merge_poisson = True
     self.r_estimate_threshold = 0.5
+    self.r_track_loss_threshold = 0.1
 
     # Define birth distribution
     ngrid = 16
@@ -92,6 +93,7 @@ class SearchAndTrackEnv(gym.Env):
         self.extents[:, 0], self.extents[:, 1], size=(n_init, self.state_dim))
     self.ground_truth = [[x] for x in xs]
 
+    # Initialize tracker
     self.tracker = TOMBP(birth_distribution=self.birth_dist,
                          pg=self.pg,
                          w_min=self.w_min,
@@ -100,6 +102,7 @@ class SearchAndTrackEnv(gym.Env):
                          r_estimate_threshold=self.r_estimate_threshold)
     self.tracker.poisson.distribution = self.init_ppp_dist
 
+    # Initialize models
     cv = ConstantVelocity(ndim_pos=2,
                           q=0.001,
                           position_mapping=[0, 2],
@@ -159,22 +162,27 @@ class SearchAndTrackEnv(gym.Env):
       return out
 
     # Collect measurements from existing objects
-    survived = np.ones(len(self.ground_truth), dtype=bool)
     Zk = []
-    for i, path in enumerate(self.ground_truth):
 
-      if self.np_random.uniform() > ps(path[-1]):
-        survived[i] = False
-        continue
-      path.append(self.state_estimator.transition_model(
-          path[-1], dt=self.dt, noise=True))
+    if len(self.ground_truth) > 0:
+      # State transition
+      states = np.atleast_2d([path[-1] for path in self.ground_truth])
+      survived = self.np_random.uniform(size=len(states)) < ps(states)
+      states_up = np.empty_like(states)
+      states_up[survived] = self.state_estimator.transition_model(
+          states[survived], dt=self.dt, noise=True)
 
-      if self.np_random.uniform() < pd(path[-1]):
-        Zk.append(self.state_estimator.measurement_model(
-            path[-1], noise=True))
+      # Object survival
+      for i, path in enumerate(self.ground_truth.copy()):
+        if survived[i]:
+          path.append(states_up[i])
+        else:
+          self.ground_truth.remove(path)
 
-    self.ground_truth = [path for i, path in enumerate(
-        self.ground_truth) if survived[i]]
+      detected = self.np_random.uniform(size=len(states_up)) < pd(states_up)
+      meas = self.state_estimator.measurement_model(
+          states_up[detected], noise=True)
+      Zk.extend(list(meas))
 
     # New object birth
     Nb = self.np_random.poisson(self.birth_rate)
@@ -228,7 +236,7 @@ class SearchAndTrackEnv(gym.Env):
       state_inds = np.arange(n_ppp)
 
       state = tracker.poisson.distribution
-      weights = state.weights.reshape(-1, 1)
+      weights = np.log(state.weights.reshape(-1, 1))
       means = state.means
       pos_covar = state.covars[np.ix_(state_inds, pos_inds, pos_inds)]
       covar_diags = np.diagonal(pos_covar, axis1=-2, axis2=-1)
@@ -247,8 +255,8 @@ class SearchAndTrackEnv(gym.Env):
       track_loss = 0
     else:
       r = tracker.mb.r
-      covars = tracker.mb.state.covars
-      track_loss = np.sum(r*np.trace(covars, axis1=-2, axis2=-1))
+      covars = tracker.mb.state.covars[r > self.r_track_loss_threshold]
+      track_loss = np.sum(np.trace(covars, axis1=-2, axis2=-1))
 
     # Search loss is the sum
     search_loss = np.sum(tracker.poisson.distribution.weights)
@@ -299,7 +307,7 @@ if __name__ == '__main__':
         plt.plot(bern.state.means[:, 0], bern.state.means[:, 2], 'k^')
     plt.xlim(xmin, xmax)
     plt.ylim(ymin, ymax)
-    # plt.clim([0, np.max(env.tracker.poisson.birth_distribution.weights)])
+    # plt.clim([-10, -20])
     plt.colorbar()
     plt.draw()
     plt.pause(0.001)

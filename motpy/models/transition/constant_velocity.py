@@ -77,11 +77,11 @@ class ConstantVelocity(TransitionModel):
       dt: float = 0,
       noise: bool = False
   ) -> np.ndarray:
-    next_state = x.copy().astype(float)
-    next_state[self.position_mapping] += x[self.velocity_mapping]*dt
+    next_state = np.atleast_2d(x).astype(float)
+    next_state[..., self.position_mapping] += x[..., self.velocity_mapping]*dt
     if noise:
-      next_state += self.sample_noise(dt).reshape(x.shape)
-    return next_state
+      next_state += self.sample_noise(dt, n=len(next_state))
+    return next_state.reshape(x.shape)
 
   @functools.lru_cache()
   def matrix(self, dt: float):
@@ -100,8 +100,10 @@ class ConstantVelocity(TransitionModel):
     return Q.astype(float)
 
   def sample_noise(self,
-                   dt: float = 0) -> np.array:
+                   dt: float = 0,
+                   n: int = 1,
+                   ) -> np.array:
     covar = self.covar(dt)
     noise = self.np_random.multivariate_normal(
-        mean=np.zeros((self.ndim)), cov=covar)
+        mean=np.zeros((self.ndim)), cov=covar, size=n)
     return np.asarray(noise)

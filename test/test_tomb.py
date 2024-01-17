@@ -158,5 +158,5 @@ def test_scenario_merge():
 
 
 if __name__ == '__main__':
-  # test_scenario_prune()
+  test_scenario_prune()
   pytest.main([__file__])
