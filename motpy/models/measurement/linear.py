@@ -13,27 +13,27 @@ class LinearMeasurementModel(MeasurementModel):
                measured_dims: np.ndarray = None,
                seed: int = np.random.randint(0, 2**32-1),
                ):
-    
-    self.ndim_state = ndim_state  
+
+    self.ndim_state = ndim_state
     self.noise_covar = np.array(covar, dtype=float)
     self.np_random = np.random.RandomState(seed)
-    
+
     if measured_dims is None:
       measured_dims = np.arange(self.noise_covar.shape[0])
     self.measured_dims = np.array(measured_dims, dtype=int)
     self.ndim = len(measured_dims)
-    
+
   def __call__(self,
-               x: List[np.ndarray],
+               x: np.ndarray,
                noise: bool = False) -> List[np.ndarray]:
-    xarr = np.atleast_2d(x)
-    n_measurements = xarr.shape[0]
-    
-    out = x if self.measured_dims is None else xarr[:, self.measured_dims]
+    out = x[..., self.measured_dims].astype(float)
+
     if noise:
+      n_measurements = x.shape[0] if x.ndim > 1 else 1
       noise = self.sample_noise(size=n_measurements)
-      out = out.astype(noise.dtype) + noise.reshape(out.shape)
-    return list(out) if xarr.shape[0] > 1 else out[0]
+      out = out + noise.reshape(out.shape)
+
+    return out
 
   @functools.lru_cache(maxsize=1)
   def matrix(self, **kwargs):

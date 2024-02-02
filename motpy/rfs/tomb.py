@@ -54,7 +54,7 @@ class TOMBP:
   def predict(self,
               state_estimator: KalmanFilter,
               dt: float,
-              ps: float):
+              ps_func: float):
     """
     Predicts the state of the multi-object system in the next time step.
 
@@ -76,11 +76,17 @@ class TOMBP:
     # Implement prediction algorithm
 
     # Predict existing tracks
-    pred_mb = self.mb.predict(state_estimator=state_estimator, ps=ps, dt=dt)
+    if len(self.mb) > 0:
+      ps_mb = ps_func(self.mb.state)
+      pred_mb = self.mb.predict(
+          state_estimator=state_estimator, ps=ps_mb, dt=dt)
+    else:
+      pred_mb = MultiBernoulli()
 
     # Predict existing PPP intensity
+    ps_poisson = ps_func(self.poisson.distribution)
     pred_poisson = self.poisson.predict(
-        state_estimator=state_estimator, ps=ps, dt=dt)
+        state_estimator=state_estimator, ps=ps_poisson, dt=dt)
 
     # Not shown in paper--truncate low weight components
     if self.w_min is not None:
@@ -130,7 +136,7 @@ class TOMBP:
     # Create missed detection hypothesis
     if n > 0:
       wupd[:, 0] = 1 - self.mb.r + self.mb.r * (1 - pd_func(self.mb.state))
-      r_post = self.mb.r * (1 - pd_func(self.mb.state)) / wupd[:, 0]
+      r_post = self.mb.r * (1 - pd_func(self.mb.state)) / (wupd[:, 0] + 1e-15)
       state_post = self.mb.state
       for i in range(n):
         mb_hypos[i].append(r=r_post[i], state=state_post[i])
@@ -141,10 +147,10 @@ class TOMBP:
             measurements=measurements, predicted_state=self.mb.state, pg=self.pg)
 
         l_mb = np.zeros((n, m))
-        used_meas = np.argwhere(np.any(in_gate_mb, axis=0)).flatten()
+        used_meas_mb = np.argwhere(np.any(in_gate_mb, axis=0)).flatten()
         used_mb = np.argwhere(np.any(in_gate_mb, axis=1)).flatten()
-        l_mb[np.ix_(used_mb, used_meas)] = state_estimator.likelihood(
-            measurement=measurements[used_meas],
+        l_mb[np.ix_(used_mb, used_meas_mb)] = state_estimator.likelihood(
+            measurement=measurements[used_meas_mb],
             predicted_state=self.mb.state[used_mb])
 
         # Create hypotheses for each state-measurement pair
@@ -166,7 +172,6 @@ class TOMBP:
     wnew = np.zeros(m)
     new_berns = MultiBernoulli()
 
-    # TODO: Vectorize pd func
     pd_ppp = pd_func(self.poisson.distribution)
     if isinstance(pd_ppp, float):
       pd_ppp = np.full(nu, pd_ppp)
@@ -180,10 +185,10 @@ class TOMBP:
 
       # Compute likelihoods for PPP components with at least one measurement in the gate and measurements in at least one gate
       l_ppp = np.zeros((nu, m))
-      used_meas = np.argwhere(np.any(in_gate_poisson, axis=0)).flatten()
+      used_meas_ppp = np.argwhere(np.any(in_gate_poisson, axis=0)).flatten()
       used_ppp = np.argwhere(np.any(in_gate_poisson, axis=1)).flatten()
-      l_ppp[np.ix_(used_ppp, used_meas)] = state_estimator.likelihood(
-          measurement=measurements[used_meas],
+      l_ppp[np.ix_(used_ppp, used_meas_ppp)] = state_estimator.likelihood(
+          measurement=measurements[used_meas_ppp],
           predicted_state=self.poisson.distribution[used_ppp])
 
       for j in range(m):

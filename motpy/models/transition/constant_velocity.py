@@ -77,31 +77,40 @@ class ConstantVelocity(TransitionModel):
       dt: float = 0,
       noise: bool = False
   ) -> np.ndarray:
-    next_state = x.copy().astype(float)
-    next_state[self.position_mapping] += x[self.velocity_mapping]*dt
+    next_state = x.astype(float)
+    next_state[..., self.position_mapping] += x[..., self.velocity_mapping]*dt
+
     if noise:
-      next_state += self.sample_noise(dt).reshape(x.shape)
+      n_states = x.shape[0] if x.ndim > 1 else 1
+      next_state += self.sample_noise(dt, n=n_states)
+
     return next_state
 
   @functools.lru_cache()
   def matrix(self, dt: float):
-    # TODO: Account for state mapping
-    F = np.array([[1, dt],
-                  [0, 1]])
-    F = block_diag(*[F]*self.ndim_pos)
-    return F.astype(float)
+    F = np.zeros((self.ndim, self.ndim))
+    for i in range(self.ndim_pos):
+      F[self.position_mapping[i], self.position_mapping[i]] = 1
+      F[self.position_mapping[i], self.velocity_mapping[i]] = dt
+      F[self.velocity_mapping[i], self.velocity_mapping[i]] = 1
+    return F
 
   @functools.lru_cache()
   def covar(self, dt: float):
-    # TODO: Account for state mapping
-    Q = np.array([[1/3*dt**3, 1/2*dt**2],
-                  [1/2*dt**2, dt]])
-    Q = block_diag(*[Q for _ in range(self.ndim_pos)]) * self.q
-    return Q.astype(float)
+    Q = np.zeros((self.ndim, self.ndim))
+    for i in range(self.ndim_pos):
+      Q[self.position_mapping[i], self.position_mapping[i]] = dt**3 / 3
+      Q[self.position_mapping[i], self.velocity_mapping[i]] = dt**2 / 2
+      Q[self.velocity_mapping[i], self.position_mapping[i]] = dt**2 / 2
+      Q[self.velocity_mapping[i], self.velocity_mapping[i]] = dt
+    Q *= self.q
+    return Q
 
   def sample_noise(self,
-                   dt: float = 0) -> np.array:
+                   dt: float = 0,
+                   n: int = 1,
+                   ) -> np.array:
     covar = self.covar(dt)
     noise = self.np_random.multivariate_normal(
-        mean=np.zeros((self.ndim)), cov=covar)
+        mean=np.zeros((self.ndim)), cov=covar, size=n)
     return np.asarray(noise)

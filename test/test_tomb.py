@@ -57,6 +57,7 @@ def test_scenario_prune():
   """
 
   def pd(x): return 0.8
+  def ps(x): return 0.999
   lambda_c = 20
   dt = 1
   n_steps = 10
@@ -74,26 +75,26 @@ def test_scenario_prune():
       means=birth_dist.means,
       covars=birth_dist.covars,
       weights=[10.0])
-  tomb = TOMBP(birth_distribution=birth_dist,
+  tracker = TOMBP(birth_distribution=birth_dist,
                pg=1.0,
                w_min=1e-4,
                merge_poisson=False,
                r_min=1e-4,
                r_estimate_threshold=0.5,
                )
-  tomb.poisson.distribution = init_dist
+  tracker.poisson.distribution = init_dist
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 
   for k in range(n_steps):
-    tomb.mb, tomb.poisson = tomb.predict(state_estimator=kf, dt=dt, ps=0.999)
+    tracker.mb, tracker.poisson = tracker.predict(state_estimator=kf, dt=dt, ps_func=ps)
 
-    tomb.mb, tomb.poisson = tomb.update(
+    tracker.mb, tracker.poisson = tracker.update(
         measurements=Z[k], pd_func=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
 
-  assert len(tomb.mb) == 54
-  assert len(tomb.poisson) == 4
-  assert np.allclose(tomb.mb[0].r, 0.9999935076418562, atol=1e-6)
-  assert np.allclose(tomb.mb[3].r, 0.9999901057591115, atol=1e-6)
+  assert len(tracker.mb) == 54
+  assert len(tracker.poisson) == 4
+  assert np.allclose(tracker.mb[0].r, 0.9999935076418562, atol=1e-6)
+  assert np.allclose(tracker.mb[3].r, 0.9999901057591115, atol=1e-6)
 
 
 def test_scenario_merge():
@@ -102,6 +103,7 @@ def test_scenario_merge():
   """
 
   def pd(x): return 0.8
+  def ps(x): return 0.999
   lambda_c = 20
   dt = 1
   n_steps = 10
@@ -119,40 +121,27 @@ def test_scenario_merge():
       means=birth_dist.means,
       covars=birth_dist.covars,
       weights=[10.0])
-  tomb = TOMBP(birth_distribution=birth_dist,
+  tracker = TOMBP(birth_distribution=birth_dist,
                pg=1.0,
                w_min=None,
                merge_poisson=True,
                r_min=1e-4,
                r_estimate_threshold=0.5,
                )
-  tomb.poisson.distribution = init_dist
+  tracker.poisson.distribution = init_dist
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 
   for k in range(n_steps):
-    tomb.mb, tomb.poisson = tomb.predict(state_estimator=kf, dt=dt, ps=0.999)
+    tracker.mb, tracker.poisson = tracker.predict(state_estimator=kf, dt=dt, ps_func=ps)
 
-    tomb.mb, tomb.poisson = tomb.update(
+    tracker.mb, tracker.poisson = tracker.update(
         measurements=Z[k], pd_func=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
 
-    # plt.clf()
-    # # Plot ground truth as black dotted line
-    # for path in paths:
-    #   plt.plot([p[0] for p in path], [p[2] for p in path], 'k--', linewidth=1)
-
-    # # Plot tracks above threshold as red triangle
-
-    # plt.plot(tomb.mb.state.mean[tomb.mb.r > 0.5, 0], tomb.mb.state.mean[tomb.mb.r > 0.5, 2], 'r^', linewidth=1)
-    # plt.xlim([-100, 100])
-    # plt.ylim([-100, 100])
-    # plt.draw()
-    # plt.pause(0.01)
-
-  assert len(tomb.mb) == 54
-  assert len(tomb.poisson) == 1
-  assert np.allclose(tomb.mb[0].r, 0.9999935076418562, atol=1e-6)
-  assert np.allclose(tomb.mb[3].r, 0.9999901057591115, atol=1e-6)
+  assert len(tracker.mb) == 54
+  assert len(tracker.poisson) == 1
+  assert np.allclose(tracker.mb[0].r, 0.9999935076418562, atol=1e-6)
+  assert np.allclose(tracker.mb[3].r, 0.9999901057591115, atol=1e-6)
 
 
 if __name__ == '__main__':
