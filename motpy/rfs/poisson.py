@@ -6,7 +6,7 @@ from typing import Callable, List, Optional, Tuple, Union
 from motpy.kalman import KalmanFilter
 from motpy.measures import mahalanobis
 from motpy.rfs.bernoulli import Bernoulli
-from motpy.distributions.gaussian import GaussianMixture, mix_gaussians, GaussianState
+from motpy.distributions.gaussian import mix_gaussians, GaussianState
 from scipy.stats import multivariate_normal
 
 
@@ -17,19 +17,12 @@ class Poisson:
 
   def __init__(
       self,
-      birth_distribution: GaussianMixture,
-      init_distribution: Optional[GaussianMixture] = None,
+      birth_distribution: GaussianState,
+      init_distribution: Optional[GaussianState] = None,
   ):
     self.birth_distribution = birth_distribution
 
     self.distribution = init_distribution
-    if init_distribution is None:
-      state_dim = birth_distribution.state_dim
-      self.distribution = GaussianMixture(
-          mean=np.empty([0, state_dim]),
-          covar=np.empty([0, state_dim, state_dim]),
-          weight=np.array([]),
-      )
 
   def __repr__(self):
     return f"""Poisson(birth_distribution={self.birth_distribution},
@@ -135,7 +128,7 @@ class Poisson:
     wmix /= np.sum(wmix + 1e-15, axis=0)
     Pmix = np.concatenate(
         (dist.covar[None, ...], birth_dist.covar[None, ...]), axis=0)
-    merged_distribution = GaussianMixture(
+    merged_distribution = GaussianState(
         mean=dist.mean,
         covar=np.einsum('i..., i...jk -> ...jk', wmix, Pmix),
         weight=dist.weight + birth_dist.weight,

@@ -3,9 +3,9 @@ from typing import Callable, List, Tuple
 
 import numpy as np
 
-from motpy.distributions.gaussian import GaussianMixture, GaussianState, mix_gaussians
+from motpy.distributions.gaussian import GaussianState, mix_gaussians
 from motpy.kalman import KalmanFilter
-from motpy.rfs.bernoulli import Bernoulli, MultiBernoulli
+from motpy.rfs.bernoulli import MultiBernoulli
 from motpy.rfs.poisson import Poisson
 
 
@@ -15,7 +15,7 @@ class TOMBP:
   """
 
   def __init__(self,
-               birth_distribution: GaussianMixture,
+               birth_distribution: GaussianState,
                pg: float = None,
                w_min: float = None,
                r_min: float = None,
@@ -264,7 +264,7 @@ class TOMBP:
       r = np.sum(pr)
       x, P = mix_gaussians(means=xupd, covars=Pupd, weights=pr)
 
-      tomb_mb.append(r=r, state=GaussianMixture(mean=x, covar=P, weight=0))
+      tomb_mb.append(r=r, state=GaussianState(mean=x, covar=P))
 
     # Form new tracks (already single hypothesis)
     if len(new_berns) > 0:
