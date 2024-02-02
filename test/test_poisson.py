@@ -84,18 +84,18 @@ def test_predict():
   )
   # Weights should be LOG weights
   birth_distribution = GaussianMixture(
-      means=np.array([[0.9058, 0.1270, 0.9134, 0.6324, 0.0975]]
+      mean=np.array([[0.9058, 0.1270, 0.9134, 0.6324, 0.0975]]
                      ).repeat(4, axis=0),
-      covars=np.diag([1, 1, 1, 1*np.pi/90, 1*np.pi/90]
+      covar=np.diag([1, 1, 1, 1*np.pi/90, 1*np.pi/90]
                      )[None, ...].repeat(4, axis=0)**2,
-      weights=np.array([0.8147]*4)
+      weight=np.array([0.8147]*4)
   )
   init_distribution = GaussianMixture(
-      means=np.array([[0, 0, 5, 0, np.pi/180],
+      mean=np.array([[0, 0, 5, 0, np.pi/180],
                       [20, 20, -20, 0, np.pi/90],
                       [-20, 10, -10, 0, np.pi/360]]),
-      covars=np.eye(5).reshape(1, 5, 5).repeat(3, axis=0),
-      weights=np.exp(np.array([-0.6035, -0.0434, -0.0357])))
+      covar=np.eye(5).reshape(1, 5, 5).repeat(3, axis=0),
+      weight=np.exp(np.array([-0.6035, -0.0434, -0.0357])))
   ppp = Poisson(birth_distribution=birth_distribution,
                 init_distribution=init_distribution)
   ppp = ppp.predict(state_estimator=ekf, ps=ps, dt=T)
@@ -108,11 +108,11 @@ def test_predict():
                              [1,  0, 2, 0, 0.],
                              [0,  5, 0, 2, 1.],
                              [0,  0, 0, 1, 1.00030462]])
-  assert np.allclose(ppp.distribution.weights, expected_weights, atol=1e-4)
+  assert np.allclose(ppp.distribution.weight, expected_weights, atol=1e-4)
   assert np.allclose(
-      ppp.distribution.means[0], expected_mean, atol=1e-4)
+      ppp.distribution.mean[0], expected_mean, atol=1e-4)
   assert np.allclose(
-      ppp.distribution.covars[0], expected_covar, atol=1e-4)
+      ppp.distribution.covar[0], expected_covar, atol=1e-4)
   assert len(ppp.distribution) == 7
 
 
@@ -126,16 +126,16 @@ def test_measurement_update():
   )
 
   init_distribution = GaussianMixture(
-      means=np.array([[0, 0, 5, 0, np.pi/180],
+      mean=np.array([[0, 0, 5, 0, np.pi/180],
                       [20, 20, -20, 0, np.pi/90],
                       [-20, 10, -10, 0, np.pi/360]]),
-      covars=np.eye(5).reshape(1, 5, 5).repeat(3, axis=0),
-      weights=np.exp(np.array([-2.0637, -0.0906, -0.4583])))
+      covar=np.eye(5).reshape(1, 5, 5).repeat(3, axis=0),
+      weight=np.exp(np.array([-2.0637, -0.0906, -0.4583])))
   ppp = Poisson(birth_distribution=None,
                 init_distribution=init_distribution)
 
   in_gate = np.array([True, False, True])
-  z = ekf.measurement_model(ppp.distribution.means[0][None, ...])
+  z = ekf.measurement_model(ppp.distribution.mean[0][None, ...])
   likelihoods = ekf.likelihood(measurement=z, predicted_state=ppp.distribution)
   bern, bern_weight = ppp.update(
       measurement=z, in_gate=in_gate, state_estimator=ekf,

@@ -22,10 +22,7 @@ class KalmanFilter():
               ) -> Union[GaussianState, GaussianMixture]:
     assert self.transition_model is not None
 
-    if isinstance(state, GaussianMixture):
-      x, P = state.means, state.covars
-    elif isinstance(state, GaussianState):
-      x, P = state.mean, state.covar
+    x, P = state.mean, state.covar
 
     F = self.transition_model.matrix(dt=dt)
     Q = self.transition_model.covar(dt=dt)
@@ -34,7 +31,7 @@ class KalmanFilter():
     P_pred = F @ P @ F.T + Q
 
     if isinstance(state, GaussianMixture):
-      return GaussianMixture(means=x_pred, covars=P_pred, weights=state.weights)
+      return GaussianMixture(mean=x_pred, covar=P_pred, weight=state.weight)
     elif isinstance(state, GaussianState):
       return GaussianState(mean=x_pred, covar=P_pred)
 
@@ -44,10 +41,7 @@ class KalmanFilter():
              ) -> Union[GaussianState, GaussianMixture]:
     assert self.measurement_model is not None
 
-    if isinstance(predicted_state, GaussianMixture):
-      x_pred, P_pred = predicted_state.means, predicted_state.covars
-    elif isinstance(predicted_state, GaussianState):
-      x_pred, P_pred = predicted_state.mean, predicted_state.covar
+    x_pred, P_pred = predicted_state.mean, predicted_state.covar
 
     z = measurement
     H = self.measurement_model.matrix()
@@ -63,7 +57,7 @@ class KalmanFilter():
 
     if isinstance(predicted_state, GaussianMixture):
       return GaussianMixture(
-          means=x_post, covars=P_post, weights=predicted_state.weights)
+          mean=x_post, covar=P_post, weight=predicted_state.weight)
     elif isinstance(predicted_state, GaussianState):
       post_state = GaussianState(mean=x_post, covar=P_post)
 
@@ -98,12 +92,7 @@ class KalmanFilter():
       elif isinstance(predicted_state, GaussianState):
         return np.ones((len(measurements)), dtype=bool)
 
-    if isinstance(predicted_state, GaussianMixture):
-      x, P = predicted_state.means, predicted_state.covars
-    elif isinstance(predicted_state, GaussianState):
-      x, P = predicted_state.mean, predicted_state.covar
-    else:
-      raise ValueError('Invalid predicted state type')
+    x, P = predicted_state.mean, predicted_state.covar
 
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
@@ -135,12 +124,7 @@ class KalmanFilter():
         Likelihood
     """
 
-    if isinstance(predicted_state, GaussianMixture):
-      x, P = predicted_state.means, predicted_state.covars
-    elif isinstance(predicted_state, GaussianState):
-      x, P = predicted_state.mean, predicted_state.covar
-    else:
-      raise ValueError('Invalid predicted state type')
+    x, P = predicted_state.mean, predicted_state.covar
 
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()

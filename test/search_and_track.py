@@ -52,10 +52,10 @@ class SearchAndTrackEnv(gym.Env):
                              np.linspace(-100, 100, ngrid))
     xgrid, ygrid = birth_grid[0].flatten(), birth_grid[1].flatten()
     self.birth_dist = GaussianMixture(
-        means=np.array([[x, 0, y, 0] for x, y in zip(xgrid, ygrid)]),
-        covars=(np.diag([100/ngrid/1, 1, 100/ngrid/1, 1])[None, ...]
+        mean=np.array([[x, 0, y, 0] for x, y in zip(xgrid, ygrid)]),
+        covar=(np.diag([100/ngrid/1, 1, 100/ngrid/1, 1])[None, ...]
                ** 2).repeat(ngrid**2, axis=0),
-        weights=np.full(ngrid**2, self.birth_rate/ngrid**2),
+        weight=np.full(ngrid**2, self.birth_rate/ngrid**2),
     )
 
     self.pg = 0.999
@@ -116,7 +116,7 @@ class SearchAndTrackEnv(gym.Env):
 
     def pd(state):
       # return 0.9
-      x = state.means if isinstance(state, GaussianMixture) else np.atleast_2d(state)
+      x = state.mean if isinstance(state, GaussianMixture) else np.atleast_2d(state)
       obj_angle = np.arctan2(x[:, 2], x[:, 0])
       # Check if object is within beamwidth
       angle_diff = wrap_to_interval(angle-obj_angle, -np.pi, np.pi)

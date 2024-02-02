@@ -27,7 +27,7 @@ class ExtendedKalmanFilter():
               dt: float,
               ) -> Union[GaussianState, GaussianMixture]:
     if isinstance(state, GaussianMixture):
-      x, P = state.means, state.covars
+      x, P = state.mean, state.covar
     elif isinstance(state, GaussianState):
       x, P = state.mean, state.covar
     else:
@@ -40,7 +40,7 @@ class ExtendedKalmanFilter():
     P_pred = F @ P @ F.swapaxes(-1, -2) + Q
 
     if isinstance(state, GaussianMixture):
-      return GaussianMixture(means=x_pred, covars=P_pred, weights=state.weights)
+      return GaussianMixture(mean=x_pred, covar=P_pred, weight=state.weight)
     elif isinstance(state, GaussianState):
       return GaussianState(mean=x_pred, covar=P_pred)
 
@@ -50,7 +50,7 @@ class ExtendedKalmanFilter():
     assert self.measurement_model is not None
 
     if isinstance(predicted_state, GaussianMixture):
-      x_pred, P_pred = predicted_state.means, predicted_state.covars
+      x_pred, P_pred = predicted_state.mean, predicted_state.covar
     elif isinstance(predicted_state, GaussianState):
       x_pred, P_pred = predicted_state.mean, predicted_state.covar
 
@@ -69,7 +69,7 @@ class ExtendedKalmanFilter():
 
     if isinstance(predicted_state, GaussianMixture):
       return GaussianMixture(
-          means=x_post, covars=P_post, weights=predicted_state.weights)
+          mean=x_post, covar=P_post, weight=predicted_state.weight)
     elif isinstance(predicted_state, GaussianState):
       post_state = GaussianState(mean=x_post, covar=P_post)
 
@@ -103,7 +103,7 @@ class ExtendedKalmanFilter():
       return measurements, np.ones((len(measurements),), dtype=bool)
 
     if isinstance(predicted_state, GaussianMixture):
-      x, P = predicted_state.means, predicted_state.covars
+      x, P = predicted_state.mean, predicted_state.covar
     elif isinstance(predicted_state, GaussianState):
       x, P = predicted_state.mean, predicted_state.covar
     H = self.measurement_model.matrix()
@@ -137,7 +137,7 @@ class ExtendedKalmanFilter():
     """
 
     if isinstance(predicted_state, GaussianMixture):
-      x, P = predicted_state.means, predicted_state.covars
+      x, P = predicted_state.mean, predicted_state.covar
     elif isinstance(predicted_state, GaussianState):
       x, P = predicted_state.mean, predicted_state.covar
 

@@ -206,7 +206,7 @@ class MOMBP:
 
     # Update (i.e., thin) intensity of unknown targets
     poisson_upd = copy.copy(self.poisson)
-    poisson_upd.distribution.weights *= 1 - pd_ppp
+    poisson_upd.distribution.weight *= 1 - pd_ppp
 
     if wupd.size == 0:
       pupd = np.zeros_like(wupd)
@@ -263,24 +263,24 @@ class MOMBP:
 
     for j in range(len(new_berns)):
       if n == 0:
-        x, P = new_berns.state.means[j], new_berns.state.covars[j]
+        x, P = new_berns.state.mean[j], new_berns.state.covar[j]
         r = pnew[j]*new_berns.r[j]
       else:
         valid = in_gate_mb[:, j]
         if not np.any(valid):
           continue
         rupd = mb_hypos[j+1].r
-        xupd = mb_hypos[j+1].state.means
-        Pupd = mb_hypos[j+1].state.covars
+        xupd = mb_hypos[j+1].state.mean
+        Pupd = mb_hypos[j+1].state.covar
         pr = np.append(pupd[valid, j+1]*rupd, pnew[j]*new_berns.r[j])
         r = np.sum(pr)
 
-        xmix = np.append(xupd, new_berns.state[j].means, axis=0)
-        Pmix = np.append(Pupd, new_berns.state[j].covars, axis=0)
+        xmix = np.append(xupd, new_berns.state[j].mean, axis=0)
+        Pmix = np.append(Pupd, new_berns.state[j].covar, axis=0)
         x, P = mix_gaussians(means=xmix, covars=Pmix, weights=pr)
 
       momb_mb.append(r=r, state=GaussianMixture(
-          means=x, covars=P, weights=None))
+          mean=x, covar=P, weight=None))
 
     # Truncate tracks with low probability of existence (not shown in algorithm)
     if len(momb_mb) > 0 and self.r_min is not None:

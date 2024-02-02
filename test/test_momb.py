@@ -68,14 +68,14 @@ def test_scenario_prune():
 
   # Initialize filter
   birth_dist = GaussianMixture(
-      means=np.array([[0, 0, 0, 0]]),
-      covars=np.array([np.diag([100, 1, 100, 1])**2]),
-      weights=np.array([0.05]),
+      mean=np.array([[0, 0, 0, 0]]),
+      covar=np.array([np.diag([100, 1, 100, 1])**2]),
+      weight=np.array([0.05]),
   )
   init_dist = GaussianMixture(
-      means=birth_dist.means,
-      covars=birth_dist.covars,
-      weights=[10.0])
+      mean=birth_dist.mean,
+      covar=birth_dist.covar,
+      weight=[10.0])
   momb = MOMBP(birth_distribution=birth_dist,
                pg=1,
                w_min=1e-4,
@@ -114,14 +114,14 @@ def test_scenario_merge():
 
   # Initialize TOMB filter
   birth_dist = GaussianMixture(
-      means=np.array([[0, 0, 0, 0]]),
-      covars=np.array([np.diag([100, 1, 100, 1])**2]),
-      weights=np.array([0.05]),
+      mean=np.array([[0, 0, 0, 0]]),
+      covar=np.array([np.diag([100, 1, 100, 1])**2]),
+      weight=np.array([0.05]),
   )
   init_dist = GaussianMixture(
-      means=birth_dist.means,
-      covars=birth_dist.covars,
-      weights=[10.0])
+      mean=birth_dist.mean,
+      covar=birth_dist.covar,
+      weight=[10.0])
   momb = MOMBP(birth_distribution=birth_dist,
                pg=1,
                w_min=None,

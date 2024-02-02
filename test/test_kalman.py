@@ -86,22 +86,22 @@ def test_gaussian_mixture_input():
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 
   state = GaussianState(mean=np.ones(2), covar=np.eye(2))
-  mixture = GaussianMixture(means=np.ones(2), covars=np.eye(2), weights=1)
+  mixture = GaussianMixture(mean=np.ones(2), covar=np.eye(2), weight=1)
 
   # Test predict
   dt = 1
   pred_state = kf.predict(state=state, dt=dt)
   pred_mixture = kf.predict(state=mixture, dt=dt)
-  assert np.allclose(pred_state.mean, pred_mixture.means)
-  assert np.allclose(pred_state.covar, pred_mixture.covars)
-  assert pred_mixture.weights == mixture.weights
+  assert np.allclose(pred_state.mean, pred_mixture.mean)
+  assert np.allclose(pred_state.covar, pred_mixture.covar)
+  assert pred_mixture.weight == mixture.weight
 
   z = np.ones(2)
   up_state = kf.update(measurement=z, predicted_state=pred_state)
   up_mixture = kf.update(measurement=z, predicted_state=pred_mixture)
-  assert np.allclose(up_state.mean, up_mixture.means)
-  assert np.allclose(up_state.covar, up_mixture.covars)
-  assert up_mixture.weights == mixture.weights
+  assert np.allclose(up_state.mean, up_mixture.mean)
+  assert np.allclose(up_state.covar, up_mixture.covar)
+  assert up_mixture.weight == mixture.weight
 
 
 if __name__ == '__main__':

@@ -204,9 +204,9 @@ class TOMBP:
 
     # Update (i.e., thin) intensity of unknown targets
     poisson_upd = copy.copy(self.poisson)
-    poisson_upd.distribution.weights *= 1 - pd_ppp
+    poisson_upd.distribution.weight *= 1 - pd_ppp
 
-    if wupd.size == 0:
+    if n == 0:
       pupd = np.zeros_like(wupd)
       pnew = np.ones_like(wnew)
     elif m == 0:
@@ -258,13 +258,13 @@ class TOMBP:
       if not np.any(valid):
         continue
       rupd = mb_hypos[i].r
-      xupd = mb_hypos[i].state.means
-      Pupd = mb_hypos[i].state.covars
+      xupd = mb_hypos[i].state.mean
+      Pupd = mb_hypos[i].state.covar
       pr = pupd[i, valid] * rupd
       r = np.sum(pr)
       x, P = mix_gaussians(means=xupd, covars=Pupd, weights=pr)
 
-      tomb_mb.append(r=r, state=GaussianMixture(means=x, covars=P, weights=0))
+      tomb_mb.append(r=r, state=GaussianMixture(mean=x, covar=P, weight=0))
 
     # Form new tracks (already single hypothesis)
     if len(new_berns) > 0:

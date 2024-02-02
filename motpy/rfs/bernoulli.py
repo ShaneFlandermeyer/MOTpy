@@ -30,7 +30,7 @@ class MultiBernoulli():
              weight: float = None) -> None:
     if isinstance(state, GaussianState):
       state = GaussianMixture(
-          means=state.mean, covars=state.covar, weights=weight)
+          mean=state.mean, covar=state.covar, weight=weight)
       
     if self.state is None:
       self.state = state

@@ -26,9 +26,9 @@ class Poisson:
     if init_distribution is None:
       state_dim = birth_distribution.state_dim
       self.distribution = GaussianMixture(
-          means=np.empty([0, state_dim]),
-          covars=np.empty([0, state_dim, state_dim]),
-          weights=np.array([]),
+          mean=np.empty([0, state_dim]),
+          covar=np.empty([0, state_dim, state_dim]),
+          weight=np.array([]),
       )
 
   def __repr__(self):
@@ -71,7 +71,7 @@ class Poisson:
     # Predict existing PPP density
     pred_ppp = copy.copy(self)
 
-    pred_ppp.distribution.weights *= ps
+    pred_ppp.distribution.weight *= ps
     pred_ppp.distribution = state_estimator.predict(
         state=pred_ppp.distribution, dt=dt)
     pred_ppp.distribution.append(pred_ppp.birth_distribution)
@@ -95,25 +95,25 @@ class Poisson:
     # If a measurement is associated to a PPP component, we create a new Bernoulli whose existence probability depends on likelihood of measurement
     mixture_up = state_estimator.update(
         measurement=measurement, predicted_state=self.distribution[in_gate])
-    mixture_up.weights *= likelihoods[in_gate] * pd[in_gate]
+    mixture_up.weight *= likelihoods[in_gate] * pd[in_gate]
 
     # Create a new Bernoulli component based on updated weights
-    sum_w_up = np.sum(mixture_up.weights)
+    sum_w_up = np.sum(mixture_up.weight)
     sum_w_total = sum_w_up + clutter_intensity
     r = sum_w_up / sum_w_total
 
     # Compute the state using moment matching across all PPP components
     mean, covar = mix_gaussians(
-        means=mixture_up.means,
-        covars=mixture_up.covars,
-        weights=mixture_up.weights)
+        means=mixture_up.mean,
+        covars=mixture_up.covar,
+        weights=mixture_up.weight)
     bern = Bernoulli(r=r, state=GaussianState(mean=mean, covar=covar))
     return bern, sum_w_total
 
   def prune(self, threshold: float) -> Poisson:
     pruned = copy.copy(self)
     # Prune components with existence probability below threshold
-    keep = self.distribution.weights > threshold
+    keep = self.distribution.weight > threshold
     pruned.distribution = self.distribution[keep]
 
     return pruned
@@ -131,14 +131,14 @@ class Poisson:
     birth_dist = self.birth_distribution
 
     wmix = np.concatenate(
-        (dist.weights[None, ...], birth_dist.weights[None, ...]), axis=0)
+        (dist.weight[None, ...], birth_dist.weight[None, ...]), axis=0)
     wmix /= np.sum(wmix + 1e-15, axis=0)
     Pmix = np.concatenate(
-        (dist.covars[None, ...], birth_dist.covars[None, ...]), axis=0)
+        (dist.covar[None, ...], birth_dist.covar[None, ...]), axis=0)
     merged_distribution = GaussianMixture(
-        means=dist.means,
-        covars=np.einsum('i..., i...jk -> ...jk', wmix, Pmix),
-        weights=dist.weights + birth_dist.weights,
+        mean=dist.mean,
+        covar=np.einsum('i..., i...jk -> ...jk', wmix, Pmix),
+        weight=dist.weight + birth_dist.weight,
     )
     merged = Poisson(birth_distribution=self.birth_distribution,
                      init_distribution=merged_distribution)
