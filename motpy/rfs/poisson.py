@@ -123,11 +123,9 @@ class Poisson:
     dist = self.distribution[:nbirth]
     birth_dist = self.birth_distribution
 
-    wmix = np.concatenate(
-        (dist.weight[None, ...], birth_dist.weight[None, ...]), axis=0)
+    wmix = np.stack((dist.weight, birth_dist.weight), axis=0)
     wmix /= np.sum(wmix + 1e-15, axis=0)
-    Pmix = np.concatenate(
-        (dist.covar[None, ...], birth_dist.covar[None, ...]), axis=0)
+    Pmix = np.stack((dist.covar, birth_dist.covar), axis=0)
     merged_distribution = GaussianState(
         mean=dist.mean,
         covar=np.einsum('i..., i...jk -> ...jk', wmix, Pmix),
@@ -136,7 +134,7 @@ class Poisson:
     merged = Poisson(birth_distribution=self.birth_distribution,
                      init_distribution=merged_distribution)
     return merged
-  
+
   def intensity(self, grid: np.ndarray, H: np.ndarray) -> np.ndarray:
     """
     Compute the intensity of the Poisson process at a grid of points.
