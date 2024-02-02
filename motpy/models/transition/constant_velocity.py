@@ -89,21 +89,22 @@ class ConstantVelocity(TransitionModel):
   @functools.lru_cache()
   def matrix(self, dt: float):
     F = np.zeros((self.ndim, self.ndim))
-    for i in range(self.ndim_pos):
-      F[self.position_mapping[i], self.position_mapping[i]] = 1
-      F[self.position_mapping[i], self.velocity_mapping[i]] = dt
-      F[self.velocity_mapping[i], self.velocity_mapping[i]] = 1
+    
+    pos, vel = self.position_mapping, self.velocity_mapping
+    F[pos, pos] = 1
+    F[pos, vel] = dt
+    F[vel, vel] = 1
     return F
 
   @functools.lru_cache()
   def covar(self, dt: float):
     Q = np.zeros((self.ndim, self.ndim))
-    for i in range(self.ndim_pos):
-      Q[self.position_mapping[i], self.position_mapping[i]] = dt**3 / 3
-      Q[self.position_mapping[i], self.velocity_mapping[i]] = dt**2 / 2
-      Q[self.velocity_mapping[i], self.position_mapping[i]] = dt**2 / 2
-      Q[self.velocity_mapping[i], self.velocity_mapping[i]] = dt
-    Q *= self.q
+    
+    pos, vel = self.position_mapping, self.velocity_mapping
+    Q[pos, pos] = self.q * dt**3 / 3
+    Q[pos, vel] = self.q * dt**2 / 2
+    Q[vel, pos] = self.q * dt**2 / 2
+    Q[vel, vel] = self.q * dt
     return Q
 
   def sample_noise(self,
