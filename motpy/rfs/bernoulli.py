@@ -28,7 +28,7 @@ class MultiBernoulli():
              r: np.ndarray,
              state: GaussianState) -> None:
     if self.state is None:
-      self.state = GaussianState(state.mean, state.covar, state.weight)
+      self.state = state
     else:
       self.state.append(state)
       

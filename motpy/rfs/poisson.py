@@ -36,7 +36,7 @@ class Poisson:
 
   def append(self,
              weight: Union[float, np.ndarray],
-             state: Union[GaussianState, List[GaussianState]]) -> None:
+             state: GaussianState) -> None:
     """
     Append a new Gaussian state and its corresponding weight to the Poisson process.
 
@@ -55,7 +55,7 @@ class Poisson:
     """
     state = state if isinstance(state, list) else [state]
     self.weights = np.append(self.weights, weight)
-    self.states.extend(state)
+    self.distribution.append(state)
 
   def predict(self,
               state_estimator: KalmanFilter,
