@@ -135,8 +135,9 @@ class TOMBP:
     in_gate_mb = np.zeros((n, m), dtype=bool)
     # Create missed detection hypothesis
     if n > 0:
-      wupd[:, 0] = 1 - self.mb.r + self.mb.r * (1 - pd_func(self.mb.state))
-      r_post = self.mb.r * (1 - pd_func(self.mb.state)) / (wupd[:, 0] + 1e-15)
+      pd = pd_func(self.mb.state)
+      wupd[:, 0] = (1 - self.mb.r) + self.mb.r * (1 - pd)
+      r_post = self.mb.r * (1 - pd) / (wupd[:, 0] + 1e-15)
       state_post = self.mb.state
       for i in range(n):
         mb_hypos[i].append(r=r_post[i], state=state_post[i])
@@ -147,8 +148,8 @@ class TOMBP:
             measurements=measurements, predicted_state=self.mb.state, pg=self.pg)
 
         l_mb = np.zeros((n, m))
-        used_meas_mb = np.argwhere(np.any(in_gate_mb, axis=0)).flatten()
-        used_mb = np.argwhere(np.any(in_gate_mb, axis=1)).flatten()
+        used_meas_mb = np.argwhere(np.any(in_gate_mb, axis=0)).ravel()
+        used_mb = np.argwhere(np.any(in_gate_mb, axis=1)).ravel()
         l_mb[np.ix_(used_mb, used_meas_mb)] = state_estimator.likelihood(
             measurement=measurements[used_meas_mb],
             predicted_state=self.mb.state[used_mb])
@@ -185,8 +186,8 @@ class TOMBP:
 
       # Compute likelihoods for PPP components with at least one measurement in the gate and measurements in at least one gate
       l_ppp = np.zeros((nu, m))
-      used_meas_ppp = np.argwhere(np.any(in_gate_poisson, axis=0)).flatten()
-      used_ppp = np.argwhere(np.any(in_gate_poisson, axis=1)).flatten()
+      used_meas_ppp = np.argwhere(np.any(in_gate_poisson, axis=0)).ravel()
+      used_ppp = np.argwhere(np.any(in_gate_poisson, axis=1)).ravel()
       l_ppp[np.ix_(used_ppp, used_meas_ppp)] = state_estimator.likelihood(
           measurement=measurements[used_meas_ppp],
           predicted_state=self.poisson.distribution[used_ppp])

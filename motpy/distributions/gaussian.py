@@ -6,6 +6,12 @@ import numpy as np
 
 
 class GaussianState():
+  """
+  A general class to represent both Gaussian state and Gaussian mixture distributions. 
+  
+  Representing these with one class simplifies the code and makes it easy to support batched operations.  
+  """
+
   def __init__(
       self,
       mean: np.ndarray,
@@ -26,12 +32,13 @@ class GaussianState():
       covars=\n{self.covar})
       weights={self.weight}
       """
+
   def __len__(self):
     return len(self.mean)
-  
+
   def __getitem__(self, idx):
     return GaussianState(mean=self.mean[idx], covar=self.covar[idx], weight=self.weight[idx])
-      
+
   def append(self, state: GaussianState) -> None:
     self.mean = np.concatenate((self.mean, state.mean), axis=0)
     self.covar = np.concatenate((self.covar, state.covar), axis=0)
