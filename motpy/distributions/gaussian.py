@@ -51,8 +51,8 @@ class GaussianState():
 
 
 def match_moments(means: np.ndarray,
-                    covars: np.ndarray,
-                    weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+                  covars: np.ndarray,
+                  weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
   """
   Compute a Gaussian mixture as a weighted sum of N Gaussian distributions, each with dimension D.
 
@@ -103,19 +103,16 @@ def likelihood(z: np.ndarray,
   np.ndarray
       Likelihood for each measurement/state pair. Shape: (M, N)
   """
+  nz = z.shape[-1]
+
+  z = z[np.newaxis, ...]
+  z_pred = z_pred[..., np.newaxis, :]
+  y = z - z_pred # (N, M, nz)
+
   Si = np.linalg.inv(S)
+  det_S = np.linalg.det(S)[:, np.newaxis]
 
-  z_pred = np.atleast_2d(z_pred)
-  z = np.atleast_2d(z)
-  n, d = z_pred.shape
-  m, _ = z.shape
-  Si = Si.reshape(n, d, d)
+  exponent = -0.5 * np.einsum('nmi, nii, nim -> nm', y, Si, y.swapaxes(-1, -2))
+  likelihoods = np.exp(exponent) / np.sqrt((2 * np.pi) ** nz * det_S)
 
-  den = np.sqrt((2 * np.pi) ** d * np.linalg.det(S))[:, None]
-  x = z.reshape(1, m, d) - z_pred.reshape(n, 1, d)
-  l = np.exp(
-      -0.5 * np.einsum('nmi, nii, nim -> nm', x, Si, x.swapaxes(-1, -2))) / den
-  if z_pred.ndim == 1:
-    l = l.squeeze(0)
-
-  return l
+  return likelihoods
