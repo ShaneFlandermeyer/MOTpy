@@ -1,6 +1,4 @@
 import numpy as np
-from typing import List
-
 
 def mahalanobis(mean: np.ndarray,
                 covar: np.ndarray,
@@ -26,10 +24,10 @@ def mahalanobis(mean: np.ndarray,
   x = np.atleast_2d(points)
   n, d = mu.shape
   m, _ = x.shape
-  Si = np.linalg.inv(covar).reshape(n, d, d)
-  
+
   y = x.reshape(1, m, d) - mu.reshape(n, 1, d)
-  dist = np.sqrt(np.einsum('nmi, nii, nim -> nm', y, Si, y.swapaxes(-1, -2)))
+  Si_y = np.linalg.solve(covar, y.swapaxes(-1, -2))
+  dist = np.sqrt(np.einsum('nmi, nim -> nm', y, Si_y))
 
   if mean.ndim == 1:
     dist = dist.squeeze(0)
