@@ -256,14 +256,18 @@ class TOMBP:
     tomb_mb = MultiBernoulli()
     for i in range(len(self.mb)):
       valid = valid_hypos[i]
-      if not np.any(valid):
+      n_valid = np.count_nonzero(valid)
+      if n_valid == 0:
         continue
       rupd = mb_hypos[i].r
       xupd = mb_hypos[i].state.mean
       Pupd = mb_hypos[i].state.covar
       pr = pupd[i, valid] * rupd
       r = np.sum(pr)
-      x, P = mix_gaussians(means=xupd, covars=Pupd, weights=pr)
+      if n_valid == 1:
+        x, P = xupd, Pupd
+      else:
+        x, P = mix_gaussians(means=xupd, covars=Pupd, weights=pr)
 
       tomb_mb.append(r=r, state=GaussianState(mean=x, covar=P))
 
