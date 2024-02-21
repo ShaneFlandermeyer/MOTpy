@@ -178,24 +178,28 @@ class TOMBP:
       pd_ppp = np.full(nu, pd_ppp)
 
     if m > 0:
+      # We only care about PPP components that can be detected here. This allows us to save some matrix inverses
+      detectable_poisson = copy.copy(self.poisson)
+      detectable_poisson.distribution = detectable_poisson.distribution[pd_ppp > 0]
+
       # Gate PPP components
       in_gate_poisson = state_estimator.gate(
           measurements=measurements,
-          predicted_state=self.poisson.distribution,
+          predicted_state=detectable_poisson.distribution,
           pg=self.pg)
 
       # Compute likelihoods for PPP components with at least one measurement in the gate and measurements in at least one gate
-      l_ppp = np.zeros((nu, m))
+      l_ppp = np.zeros((len(detectable_poisson), m))
       used_meas_ppp = np.argwhere(np.any(in_gate_poisson, axis=0)).ravel()
       used_ppp = np.argwhere(np.any(in_gate_poisson, axis=1)).ravel()
       l_ppp[np.ix_(used_ppp, used_meas_ppp)] = state_estimator.likelihood(
           measurement=measurements[used_meas_ppp],
-          predicted_state=self.poisson.distribution[used_ppp])
+          predicted_state=detectable_poisson.distribution[used_ppp])
 
       for j in range(m):
-        bern, wnew[j] = self.poisson.update(
+        bern, wnew[j] = detectable_poisson.update(
             measurement=measurements[j],
-            pd=pd_ppp,
+            pd=pd_ppp[pd_ppp > 0],
             likelihoods=l_ppp[:, j],
             in_gate=in_gate_poisson[:, j],
             state_estimator=state_estimator,
