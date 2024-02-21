@@ -18,12 +18,17 @@ class GaussianState():
       covar: np.ndarray,
       weight: Optional[np.ndarray] = None,
   ):
-    self.state_dim = mean.shape[-1]
     self.mean = np.atleast_2d(mean)
-    if covar.ndim == 2:
-      covar = covar[np.newaxis, ...]
-    self.covar = covar
-    self.weight = np.atleast_1d(weight)
+    self.state_dim = self.mean.shape[-1]
+    
+    n_components = self.mean.shape[0]
+    self.covar = covar.reshape(n_components, self.state_dim, self.state_dim)
+    
+    if weight is None:
+      weight = np.zeros(n_components)
+    else:
+      weight = np.asarray(weight).reshape(n_components)
+    self.weight = weight
 
   def __repr__(self):
     return f"""GaussianMixture(
