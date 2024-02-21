@@ -6,7 +6,7 @@ from typing import Callable, List, Optional, Tuple, Union
 from motpy.kalman import KalmanFilter
 from motpy.measures import mahalanobis
 from motpy.rfs.bernoulli import Bernoulli
-from motpy.distributions.gaussian import mix_gaussians, GaussianState
+from motpy.distributions.gaussian import match_moments, GaussianState
 from scipy.stats import multivariate_normal
 
 
@@ -96,10 +96,15 @@ class Poisson:
     r = sum_w_up / sum_w_total
 
     # Compute the state using moment matching across all PPP components
-    mean, covar = mix_gaussians(
-        means=mixture_up.mean,
-        covars=mixture_up.covar,
-        weights=mixture_up.weight)
+    if n_in_gate == 1:
+      mean = mixture_up.mean
+      covar = mixture_up.covar
+    else:
+      mean, covar = match_moments(
+          means=mixture_up.mean,
+          covars=mixture_up.covar,
+          weights=mixture_up.weight)
+      
     bern = Bernoulli(r=r, state=GaussianState(mean=mean, covar=covar))
     return bern, sum_w_total
 

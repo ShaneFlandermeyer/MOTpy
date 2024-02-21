@@ -3,7 +3,7 @@ from typing import Callable, List, Tuple
 
 import numpy as np
 
-from motpy.distributions.gaussian import GaussianState, mix_gaussians
+from motpy.distributions.gaussian import GaussianState, match_moments
 from motpy.kalman import KalmanFilter
 from motpy.rfs.bernoulli import MultiBernoulli
 from motpy.rfs.poisson import Poisson
@@ -179,25 +179,25 @@ class TOMBP:
 
     if m > 0:
       # We only care about PPP components that can be detected here. This allows us to save some matrix inverses
-      detectable_poisson = copy.copy(self.poisson)
-      detectable_poisson.distribution = detectable_poisson.distribution[pd_ppp > 0]
+      detectable_ppp = copy.copy(self.poisson)
+      detectable_ppp.distribution = detectable_ppp.distribution[pd_ppp > 0]
 
       # Gate PPP components
       in_gate_poisson = state_estimator.gate(
           measurements=measurements,
-          predicted_state=detectable_poisson.distribution,
+          predicted_state=detectable_ppp.distribution,
           pg=self.pg)
 
       # Compute likelihoods for PPP components with at least one measurement in the gate and measurements in at least one gate
-      l_ppp = np.zeros((len(detectable_poisson), m))
+      l_ppp = np.zeros((len(detectable_ppp), m))
       used_meas_ppp = np.argwhere(np.any(in_gate_poisson, axis=0)).ravel()
       used_ppp = np.argwhere(np.any(in_gate_poisson, axis=1)).ravel()
       l_ppp[np.ix_(used_ppp, used_meas_ppp)] = state_estimator.likelihood(
           measurement=measurements[used_meas_ppp],
-          predicted_state=detectable_poisson.distribution[used_ppp])
+          predicted_state=detectable_ppp.distribution[used_ppp])
 
       for j in range(m):
-        bern, wnew[j] = detectable_poisson.update(
+        bern, wnew[j] = detectable_ppp.update(
             measurement=measurements[j],
             pd=pd_ppp[pd_ppp > 0],
             likelihoods=l_ppp[:, j],
@@ -271,7 +271,7 @@ class TOMBP:
       if n_valid == 1:
         x, P = xupd, Pupd
       else:
-        x, P = mix_gaussians(means=xupd, covars=Pupd, weights=pr)
+        x, P = match_moments(means=xupd, covars=Pupd, weights=pr)
 
       tomb_mb.append(r=r, state=GaussianState(mean=x, covar=P))
 

@@ -8,7 +8,7 @@ import numpy as np
 class GaussianState():
   """
   A general class to represent both Gaussian state and Gaussian mixture distributions. 
-  
+
   Representing these with one class simplifies the code and makes it easy to support batched operations.  
   """
 
@@ -20,10 +20,10 @@ class GaussianState():
   ):
     self.mean = np.atleast_2d(mean)
     self.state_dim = self.mean.shape[-1]
-    
+
     n_components = self.mean.shape[0]
     self.covar = covar.reshape(n_components, self.state_dim, self.state_dim)
-    
+
     if weight is None:
       weight = np.zeros(n_components)
     else:
@@ -50,9 +50,9 @@ class GaussianState():
     self.weight = np.concatenate((self.weight, state.weight), axis=0)
 
 
-def mix_gaussians(means: np.ndarray,
-                  covars: np.ndarray,
-                  weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def match_moments(means: np.ndarray,
+                    covars: np.ndarray,
+                    weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
   """
   Compute a Gaussian mixture as a weighted sum of N Gaussian distributions, each with dimension D.
 

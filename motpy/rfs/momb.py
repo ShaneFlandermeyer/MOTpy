@@ -3,7 +3,7 @@ from typing import Callable, List, Tuple
 
 import numpy as np
 
-from motpy.distributions.gaussian import GaussianMixture, GaussianState, mix_gaussians
+from motpy.distributions.gaussian import GaussianState, match_moments
 from motpy.kalman import KalmanFilter
 from motpy.rfs.bernoulli import Bernoulli, MultiBernoulli
 from motpy.rfs.poisson import Poisson
@@ -277,7 +277,7 @@ class MOMBP:
 
         xmix = np.append(xupd, new_berns.state[j].mean, axis=0)
         Pmix = np.append(Pupd, new_berns.state[j].covar, axis=0)
-        x, P = mix_gaussians(means=xmix, covars=Pmix, weights=pr)
+        x, P = match_moments(means=xmix, covars=Pmix, weights=pr)
 
       momb_mb.append(r=r, state=GaussianMixture(
           mean=x, covar=P, weight=None))
