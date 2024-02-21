@@ -286,7 +286,8 @@ class TOMBP:
     return tomb_mb
 
   @staticmethod
-  def spa(wupd: np.ndarray, wnew: np.ndarray, eps: float = 1e-4
+  def spa(wupd: np.ndarray, wnew: np.ndarray,
+          eps: float = 1e-4, max_iter: int = 10
           ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Compute marginal association probabilities using the Sum-Product Algorithm, allowing for a time-varying number of objects.
@@ -316,13 +317,18 @@ class TOMBP:
     mu_ba_old = np.zeros((n, m))
     mu_ab = np.zeros((n, m))
 
-    while np.max(np.abs(mu_ba - mu_ba_old)) > eps:
+    i = 0
+    while True:
       mu_ba_old = mu_ba
 
       w_muba = wupd[:, 1:] * mu_ba
       mu_ab = wupd[:, 1:] / (wupd[:, 0][:, np.newaxis] +
                              np.sum(w_muba, axis=1, keepdims=True) - w_muba + 1e-15)
       mu_ba = 1 / (wnew + np.sum(mu_ab, axis=0, keepdims=True) - mu_ab + 1e-15)
+      i += 1
+
+      if np.max(np.abs(mu_ba - mu_ba_old)) < eps or i == max_iter:
+        break
 
     # Compute marginal association probabilities
     mu_ba = np.concatenate((np.ones((n, 1)), mu_ba), axis=1)
