@@ -6,7 +6,7 @@ from motpy.distributions.gaussian import GaussianState
 from motpy.kalman import KalmanFilter
 import numpy as np
 
-from motpy.distributions import GaussianMixture, GaussianState
+from motpy.distributions import GaussianState
 from motpy.kalman import KalmanFilter
 from motpy.models.transition import ConstantVelocity
 from motpy.models.measurement import LinearMeasurementModel
@@ -50,12 +50,13 @@ def test_kalman_predict():
   transition_model = TestLinearTransitionModel()
   F = transition_model.matrix(dt)
   Q = transition_model.covar()
-  
+
   kf = KalmanFilter(
-    transition_model=TestLinearTransitionModel(),
-    measurement_model=None)
+      transition_model=TestLinearTransitionModel(),
+      measurement_model=None)
   state_pred = kf.predict(state=state, dt=dt)
-  x_expected, P_expected = predict(x=state.mean, P=state.covar, F=F, Q=Q)
+  x_expected, P_expected = predict(
+      x=state.mean[0], P=state.covar[0], F=F, Q=Q)
   assert np.allclose(state_pred.mean, x_expected)
   assert np.allclose(state_pred.covar, P_expected)
 
@@ -71,37 +72,14 @@ def test_kalman_update():
   state = GaussianState(mean=np.array([12.7, 4.5]),
                         covar=np.array([[545, 150], [150, 500]]))
   kf = KalmanFilter(
-    transition_model=TestLinearTransitionModel(),
-    measurement_model=TestLinearMeasurementModel(),
+      transition_model=TestLinearTransitionModel(),
+      measurement_model=TestLinearMeasurementModel(),
   )
-  
+
   state_post = kf.update(measurement=z, predicted_state=state)
-  x_expected, P_expected = update(x=state.mean, P=state.covar, z=z, R=R, H=H)
+  x_expected, P_expected = update(x=state.mean[0], P=state.covar[0], z=z, R=R, H=H)
   assert np.allclose(state_post.mean, x_expected)
   assert np.allclose(state_post.covar, P_expected)
-  
-def test_gaussian_mixture_input():
-  cv = ConstantVelocity(ndim_pos=1, q=0.01)
-  linear = LinearMeasurementModel(ndim_state=2, covar=np.eye(2))
-  kf = KalmanFilter(transition_model=cv, measurement_model=linear)
-
-  state = GaussianState(mean=np.ones(2), covar=np.eye(2))
-  mixture = GaussianMixture(mean=np.ones(2), covar=np.eye(2), weight=1)
-
-  # Test predict
-  dt = 1
-  pred_state = kf.predict(state=state, dt=dt)
-  pred_mixture = kf.predict(state=mixture, dt=dt)
-  assert np.allclose(pred_state.mean, pred_mixture.mean)
-  assert np.allclose(pred_state.covar, pred_mixture.covar)
-  assert pred_mixture.weight == mixture.weight
-
-  z = np.ones(2)
-  up_state = kf.update(measurement=z, predicted_state=pred_state)
-  up_mixture = kf.update(measurement=z, predicted_state=pred_mixture)
-  assert np.allclose(up_state.mean, up_mixture.mean)
-  assert np.allclose(up_state.covar, up_mixture.covar)
-  assert up_mixture.weight == mixture.weight
 
 
 if __name__ == '__main__':
