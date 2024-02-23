@@ -16,11 +16,11 @@ class TOMBP:
 
   def __init__(self,
                birth_distribution: GaussianState,
+               undetected_distribution: GaussianState = None,
                pg: float = None,
                w_min: float = None,
                r_min: float = None,
                merge_poisson: bool = False,
-               r_estimate_threshold: float = None,
                ):
     """
 
@@ -36,20 +36,18 @@ class TOMBP:
         Existence probability threshold for MB pruning. If none, pruning is not performed, by default None
     merge_poisson : bool, optional
         If True, similar PPP components are merged. Cannot be True if w_min is not None, by default False
-    r_estimate_threshold : float, optional
-        Threshold for declaring that an object exists. Not used in any computation, by default None.
     """
     if merge_poisson and w_min is not None:
       raise ValueError(
           "Poisson merging currently assumes there is no pruning")
-    self.poisson = Poisson(birth_distribution=birth_distribution)
+    self.poisson = Poisson(
+        birth_distribution=birth_distribution, init_distribution=undetected_distribution)
     self.mb = MultiBernoulli()
 
     self.pg = pg
     self.r_min = r_min
     self.w_min = w_min
     self.merge_poisson = merge_poisson
-    self.r_estimate_threshold = r_estimate_threshold
 
   def predict(self,
               state_estimator: KalmanFilter,
