@@ -52,7 +52,7 @@ class TOMBP:
   def predict(self,
               state_estimator: KalmanFilter,
               dt: float,
-              ps_func: float):
+              ps_func: float) -> Tuple[MultiBernoulli, Poisson]:
     """
     Predicts the state of the multi-object system in the next time step.
 
@@ -97,7 +97,7 @@ class TOMBP:
              measurements: np.ndarray,
              state_estimator: KalmanFilter,
              pd_func: Callable,
-             lambda_fa: float):
+             lambda_fa: float) -> Tuple[MultiBernoulli, Poisson]:
     """
     Updates the state of the multi-object system based on the given measurements.
 
