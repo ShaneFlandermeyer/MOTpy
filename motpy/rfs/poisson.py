@@ -7,7 +7,7 @@ from motpy.kalman import KalmanFilter
 from motpy.measures import mahalanobis
 from motpy.rfs.bernoulli import Bernoulli
 from motpy.distributions.gaussian import match_moments, GaussianState
-from scipy.stats import multivariate_normal
+from sklearn.cluster import DBSCAN
 
 
 class Poisson:
@@ -34,9 +34,7 @@ class Poisson:
   def __getitem__(self, idx):
     return self.distribution[idx]
 
-  def append(self,
-             weight: Union[float, np.ndarray],
-             state: GaussianState) -> None:
+  def append(self, state: GaussianState) -> None:
     """
     Append a new Gaussian state and its corresponding weight to the Poisson process.
 
@@ -53,8 +51,6 @@ class Poisson:
     -------
     None
     """
-    state = state if isinstance(state, list) else [state]
-    self.weights = np.append(self.weights, weight)
     self.distribution.append(state)
 
   def predict(self,
@@ -104,7 +100,7 @@ class Poisson:
           means=mixture_up.mean,
           covars=mixture_up.covar,
           weights=mixture_up.weight)
-      
+
     bern = Bernoulli(r=r, state=GaussianState(mean=mean, covar=covar))
     return bern, sum_w_total
 
@@ -140,6 +136,41 @@ class Poisson:
                      init_distribution=merged_distribution)
     return merged
 
+  def _accurate_merge(self, threshold: float) -> Poisson:
+    """
+    Merge components that are close to each other.
+
+    TODO: Use dbscan to merge components that are close to each other.
+    """
+    threshold = 1e-15
+    inds = DBSCAN(eps=threshold, min_samples=2).fit_predict(
+        self.distribution.mean)
+    unique_clusters, counts = np.unique(inds, return_counts=True)
+    largest_cluster = np.max(counts)
+    n_clusters = len(unique_clusters)
+
+    # Use the mask to assign values to the mix arrays
+    masks = (inds == unique_clusters[:, np.newaxis])
+
+    mix_means = np.zeros(
+        (n_clusters, largest_cluster, *self.distribution.mean.shape[1:]))
+    mix_covars = np.zeros(
+        (n_clusters, largest_cluster, *self.distribution.covar.shape[1:]))
+    mix_weights = np.zeros((n_clusters, largest_cluster))
+    for i in range(n_clusters):
+      mix_means[i, :counts[i]] = self.distribution.mean[masks[i]]
+      mix_covars[i, :counts[i]] = self.distribution.covar[masks[i]]
+      mix_weights[i, :counts[i]] = self.distribution.weight[masks[i]]
+
+    merged_means, merged_covars = match_moments(
+        means=mix_means, covars=mix_covars, weights=mix_weights)
+    merged_distribution = GaussianState(
+        mean=merged_means, covar=merged_covars, weight=np.sum(mix_weights, axis=1))
+
+    merged = Poisson(birth_distribution=self.birth_distribution,
+                     init_distribution=merged_distribution)
+    return merged
+
   def intensity(self, grid: np.ndarray, H: np.ndarray) -> np.ndarray:
     """
     Compute the intensity of the Poisson process at a grid of points.
@@ -165,3 +196,43 @@ class Poisson:
       rv = multivariate_normal(mean=mean, cov=cov)
       intensity += self.weights[i] * rv.pdf(grid)
     return intensity
+
+
+if __name__ == '__main__':
+  grid_extents = np.array([-1, 1])
+  nx = ny = 10
+  n_init = 100
+  ngrid = nx * ny
+
+  dx = np.diff(grid_extents).item() / nx
+  dy = np.diff(grid_extents).item() / ny
+  ppp_x_pos, ppp_y_pos = np.meshgrid(
+      np.linspace(*(grid_extents+[dx/2, -dx/2]), nx),
+      np.linspace(*(grid_extents+[dy/2, -dy/2]), ny))
+  ppp_x_vel = np.zeros_like(ppp_x_pos)
+  ppp_y_vel = np.zeros_like(ppp_x_pos)
+
+  init_mean = np.stack(
+      (ppp_x_pos.ravel(), ppp_x_vel.ravel(),
+       ppp_y_pos.ravel(), ppp_y_vel.ravel()), axis=-1)
+  init_covar = np.repeat(np.diag([dx**2, 0, dy**2, 0])[np.newaxis, ...],
+                         len(init_mean), axis=0)
+  init_weights = np.ones((nx, ny))
+
+  undetected_dist = GaussianState(mean=init_mean,
+                                  covar=init_covar,
+                                  weight=init_weights.ravel())
+
+  birth_rate = 0.1
+  birth_weights = np.random.uniform(
+      low=0, high=2*birth_rate/ngrid, size=(nx, ny))
+  birth_mean = init_mean.copy()
+  birth_covar = init_covar.copy()
+  birth_dist = GaussianState(mean=birth_mean,
+                             covar=birth_covar,
+                             weight=birth_weights.ravel())
+
+  ppp = Poisson(birth_distribution=birth_dist,
+                init_distribution=undetected_dist)
+  ppp.append(birth_dist)
+  ppp.merge(threshold=0.1)

@@ -73,12 +73,12 @@ def match_moments(means: np.ndarray,
   """
   x = means
   P = covars
-  w = weights / (np.sum(weights) + 1e-15)
+  w = weights / (np.sum(weights, axis=-1, keepdims=True) + 1e-15)
 
-  mix_mean = np.dot(w, x)
-  mix_covar = np.einsum('i, ijk->jk', w, P)
-  mix_covar += np.einsum('i,ij,ik->jk', w, x, x)
-  mix_covar -= np.outer(mix_mean, mix_mean)
+  mix_mean = np.einsum('...i, ...ij -> ...j', w, x)
+  mix_covar = np.einsum('...i, ...ijk->...jk', w, P)
+  mix_covar += np.einsum('...i,...ij,...ik->...jk', w, x, x)
+  mix_covar -= np.einsum('...i,...j->...ij', mix_mean, mix_mean)
   return mix_mean, mix_covar
 
 
