@@ -121,7 +121,7 @@ class TOMBP:
 
     n = len(self.mb)
     nu = len(self.poisson)
-    m = len(measurements)
+    m = len(measurements) if measurements is not None else 0
 
     # Update existing tracks
     wupd = np.zeros((n, m + 1))
@@ -131,8 +131,10 @@ class TOMBP:
     mb_hypos = [MultiBernoulli() for _ in range(n)]
 
     in_gate_mb = np.zeros((n, m), dtype=bool)
-    # Create missed detection hypothesis
+    
     if n > 0:
+      
+      # Create missed detection hypothesis
       pd = pd_func(self.mb.state)
       wupd[:, 0] = (1 - self.mb.r) + self.mb.r * (1 - pd)
       r_post = self.mb.r * (1 - pd) / (wupd[:, 0] + 1e-15)
