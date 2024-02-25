@@ -1,3 +1,5 @@
+from functools import partial
+import jax
 import numpy as np
 import jax.numpy as jnp
 from jax import jit, vmap
@@ -30,24 +32,22 @@ def mahalanobis(mean: np.ndarray,
   m, _ = x.shape
 
   y = x.reshape(1, m, d) - mu.reshape(n, 1, d)
-  Si_y = np.linalg.solve(covar, y.swapaxes(-1, -2))
+  Si_y = np.linalg.inv(covar) @ y.swapaxes(-1, -2)
   dist = np.sqrt(np.einsum('nmi, nim -> nm', y, Si_y))
 
   if mean.ndim == 1:
     dist = dist.squeeze(0)
   return dist
 
-
-def mahalanobis(mean: np.ndarray,
-                covar: np.ndarray,
-                points: np.ndarray) -> jnp.ndarray:
+@jax.jit
+@partial(jax.vmap, in_axes=(None, None, 0))
+@partial(jax.vmap, in_axes=(0, 0, None))
+def _pairwise_mahalanobis(mean: np.ndarray,
+                       covar: np.ndarray,
+                       points: np.ndarray) -> jnp.ndarray:
   y = points - mean
   dist = jnp.sqrt(y @ jnp.linalg.inv(covar) @ y.T)
   return dist
-
-
-_pairwise_mahalanobis = jit(
-    vmap(vmap(mahalanobis, in_axes=(None, None, 0)), in_axes=(0, 0, None)))
 
 
 def pairwise_mahalanobis(mean: np.ndarray,
@@ -76,10 +76,10 @@ def pairwise_mahalanobis(mean: np.ndarray,
   mean = np.pad(mean, ((0, nextpow2(ndist) - ndist), (0, 0)))
   covar = np.pad(covar, ((0, nextpow2(ndist) - ndist), (0, 0), (0, 0)))
   points = np.pad(points, ((0, nextpow2(nquery) - nquery), (0, 0)))
-  
+
   # Compute the pairwise Mahalanobis distance and remove padding
   dists = _pairwise_mahalanobis(mean, covar, points)
-  
+
   return np.array(dists)[:ndist, :nquery]
 
 
