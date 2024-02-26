@@ -284,7 +284,7 @@ if __name__ == '__main__':
       np.linspace(xmin, xmax, ngrid), np.linspace(ymin, ymax, ngrid))
   grid = np.dstack((xmesh, ymesh))
   fps = 0
-  for i in range(1, int(1e5)):
+  for i in range(1, int(1e3)):
     action = env.action_space.sample()
     # action = np.array([0])
     start = time.time()

@@ -1,8 +1,13 @@
 from __future__ import annotations
+
 import datetime
 from typing import *
 
+import jax
+import jax.numpy as jnp
 import numpy as np
+
+from motpy.measures import pairwise_euclidean
 
 
 class GaussianState():
@@ -107,7 +112,7 @@ def likelihood(z: np.ndarray,
 
   z = z[np.newaxis, ...]
   z_pred = z_pred[..., np.newaxis, :]
-  y = z - z_pred # (N, M, nz)
+  y = z - z_pred  # (N, M, nz)
 
   Si = np.linalg.inv(S)
   det_S = np.linalg.det(S)[:, np.newaxis]
@@ -116,3 +121,65 @@ def likelihood(z: np.ndarray,
   likelihoods = np.exp(exponent) / np.sqrt((2 * np.pi) ** nz * det_S)
 
   return likelihoods
+
+
+@jax.jit
+def merge_mixture(means: np.ndarray,
+                  covars: np.ndarray,
+                  weights: np.ndarray,
+                  threshold: np.ndarray
+                  ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+  """
+  Merge a Gaussian mixture by clustering components that are close to each other.
+
+  Parameters
+  ----------
+  means : np.ndarray
+      _description_
+  covars : np.ndarray
+      _description_
+  weights : np.ndarray
+      _description_
+  threshold : np.ndarray
+      _description_
+
+  Returns
+  -------
+  Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+      _description_
+  """
+  # Compute pairwise distances between all points
+  dists = pairwise_euclidean(means, means)
+  mask = dists < threshold**2
+
+  # Sort distance matrix rows by weight
+  inds = jnp.argsort(weights, descending=True)
+  dists = dists[inds]
+  mask = mask[inds]
+
+  # Determine cluster indices and normalized mixture weights
+  masked_weights = jnp.empty((means.shape[0], weights.size))
+  # cluster_inds = jnp.empty(means.shape[0], dtype=jnp.int32)
+  # cluster_count = 0
+  for i in range(means.shape[0]):
+    # Compute (unnormalized) mixture weights for this cluster
+    masked_weights = masked_weights.at[i].set(jnp.where(mask[i], weights, 0))
+
+    # Greedily assign all nearby points to this cluster. We only increment the cluster count if this cluster includes unused points.
+    # cluster_inds = jnp.where(mask[i], cluster_count, cluster_inds)
+    # cluster_count += jnp.any(mask[i])
+
+    # Mark points in this cluster as used
+    mask = jnp.where(mask[i], False, mask)
+
+  # Match moments for all clusters
+  x = means
+  P = covars
+  mix_weights = masked_weights / \
+      (jnp.sum(masked_weights, axis=-1, keepdims=True) + 1e-15)
+  mix_means = jnp.einsum('...i, ...ij -> ...j', mix_weights, x)
+  mix_covars = jnp.einsum('...i, ...ijk->...jk', mix_weights, P) + \
+      jnp.einsum('...i,...ij,...ik->...jk', mix_weights, x, x) - \
+      jnp.einsum('...i,...j->...ij', mix_means, mix_means)
+
+  return mix_means, mix_covars, jnp.sum(masked_weights, -1)

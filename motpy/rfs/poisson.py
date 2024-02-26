@@ -1,5 +1,7 @@
 from __future__ import annotations
 import copy
+import time
+import jax
 import numpy as np
 from typing import Callable, List, Optional, Tuple, Union
 
@@ -7,7 +9,10 @@ from motpy.kalman import KalmanFilter
 from motpy.measures import mahalanobis
 from motpy.rfs.bernoulli import Bernoulli
 from motpy.distributions.gaussian import match_moments, GaussianState
-from sklearn.cluster import DBSCAN
+# from sklearn.cluster import DBSCAN
+# from motpy.measures import pairwise_euclidean
+from motpy.distributions.gaussian import merge_mixture
+from motpy.common import nextpow2
 
 
 class Poisson:
@@ -115,61 +120,34 @@ class Poisson:
   def merge(self, threshold: float) -> Poisson:
     """
     Merge components that are close to each other.
-
-    TODO: Currently assumes there is no thresholding
     """
-    assert len(self) == 2 * len(self.birth_distribution)
+    # Pad inputs to the next power of 2
+    means = self.distribution.mean
+    covars = self.distribution.covar
+    weights = self.distribution.weight
 
-    nbirth = len(self.birth_distribution)
-    dist = self.distribution[:nbirth]
-    birth_dist = self.birth_distribution
+    next_pow2 = nextpow2(means.shape[0])
+    means = np.pad(means, ((0, next_pow2 - means.shape[0]), (0, 0)))
+    covars = np.pad(covars, ((0, next_pow2 - covars.shape[0]), (0, 0), (0, 0)))
+    weights = np.pad(weights, (0, next_pow2 - weights.shape[0]))
 
-    wmix = np.stack((dist.weight, birth_dist.weight), axis=0)
-    wmix /= np.sum(wmix + 1e-15, axis=0)
-    Pmix = np.stack((dist.covar, birth_dist.covar), axis=0)
-    merged_distribution = GaussianState(
-        mean=dist.mean,
-        covar=np.einsum('i..., i...jk -> ...jk', wmix, Pmix),
-        weight=dist.weight + birth_dist.weight,
-    )
-    merged = Poisson(birth_distribution=self.birth_distribution,
-                     init_distribution=merged_distribution)
-    return merged
-
-  def _accurate_merge(self, threshold: float) -> Poisson:
-    """
-    Merge components that are close to each other.
-
-    TODO: Use dbscan to merge components that are close to each other.
-    """
     threshold = 1e-15
-    inds = DBSCAN(eps=threshold, min_samples=2).fit_predict(
-        self.distribution.mean)
-    unique_clusters, counts = np.unique(inds, return_counts=True)
-    largest_cluster = np.max(counts)
-    n_clusters = len(unique_clusters)
+    start = time.time()
+    means, covars, weights = merge_mixture(
+        means=means,
+        covars=covars,
+        weights=weights,
+        threshold=threshold)
 
-    # Use the mask to assign values to the mix arrays
-    masks = (inds == unique_clusters[:, np.newaxis])
-
-    mix_means = np.zeros(
-        (n_clusters, largest_cluster, *self.distribution.mean.shape[1:]))
-    mix_covars = np.zeros(
-        (n_clusters, largest_cluster, *self.distribution.covar.shape[1:]))
-    mix_weights = np.zeros((n_clusters, largest_cluster))
-    for i in range(n_clusters):
-      mix_means[i, :counts[i]] = self.distribution.mean[masks[i]]
-      mix_covars[i, :counts[i]] = self.distribution.covar[masks[i]]
-      mix_weights[i, :counts[i]] = self.distribution.weight[masks[i]]
-
-    merged_means, merged_covars = match_moments(
-        means=mix_means, covars=mix_covars, weights=mix_weights)
+    valid = np.array(weights > 0)
     merged_distribution = GaussianState(
-        mean=merged_means, covar=merged_covars, weight=np.sum(mix_weights, axis=1))
-
-    merged = Poisson(birth_distribution=self.birth_distribution,
-                     init_distribution=merged_distribution)
-    return merged
+        mean=np.asarray(means)[valid],
+        covar=np.asarray(covars)[valid],
+        weight=np.asarray(weights)[valid]
+    )
+    print(f"merge_mixture took {time.time() - start} seconds")
+    return Poisson(birth_distribution=self.birth_distribution,
+                   init_distribution=merged_distribution)
 
   def intensity(self, grid: np.ndarray, H: np.ndarray) -> np.ndarray:
     """
