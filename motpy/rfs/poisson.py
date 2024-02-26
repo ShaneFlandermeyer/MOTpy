@@ -121,31 +121,44 @@ class Poisson:
     """
     Merge components that are close to each other.
     """
-    # Pad inputs to the next power of 2
-    means = self.distribution.mean
-    covars = self.distribution.covar
-    weights = self.distribution.weight
+    fast_merge = True
+    if fast_merge:
+      nbirth = len(self.birth_distribution)
+      dist = self.distribution[:nbirth]
+      birth_dist = self.birth_distribution
 
-    next_pow2 = nextpow2(means.shape[0])
-    means = np.pad(means, ((0, next_pow2 - means.shape[0]), (0, 0)))
-    covars = np.pad(covars, ((0, next_pow2 - covars.shape[0]), (0, 0), (0, 0)))
-    weights = np.pad(weights, (0, next_pow2 - weights.shape[0]))
+      wmix = np.stack((dist.weight, birth_dist.weight), axis=0)
+      wmix /= np.sum(wmix + 1e-15, axis=0)
+      Pmix = np.stack((dist.covar, birth_dist.covar), axis=0)
+      merged_distribution = GaussianState(
+          mean=dist.mean,
+          covar=np.einsum('i..., i...jk -> ...jk', wmix, Pmix),
+          weight=dist.weight + birth_dist.weight,
+      )
+    else:
+      # Pad inputs to the next power of 2
+      means = self.distribution.mean
+      covars = self.distribution.covar
+      weights = self.distribution.weight
 
-    threshold = 1e-15
-    start = time.time()
-    means, covars, weights = merge_mixture(
-        means=means,
-        covars=covars,
-        weights=weights,
-        threshold=threshold)
+      npad = nextpow2(means.shape[0]) - means.shape[0]
+      means = np.append(means, np.zeros((npad, *means.shape[1:])), axis=0)
+      covars = np.append(covars, np.zeros((npad, *covars.shape[1:])), axis=0)
+      weights = np.append(weights, np.zeros(npad))
 
-    valid = np.array(weights > 0)
-    merged_distribution = GaussianState(
-        mean=np.asarray(means)[valid],
-        covar=np.asarray(covars)[valid],
-        weight=np.asarray(weights)[valid]
-    )
-    print(f"merge_mixture took {time.time() - start} seconds")
+      means, covars, weights = merge_mixture(
+          means=means,
+          covars=covars,
+          weights=weights,
+          threshold=threshold)
+
+      valid = weights > 0
+      merged_distribution = GaussianState(
+          mean=np.asarray(means)[valid],
+          covar=np.asarray(covars)[valid],
+          weight=np.asarray(weights)[valid]
+      )
+
     return Poisson(birth_distribution=self.birth_distribution,
                    init_distribution=merged_distribution)
 

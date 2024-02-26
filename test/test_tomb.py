@@ -79,7 +79,6 @@ def test_scenario_prune():
                   undetected_distribution=init_dist,
                   pg=1.0,
                   w_min=1e-4,
-                  merge_poisson=False,
                   r_min=1e-4,
                   )
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
@@ -125,7 +124,7 @@ def test_scenario_merge():
                   undetected_distribution=init_dist,
                   pg=1.0,
                   w_min=None,
-                  merge_poisson=True,
+                  merge_threshold=0.1,
                   r_min=1e-4,
                   )
 
@@ -171,7 +170,7 @@ def test_scenario_gate():
                   undetected_distribution=init_dist,
                   pg=0.999,
                   w_min=None,
-                  merge_poisson=True,
+                  merge_threshold=0.1,
                   r_min=1e-4,
                   )
 

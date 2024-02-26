@@ -47,7 +47,7 @@ class SearchAndTrackEnv(gym.Env):
     self.pg = 0.999
     self.w_min = None
     self.r_min = 1e-4
-    self.merge_poisson = True
+    self.merge_threshold = 2
     self.r_track_loss_threshold = 0.1
 
     # Define birth distribution
@@ -95,7 +95,7 @@ class SearchAndTrackEnv(gym.Env):
                          pg=self.pg,
                          w_min=self.w_min,
                          r_min=self.r_min,
-                         merge_poisson=self.merge_poisson)
+                         merge_threshold=self.merge_threshold)
     self.tracker.poisson.distribution = self.init_ppp_dist
 
     # Initialize models
@@ -227,7 +227,7 @@ class SearchAndTrackEnv(gym.Env):
       means = state.mean
       pos_covar = state.covar[np.ix_(state_inds, pos_inds, pos_inds)]
       covar_diags = np.diagonal(pos_covar, axis1=-2, axis2=-1)
-      obs['tracked'][:n_mb] = np.concatenate((means, covar_diags, r), axis=1)
+      # obs['tracked'][:n_mb] = np.concatenate((means, covar_diags, r), axis=1)
 
     if n_ppp > 0:
       state_inds = np.arange(n_ppp)
@@ -237,8 +237,8 @@ class SearchAndTrackEnv(gym.Env):
       means = state.mean
       pos_covar = state.covar[np.ix_(state_inds, pos_inds, pos_inds)]
       covar_diags = np.diagonal(pos_covar, axis1=-2, axis2=-1)
-      obs['untracked'][:n_ppp] = np.concatenate(
-          (means, covar_diags, weights), axis=1)
+      # obs['untracked'][:n_ppp] = np.concatenate(
+      #     (means, covar_diags, weights), axis=1)
 
     return obs
 
@@ -284,12 +284,13 @@ if __name__ == '__main__':
       np.linspace(xmin, xmax, ngrid), np.linspace(ymin, ymax, ngrid))
   grid = np.dstack((xmesh, ymesh))
   fps = 0
-  for i in range(1, int(1e3)):
+  for i in range(1, int(1e5)):
     action = env.action_space.sample()
     # action = np.array([0])
     start = time.time()
     obs, reward, term, trunc, info = env.step(action)
-    fps = i / (i + 1) * fps + 1 / (i + 1) * (1 / (time.time() - start))
+    if i > 10:
+      fps = i / (i + 1) * fps + 1 / (i + 1) * (1 / (time.time() - start))
 
     plt.clf()
     # intensity = env.tracker.poisson.intensity(
@@ -313,13 +314,13 @@ if __name__ == '__main__':
     #   plt.draw()
     #   plt.pause(0.001)
 
-    print(f"Action: {action*360}")
-    print(f"Reward: {reward}")
-    print(f"MB: {obs['tracked'].shape}")
-    print(f"PPP: {obs['untracked'].shape}")
-    print(
-        f"r: {env.tracker.mb.r}")
-    print(f"True: {len(env.ground_truth)}")
+    # print(f"Action: {action*360}")
+    # print(f"Reward: {reward}")
+    # print(f"MB: {obs['tracked'].shape}")
+    print(f"PPP: {len(env.tracker.poisson)}")
+    # print(
+    #     f"r: {env.tracker.mb.r}")
+    # print(f"True: {len(env.ground_truth)}")
     print(f"FPS: {fps}")
 
     print(i)

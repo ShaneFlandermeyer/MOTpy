@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from motpy.measures import pairwise_euclidean
+from motpy.measures import pairwise_euclidean, pairwise_mahalanobis
 
 
 class GaussianState():
@@ -127,7 +127,7 @@ def likelihood(z: np.ndarray,
 def merge_mixture(means: np.ndarray,
                   covars: np.ndarray,
                   weights: np.ndarray,
-                  threshold: np.ndarray
+                  threshold: np.ndarray,
                   ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
   """
   Merge a Gaussian mixture by clustering components that are close to each other.
@@ -149,8 +149,9 @@ def merge_mixture(means: np.ndarray,
       _description_
   """
   # Compute pairwise distances between all points
+  # dists = pairwise_mahalanobis(means, covars)
   dists = pairwise_euclidean(means, means)
-  mask = dists < threshold**2
+  mask = dists < threshold
 
   # Sort distance matrix rows by weight
   inds = jnp.argsort(weights, descending=True)
@@ -159,27 +160,19 @@ def merge_mixture(means: np.ndarray,
 
   # Determine cluster indices and normalized mixture weights
   masked_weights = jnp.empty((means.shape[0], weights.size))
-  # cluster_inds = jnp.empty(means.shape[0], dtype=jnp.int32)
-  # cluster_count = 0
   for i in range(means.shape[0]):
     # Compute (unnormalized) mixture weights for this cluster
     masked_weights = masked_weights.at[i].set(jnp.where(mask[i], weights, 0))
-
-    # Greedily assign all nearby points to this cluster. We only increment the cluster count if this cluster includes unused points.
-    # cluster_inds = jnp.where(mask[i], cluster_count, cluster_inds)
-    # cluster_count += jnp.any(mask[i])
 
     # Mark points in this cluster as used
     mask = jnp.where(mask[i], False, mask)
 
   # Match moments for all clusters
-  x = means
-  P = covars
-  mix_weights = masked_weights / \
-      (jnp.sum(masked_weights, axis=-1, keepdims=True) + 1e-15)
-  mix_means = jnp.einsum('...i, ...ij -> ...j', mix_weights, x)
-  mix_covars = jnp.einsum('...i, ...ijk->...jk', mix_weights, P) + \
-      jnp.einsum('...i,...ij,...ik->...jk', mix_weights, x, x) - \
+  weight_sum = jnp.sum(masked_weights, axis=-1, keepdims=True)
+  mix_weights = masked_weights / (weight_sum + 1e-15)
+  mix_means = jnp.einsum('...i, ...ij -> ...j', mix_weights, means)
+  mix_covars = jnp.einsum('...i, ...ijk->...jk', mix_weights, covars) + \
+      jnp.einsum('...i,...ij,...ik->...jk', mix_weights, means, means) - \
       jnp.einsum('...i,...j->...ij', mix_means, mix_means)
 
-  return mix_means, mix_covars, jnp.sum(masked_weights, -1)
+  return mix_means, mix_covars, weight_sum.ravel()

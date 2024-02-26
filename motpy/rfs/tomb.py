@@ -20,7 +20,7 @@ class TOMBP:
                pg: float = None,
                w_min: float = None,
                r_min: float = None,
-               merge_poisson: bool = False,
+               merge_threshold: float = None,
                ):
     """
 
@@ -34,12 +34,9 @@ class TOMBP:
         Weight threshold for PPP pruning. If none, pruning is not performed, by default None
     r_min : float, optional
         Existence probability threshold for MB pruning. If none, pruning is not performed, by default None
-    merge_poisson : bool, optional
-        If True, similar PPP components are merged. Cannot be True if w_min is not None, by default False
+    merge_threshold : bool, optional
+        If True, similar PPP components are merged.
     """
-    if merge_poisson and w_min is not None:
-      raise ValueError(
-          "Poisson merging currently assumes there is no pruning")
     self.poisson = Poisson(
         birth_distribution=birth_distribution, init_distribution=undetected_distribution)
     self.mb = MultiBernoulli()
@@ -47,7 +44,7 @@ class TOMBP:
     self.pg = pg
     self.r_min = r_min
     self.w_min = w_min
-    self.merge_poisson = merge_poisson
+    self.merge_threshold = merge_threshold
 
   def predict(self,
               state_estimator: KalmanFilter,
@@ -89,8 +86,8 @@ class TOMBP:
     # Not shown in paper--truncate low weight components
     if self.w_min is not None:
       pred_poisson = pred_poisson.prune(threshold=self.w_min)
-    if self.merge_poisson:
-      pred_poisson = pred_poisson.merge(threshold=None)
+    if self.merge_threshold is not None:
+      pred_poisson = pred_poisson.merge(threshold=self.merge_threshold)
     return pred_mb, pred_poisson
 
   def update(self,
@@ -131,9 +128,9 @@ class TOMBP:
     mb_hypos = [MultiBernoulli() for _ in range(n)]
 
     in_gate_mb = np.zeros((n, m), dtype=bool)
-    
+
     if n > 0:
-      
+
       # Create missed detection hypothesis
       pd = pd_func(self.mb.state)
       wupd[:, 0] = (1 - self.mb.r) + self.mb.r * (1 - pd)

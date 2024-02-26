@@ -55,4 +55,9 @@ def pairwise_euclidean(x: np.ndarray, y: np.ndarray) -> np.ndarray:
   np.ndarray
       Pairwise Euclidean distance. Shape (N, M).
   """
-  return jnp.sum((x[:, None] - y[None])**2, axis=-1)
+  return jnp.sqrt(jnp.sum((x[:, None] - y[None])**2, axis=-1))
+
+def pairwise_mahalanobis(means: np.ndarray, covars: np.ndarray):
+  y = means[None, :, :] - means[:, None, :]
+  Si = jnp.linalg.inv(covars)
+  return jnp.sqrt(jnp.einsum('nmi, nij, nim -> nm', y, Si, y.swapaxes(-1, -2)))
