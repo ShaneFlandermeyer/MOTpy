@@ -94,7 +94,7 @@ class Poisson:
     # Create a new Bernoulli component based on updated weights
     sum_w_up = np.sum(mixture_up.weight)
     sum_w_total = sum_w_up + clutter_intensity
-    r = sum_w_up / sum_w_total
+    r = sum_w_up / (sum_w_total + 1e-15)
 
     # Compute the state using moment matching across all PPP components
     if n_in_gate == 1:
