@@ -7,7 +7,7 @@ from typing import Callable, List, Optional, Tuple, Union
 
 from motpy.kalman import KalmanFilter
 from motpy.measures import mahalanobis
-from motpy.rfs.bernoulli import Bernoulli
+from motpy.rfs.bernoulli import MultiBernoulli
 from motpy.distributions.gaussian import match_moments, GaussianState
 # from sklearn.cluster import DBSCAN
 # from motpy.measures import pairwise_euclidean
@@ -24,10 +24,12 @@ class Poisson:
       self,
       birth_distribution: GaussianState,
       init_distribution: Optional[GaussianState] = None,
+      metadata: Optional[dict] = dict(),
   ):
     self.birth_distribution = birth_distribution
 
     self.distribution = init_distribution
+    self.metadata = metadata
 
   def __repr__(self):
     return f"""Poisson(birth_distribution={self.birth_distribution},
@@ -66,13 +68,12 @@ class Poisson:
     pred_ppp = copy.copy(self)
 
     pred_ppp.distribution.weight *= ps
-    pred_ppp.distribution = state_estimator.predict(
-        state=pred_ppp.distribution, dt=dt)
+    pred_ppp.distribution, pred_ppp.metadata = state_estimator.predict(
+        state=pred_ppp.distribution, dt=dt, metadata=self.metadata)
     pred_ppp.distribution.append(pred_ppp.birth_distribution)
 
     return pred_ppp
 
-  # @profile
   def update(self,
              measurement: np.ndarray,
              pd: np.ndarray,
@@ -80,15 +81,15 @@ class Poisson:
              in_gate: np.ndarray,
              state_estimator: KalmanFilter,
              clutter_intensity: float,
-             ) -> Tuple[Bernoulli, float]:
+             ) -> Tuple[MultiBernoulli, float]:
     n_in_gate = np.count_nonzero(in_gate)
     if n_in_gate == 0:
       # No measurements in gate
       return None, 0
 
     # If a measurement is associated to a PPP component, we create a new Bernoulli whose existence probability depends on likelihood of measurement
-    mixture_up = state_estimator.update(
-        measurement=measurement, predicted_state=self.distribution[in_gate])
+    mixture_up, _ = state_estimator.update(
+        predicted_state=self.distribution[in_gate], measurement=measurement)
     mixture_up.weight *= likelihoods[in_gate] * pd[in_gate]
 
     # Create a new Bernoulli component based on updated weights
@@ -106,7 +107,7 @@ class Poisson:
           covars=mixture_up.covar,
           weights=mixture_up.weight)
 
-    bern = Bernoulli(r=r, state=GaussianState(mean=mean, covar=covar))
+    bern = MultiBernoulli(r=r, state=GaussianState(mean=mean, covar=covar))
     return bern, sum_w_total
 
   def prune(self, threshold: float) -> Poisson:

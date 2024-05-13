@@ -1,8 +1,8 @@
-from typing import Tuple
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 
-from motpy.kalman.sigma_points import merwe_scaled_sigma_points
+from motpy.kalman.sigma_points import merwe_scaled_sigma_points, merwe_sigma_weights
 from motpy.models.measurement import MeasurementModel
 from motpy.models.transition import TransitionModel
 from motpy.distributions.gaussian import GaussianState
@@ -31,64 +31,80 @@ class UnscentedKalmanFilter():
   def predict(self,
               state: GaussianState,
               dt: float,
-              ) -> GaussianState:
+              metadata: Optional[dict] = dict(),
+              ) -> Tuple[GaussianState, Dict]:
     # Compute sigma points and weights
-    sigmas, Wm, Wc = merwe_scaled_sigma_points(
+    sigmas = merwe_scaled_sigma_points(
         x=state.mean,
         P=state.covar,
         alpha=self.alpha,
         beta=self.beta,
         kappa=self.kappa,
-        subtract_fn=self.state_residual_fn,
-    )
-    # Transform points to the prediction space
-    sigmas_f = np.zeros_like(sigmas)
-    for i in range(len(sigmas)):
-      sigmas_f[i] = self.transition_model(sigmas[i], dt=dt, noise=False)
+        subtract_fn=self.state_residual_fn)
+    Wm, Wc = merwe_sigma_weights(
+        ndim_state=state.mean.shape[-1],
+        alpha=self.alpha,
+        beta=self.beta,
+        kappa=self.kappa)
+
+    # Transform sigma points to the prediction space
+    sigma_pred = self.transition_model(sigmas, dt=dt, noise=False)
 
     pred_mean, pred_covar = self.unscented_transform(
-        sigmas=sigmas_f,
+        sigmas=sigma_pred,
         Wm=Wm,
         Wc=Wc,
         noise_covar=self.transition_model.covar(dt=dt),
         residual_fn=self.state_residual_fn,
     )
-    pred_state = GaussianState(mean=pred_mean, covar=pred_covar,
-                               metadata=dict(sigmas_f=sigmas_f, Wm=Wm, Wc=Wc))
-    return pred_state
+    pred_state = GaussianState(
+        mean=pred_mean, covar=pred_covar, weight=state.weight)
+
+    metadata.update({'predicted_sigmas': sigma_pred})
+    return pred_state, metadata
 
   def update(self,
              predicted_state: GaussianState,
              measurement: np.ndarray,
-             ) -> GaussianState:
-    # Extract information from the predict step
-    sigmas_f = predicted_state.metadata['sigmas_f']
-    Wm = predicted_state.metadata['Wm']
-    Wc = predicted_state.metadata['Wc']
+             metadata: Optional[dict] = dict(),
+             ) -> Tuple[GaussianState, Dict]:
+    # Extract information from predict step
+    sigma_pred = metadata.get('predicted_sigmas')
+    if sigma_pred is None:
+      raise ValueError('No sigma points found in the predicted state metadata')
+    Wm, Wc = merwe_sigma_weights(
+        ndim_state=sigma_pred.shape[-1],
+        alpha=self.alpha,
+        beta=self.beta,
+        kappa=self.kappa)
 
-    # Transform sigma points to measurement space
-    n_sigma_points, ndim_state = sigmas_f.shape
-    ndim_measurement = measurement.size
-    sigmas_h = np.zeros((n_sigma_points, ndim_measurement))
-    for i in range(n_sigma_points):
-      sigmas_h[i] = self.measurement_model(sigmas_f[i], noise=False)
-
-    # State update
-    x_post, P_post, S, K, z_pred = self.ukf_update(
-        x_pred=predicted_state.mean,
-        P_pred=predicted_state.covar,
-        z=measurement,
-        R=self.measurement_model.covar(),
-        sigmas_f=sigmas_f,
-        sigmas_h=sigmas_h,
+    # Unscented transform in measurement space
+    sigma_meas = self.measurement_model(sigma_pred, noise=False)
+    z_pred, S = UnscentedKalmanFilter.unscented_transform(
+        sigmas=sigma_meas,
         Wm=Wm,
         Wc=Wc,
-        state_residual_fn=self.state_residual_fn,
-        measurement_residual_fn=self.measurement_residual_fn,
+        noise_covar=self.measurement_model.covar(),
+        residual_fn=self.measurement_residual_fn,
     )
-    post_state = GaussianState(mean=x_post, covar=P_post,
-                               metadata=dict(S=S, K=K, z_pred=z_pred))
-    return post_state
+
+    # Standard kalman update
+    x_pred, P_pred = predicted_state.mean, predicted_state.covar
+    z = measurement
+    Pxz = np.einsum('k, ...ki, ...kj -> ...ij',
+                    Wc,
+                    self.state_residual_fn(sigma_pred, x_pred),
+                    self.measurement_residual_fn(sigma_meas, z_pred))
+    y = self.measurement_residual_fn(z, z_pred)
+    K = Pxz @ np.linalg.inv(S)
+    x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, y)
+    P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
+    P_post = (P_post + P_post.swapaxes(-1, -2)) / 2
+    post_state = GaussianState(
+        mean=x_post, covar=P_post, weight=predicted_state.weight)
+
+    metadata.update({'cache': {'S': S, 'K': K, 'z_pred': z_pred}})
+    return post_state, metadata
 
   @staticmethod
   def unscented_transform(sigmas: np.ndarray,
@@ -97,104 +113,11 @@ class UnscentedKalmanFilter():
                           noise_covar: np.ndarray,
                           residual_fn: callable = np.subtract,
                           ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Use the unscented transform to compute the mean and covariance from a set of sigma points
-
-    Parameters
-    ----------
-    sigmas : np.ndarray
-        Array of sigma points, where each row is a point in N-d space.
-    Wm : np.ndarray
-        Mean weight matrix
-    Wc : np.ndarray
-        Covariance weight matrix
-    Q : np.ndarray
-        Process noise matrix
-    residual_fn : callable
-        Function handle to compute the residual. This must be specified manually for nonlinear quantities such as angles, which cannot be subtracted directly. Default is np.subtract
-
-    Returns
-    -------
-    Tuple[np.ndarray, np.ndarray]
-        A tuple containing:
-          - Mean vector computed by applying the unscented transform to the input sigma points
-          - The covariance computed by applying the unscented transform to the input sigma points
-
-    """
     # Mean computation
     x = np.dot(Wm, sigmas)
 
     # Covariance computation
-    y = residual_fn(sigmas, x[np.newaxis, :])
-    P = np.einsum('k, ki, kj->ij', Wc, y, y) + noise_covar
+    y = residual_fn(sigmas, x[..., None, :])
+    P = np.einsum('k, ...ki, ...kj -> ...ij', Wc, y, y) + noise_covar
 
     return x, P
-
-  @staticmethod
-  def ukf_update(
-      x_pred: np.ndarray,
-      P_pred: np.ndarray,
-      z: np.ndarray,
-      R: np.ndarray,
-      # Sigma point parameters
-      sigmas_f: np.ndarray,
-      sigmas_h: np.ndarray,
-      Wm: np.ndarray,
-      Wc: np.ndarray,
-      state_residual_fn: callable,
-      measurement_residual_fn: callable,
-  ) -> Tuple[np.ndarray]:
-    """
-    Unscented Kalman filter update step
-
-    Parameters
-    ----------
-    measurement : np.ndarray
-        New measurement to use for the update
-    predicted_state : np.ndarray
-        State vector after the prediction step
-    predicted_covar : np.ndarray
-        Covariance after the prediction step
-    sigmas_h : np.ndarray
-        Sigma points in measurement space
-    Wm : np.ndarray
-        Mean weights from the prediction step
-    Wc : np.ndarray
-        Covariance weights from the prediction step
-    measurement_model : callable
-        Measurement function
-    R : np.ndarray
-        Measurement noise. For now, assumed to be a matrix
-
-    Returns
-    -------
-    Tuple[np.ndarray]
-        A tuple containing the following:
-          - Updated state vector
-          - Updated covariance matrix
-          - Innovation covariance
-          - Kalman gain
-          - Predicted measurement
-    """
-
-    # Compute the mean and covariance of the measurement prediction using the unscented transform
-    z_pred, S = UnscentedKalmanFilter.unscented_transform(
-        sigmas=sigmas_h,
-        Wm=Wm,
-        Wc=Wc,
-        noise_covar=R,
-        residual_fn=measurement_residual_fn,
-    )
-
-    # Compute the cross-covariance of the state and measurements
-    Pxz = np.einsum('k, ki, kj->ij',
-                    Wc,
-                    state_residual_fn(sigmas_f, x_pred),
-                    measurement_residual_fn(sigmas_h, z_pred))
-
-    # Update the state vector and covariance
-    y = measurement_residual_fn(z, z_pred)
-    K = Pxz @ np.linalg.inv(S)
-    x_post = x_pred + K @ y
-    P_post = P_pred - K @ S @ K.T
-    return x_post, P_post, S, K, z_pred

@@ -35,18 +35,28 @@ def merwe_scaled_sigma_points(x: np.ndarray,
         - An array containing the weights for each sigma point mean
         - An array containing the weights for each sigma point covariance
   """
-  # Compute the sigma points
-  n = x.size
-  lambda_ = alpha**2 * (n + kappa) - n
-  U = scipy.linalg.cholesky((n + lambda_) * P)
+  ndim_state = x.shape[-1]
+  lambda_ = alpha**2 * (ndim_state + kappa) - ndim_state
 
-  x = x.reshape((1, -1))
-  sigmas = np.concatenate([x, subtract_fn(x, -U), subtract_fn(x, +U)], axis=0)
+  # Sigma points
+  U = np.linalg.cholesky((ndim_state + lambda_) * P).swapaxes(-1, -2)
+  x = x[..., None, :]
+  sigmas = np.concatenate([x, subtract_fn(x, -U), subtract_fn(x, +U)], axis=-2)
 
-  # Compute the weight for each point
-  Wc = np.full(2*n+1, 1 / (2*(n+lambda_)))
-  Wm = np.full(2*n+1, 1 / (2*(n+lambda_)))
-  Wc[0] = lambda_ / (n + lambda_) + (1 - alpha**2 + beta)
-  Wm[0] = lambda_ / (n + lambda_)
+  return sigmas
 
-  return sigmas, Wm, Wc
+
+def merwe_sigma_weights(ndim_state: int,
+                        # Merwe parameters
+                        alpha: float,
+                        beta: float,
+                        kappa: float,
+                        ) -> Tuple[np.ndarray, ...]:
+  lambda_ = alpha**2 * (ndim_state + kappa) - ndim_state
+
+  Wc = np.full(2 * ndim_state + 1, 1 / (2 * (ndim_state + lambda_)))
+  Wm = np.full(2 * ndim_state + 1, 1 / (2 * (ndim_state + lambda_)))
+  Wc[0] = lambda_ / (ndim_state + lambda_) + (1 - alpha**2 + beta)
+  Wm[0] = lambda_ / (ndim_state + lambda_)
+
+  return Wm, Wc

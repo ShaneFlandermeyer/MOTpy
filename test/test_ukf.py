@@ -16,11 +16,10 @@ class NonlinearMeasurementModel():
       noise = np.random.multivariate_normal(np.zeros(2), self.R)
     else:
       noise = 0
-    x = state[0].item()
-    y = state[2].item()
+    x, y = state[..., 0], state[..., 2]
     azimuth = np.arctan2(y, x)
-    range = np.sqrt(x**2 + y**2)
-    return np.array([azimuth, range]) + noise
+    r = np.sqrt(x**2 + y**2)
+    return np.stack([azimuth, r], axis=-1) + noise
 
   def covar(self):
     return self.R
@@ -53,10 +52,14 @@ def test_ukf():
       transition_model=cv, measurement_model=range_bearing)
   track_states = [GaussianState(
       mean=init_mean, covar=init_covar)]
-  pred_state = ukf.predict(state=track_states[-1], dt=0)
+  pred_state, meta = ukf.predict(state=track_states[-1], dt=0)
   for i, m in enumerate(measurements):
-    post_state = ukf.update(predicted_state=pred_state, measurement=m)
-    pred_state = ukf.predict(state=post_state, dt=dt)
+    post_state, meta = ukf.update(
+        predicted_state=pred_state,
+        measurement=m,
+        metadata=meta)
+    pred_state, meta = ukf.predict(
+        state=post_state, dt=dt, metadata=meta)
     track_states.append(post_state)
 
   true_states = np.stack([state for state in trajectory]).T
@@ -79,11 +82,12 @@ def test_linear_predict():
   state = GaussianState(mean=np.random.uniform(size=4),
                         covar=np.diag(np.random.uniform(size=4)))
   dt = 1
-  kf_pred = kf.predict(state, dt)
-  ukf_pred = ukf.predict(state, dt)
+  kf_pred, meta = kf.predict(state, dt)
+  ukf_pred, meta = ukf.predict(state, dt)
   assert np.allclose(kf_pred.mean, ukf_pred.mean)
   assert np.allclose(kf_pred.covar, ukf_pred.covar)
 
 
 if __name__ == '__main__':
+  test_ukf()
   pytest.main([__file__])

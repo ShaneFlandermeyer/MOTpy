@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 
 from motpy.models.measurement.base import MeasurementModel
@@ -19,7 +19,8 @@ class KalmanFilter():
   def predict(self,
               state: GaussianState,
               dt: float,
-              ) -> GaussianState:
+              metadata: Optional[dict] = dict()
+              ) -> Tuple[GaussianState, Dict]:
     assert self.transition_model is not None
 
     x, P = state.mean, state.covar
@@ -30,12 +31,15 @@ class KalmanFilter():
     x_pred = x @ F.T
     P_pred = F @ P @ F.T + Q
 
-    return GaussianState(mean=x_pred, covar=P_pred, weight=state.weight)
+    pred_state = GaussianState(mean=x_pred, covar=P_pred, weight=state.weight)
+
+    return pred_state, metadata
 
   def update(self,
+             predicted_state: GaussianState,
              measurement: np.ndarray,
-             predicted_state: GaussianState
-             ) -> GaussianState:
+             metadata: Optional[dict] = dict(),
+             ) -> Tuple[GaussianState, Dict]:
     assert self.measurement_model is not None
 
     x_pred, P_pred = predicted_state.mean, predicted_state.covar
@@ -55,11 +59,11 @@ class KalmanFilter():
     post_state = GaussianState(
         mean=x_post, covar=P_post, weight=predicted_state.weight)
 
-    return post_state
+    return post_state, metadata
 
   def gate(self,
-           measurements: np.ndarray,
            predicted_state: GaussianState,
+           measurements: np.ndarray,
            pg: float = 0.999,
            ) -> np.ndarray:
     """
@@ -81,7 +85,7 @@ class KalmanFilter():
     assert self.measurement_model is not None
 
     if pg == 1.0:
-        return np.ones((len(predicted_state), len(measurements)), dtype=bool)
+      return np.ones((len(predicted_state), len(measurements)), dtype=bool)
 
     x, P = predicted_state.mean, predicted_state.covar
 

@@ -1,6 +1,7 @@
 import copy
 from typing import Callable, List, Tuple
 
+import jax
 import numpy as np
 
 from motpy.distributions.gaussian import GaussianState, match_moments
@@ -158,9 +159,9 @@ class TOMBP:
           n_valid = np.count_nonzero(valid)
           if np.any(valid):
             r_post = np.ones(n_valid)
-            state_post = state_estimator.update(
-                measurement=measurements[j],
-                predicted_state=self.mb[valid].state)
+            state_post, _ = state_estimator.update(
+                predicted_state=self.mb.state[valid],
+                measurement=measurements[j])
             wupd[valid, j + 1] = self.mb[valid].r * \
                 pd_func(state_post) * l_mb[valid, j]
             for i in range(n_valid):

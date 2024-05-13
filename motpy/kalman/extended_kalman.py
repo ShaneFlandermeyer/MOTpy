@@ -1,12 +1,12 @@
 import datetime
-from typing import Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 import numpy as np
 from motpy.distributions import gaussian
 from motpy.gate import EllipsoidalGate
 
 from motpy.models.measurement import MeasurementModel
 from motpy.models.transition import TransitionModel
-from motpy.distributions.gaussian import GaussianState, GaussianMixture
+from motpy.distributions.gaussian import GaussianState
 
 
 class ExtendedKalmanFilter():
@@ -16,6 +16,7 @@ class ExtendedKalmanFilter():
                state_residual_fn: callable = np.subtract,
                measurement_residual_fn: callable = np.subtract,
                ):
+    raise NotImplementedError("This class is deprecated. Please do not use")
     self.transition_model = transition_model
     self.measurement_model = measurement_model
 
@@ -23,39 +24,33 @@ class ExtendedKalmanFilter():
     self.measurement_residual_fn = measurement_residual_fn
 
   def predict(self,
-              state: Union[GaussianState, GaussianMixture],
+              state: GaussianState,
               dt: float,
-              ) -> Union[GaussianState, GaussianMixture]:
-    if isinstance(state, GaussianMixture):
-      x, P = state.mean, state.covar
-    elif isinstance(state, GaussianState):
-      x, P = state.mean, state.covar
-    else:
-      raise ValueError(f"Unknown state type {type(state)}")
+              metadata: Optional[Dict] = dict(),
+              ) -> Tuple[GaussianState, Dict]:
+    x, P = state.mean, state.covar
 
-    F = self.transition_model.matrix(x=x, dt=dt)
+    F = self.transition_model.matrix(x, dt=dt)
     Q = self.transition_model.covar(dt=dt)
+
     x_pred = self.transition_model(x, dt=dt, noise=False)
+    P_pred = F @ P @ F.T + Q
 
-    P_pred = F @ P @ F.swapaxes(-1, -2) + Q
+    pred_state = GaussianState(mean=x_pred, covar=P_pred, weight=state.weight)
 
-    if isinstance(state, GaussianMixture):
-      return GaussianMixture(mean=x_pred, covar=P_pred, weight=state.weight)
-    elif isinstance(state, GaussianState):
-      return GaussianState(mean=x_pred, covar=P_pred)
+    return pred_state, metadata
 
   def update(self,
+             predicted_state: GaussianState,
              measurement: np.ndarray,
-             predicted_state: GaussianState) -> Tuple[np.ndarray, np.ndarray]:
+             metadata: Optional[Dict] = dict(),
+             ) -> Tuple[GaussianState, Dict]:
     assert self.measurement_model is not None
 
-    if isinstance(predicted_state, GaussianMixture):
-      x_pred, P_pred = predicted_state.mean, predicted_state.covar
-    elif isinstance(predicted_state, GaussianState):
-      x_pred, P_pred = predicted_state.mean, predicted_state.covar
+    x_pred, P_pred = predicted_state.mean, predicted_state.covar
 
     z = measurement
-    H = self.measurement_model.matrix(x=x_pred)
+    H = self.measurement_model.matrix(x_pred)
     R = self.measurement_model.covar()
 
     S = H @ P_pred @ H.swapaxes(-1, -2) + R
@@ -67,13 +62,10 @@ class ExtendedKalmanFilter():
     y = self.measurement_residual_fn(z, z_pred)
     x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, y)
 
-    if isinstance(predicted_state, GaussianMixture):
-      return GaussianMixture(
-          mean=x_post, covar=P_post, weight=predicted_state.weight)
-    elif isinstance(predicted_state, GaussianState):
-      post_state = GaussianState(mean=x_post, covar=P_post)
+    post_state = GaussianState(
+        mean=x_post, covar=P_post, weight=predicted_state.weight)
 
-    return post_state
+    return post_state, metadata
 
   def gate(self,
            measurements: np.ndarray,
@@ -102,10 +94,8 @@ class ExtendedKalmanFilter():
     if pg == 1.0:
       return measurements, np.ones((len(measurements),), dtype=bool)
 
-    if isinstance(predicted_state, GaussianMixture):
-      x, P = predicted_state.mean, predicted_state.covar
-    elif isinstance(predicted_state, GaussianState):
-      x, P = predicted_state.mean, predicted_state.covar
+    x, P = predicted_state.mean, predicted_state.covar
+
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
     z_pred = x @ H.T
@@ -113,12 +103,12 @@ class ExtendedKalmanFilter():
     gate = EllipsoidalGate(pg=pg, ndim=measurements[0].size)
     return gate(measurements=measurements,
                 predicted_measurement=z_pred,
-                innovation_covar=S)
+                innovation_covar=S)[0]
 
   def likelihood(
       self,
       measurement: np.ndarray,
-      predicted_state: Union[GaussianState, GaussianMixture],
+      predicted_state: GaussianState,
   ) -> float:
     """
     Compute the likelihood of a measurement given the predicted state
@@ -136,17 +126,13 @@ class ExtendedKalmanFilter():
         Likelihood
     """
 
-    if isinstance(predicted_state, GaussianMixture):
-      x, P = predicted_state.mean, predicted_state.covar
-    elif isinstance(predicted_state, GaussianState):
-      x, P = predicted_state.mean, predicted_state.covar
+    x, P = predicted_state.mean, predicted_state.covar
 
     H = self.measurement_model.matrix(x=x)
     R = self.measurement_model.covar()
+    S = H @ P @ H.swapaxes(-1, -2) + R
     return gaussian.likelihood(
         z=measurement,
         z_pred=self.measurement_model(x, noise=False),
-        P_pred=P,
-        H=H,
-        R=R,
+        S=S
     )
