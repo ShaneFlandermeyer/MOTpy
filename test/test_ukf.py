@@ -13,7 +13,8 @@ class NonlinearMeasurementModel():
 
   def __call__(self, state, noise=False):
     if noise:
-      noise = np.random.multivariate_normal(np.zeros(2), self.R)
+      noise = np.random.multivariate_normal(
+          np.zeros(2), self.R, size=state.shape[0] if state.ndim > 1 else 1)
     else:
       noise = 0
     x, y = state[..., 0], state[..., 2]
@@ -64,11 +65,10 @@ def test_ukf():
 
   true_states = np.stack([state for state in trajectory]).T
   track_states = np.stack([state.mean for state in track_states])[1:].T
-  track_pos = track_states[[0, 2]]
-  track_vel = track_states[[1, 3]]
+  track_pos = track_states[[0, 2], 0]
+  track_vel = track_states[[1, 3], 0]
   pos_mse = np.mean(np.linalg.norm(true_states[[0, 2]] - track_pos, axis=1))
   vel_mse = np.mean(np.linalg.norm(true_states[[1, 3]] - track_vel, axis=1))
-
   assert pos_mse < 0.2
   assert vel_mse < 0.1
 

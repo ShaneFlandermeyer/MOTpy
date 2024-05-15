@@ -31,9 +31,10 @@ class KalmanFilter():
     x_pred = x @ F.T
     P_pred = F @ P @ F.T + Q
 
-    pred_state = GaussianState(mean=x_pred, covar=P_pred, weight=state.weight)
+    predicted_state = GaussianState(
+        mean=x_pred, covar=P_pred, weight=state.weight)
 
-    return pred_state, metadata
+    return predicted_state, metadata
 
   def update(self,
              predicted_state: GaussianState,
