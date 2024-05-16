@@ -19,7 +19,7 @@ class KalmanFilter():
   def predict(self,
               state: GaussianState,
               dt: float,
-              metadata: Optional[dict] = dict()
+              filter_state: Optional[Dict] = None
               ) -> Tuple[GaussianState, Dict]:
     assert self.transition_model is not None
 
@@ -34,12 +34,12 @@ class KalmanFilter():
     predicted_state = GaussianState(
         mean=x_pred, covar=P_pred, weight=state.weight)
 
-    return predicted_state, metadata
+    return predicted_state, filter_state
 
   def update(self,
              predicted_state: GaussianState,
              measurement: np.ndarray,
-             metadata: Optional[dict] = dict(),
+             filter_state: Optional[Dict] = None,
              ) -> Tuple[GaussianState, Dict]:
     assert self.measurement_model is not None
 
@@ -60,7 +60,7 @@ class KalmanFilter():
     post_state = GaussianState(
         mean=x_post, covar=P_post, weight=predicted_state.weight)
 
-    return post_state, metadata
+    return post_state, filter_state
 
   def gate(self,
            predicted_state: GaussianState,

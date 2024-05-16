@@ -1,5 +1,5 @@
 import copy
-from typing import Callable, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import jax
 import numpy as np
@@ -41,6 +41,8 @@ class TOMBP:
     self.poisson = Poisson(
         birth_distribution=birth_distribution, init_distribution=undetected_distribution)
     self.mb = MultiBernoulli()
+    self.metadata = {}
+    self.id_counter = 0
 
     self.pg = pg
     self.r_min = r_min
@@ -206,8 +208,8 @@ class TOMBP:
           new_berns.append(r=bern.r, state=bern.state)
 
     # Update (i.e., thin) intensity of unknown targets
-    poisson_upd = copy.copy(self.poisson)
-    poisson_upd.distribution.weight *= 1 - pd_ppp
+    poisson_post = copy.copy(self.poisson)
+    poisson_post.distribution.weight *= 1 - pd_ppp
 
     if n == 0:
       pupd = np.zeros_like(wupd)
@@ -218,10 +220,13 @@ class TOMBP:
     else:
       pupd, pnew = self.spa(wupd=wupd, wnew=wnew)
 
-    mb_upd = self.tomb(pupd=pupd, mb_hypos=mb_hypos, pnew=pnew[wnew > 0],
-                       new_berns=new_berns, in_gate_mb=in_gate_mb)
+    mb_post, meta = self.tomb(pupd=pupd,
+                              mb_hypos=mb_hypos,
+                              pnew=pnew[wnew > 0],
+                              new_berns=new_berns,
+                              in_gate_mb=in_gate_mb)
 
-    return mb_upd, poisson_upd
+    return mb_post, poisson_post, meta
 
   def tomb(self,
            pupd: np.ndarray,
@@ -250,6 +255,7 @@ class TOMBP:
     List[Bernoulli]
         The list of updated Bernoulli components representing the multi-Bernoulli mixture (MBM) after the TOMB update step.
     """
+    meta = copy.deepcopy(self.metadata)
     # Add false alarm hypothesis as valid
     valid_hypos = np.concatenate(
         (np.ones((len(self.mb), 1), dtype=bool), in_gate_mb), axis=1)
@@ -276,12 +282,21 @@ class TOMBP:
     # Form new tracks (already single hypothesis)
     if len(new_berns) > 0:
       tomb_mb.append(r=pnew*new_berns.r, state=new_berns.state)
+      # TODO: Make the IDs unique
+      new_ids = self._make_id(n=len(new_berns))
+
+      if 'id' in meta:
+        meta['id'] = np.concatenate((meta['id'], new_ids))
+      else:
+        meta['id'] = new_ids
 
     # Truncate tracks with low probability of existence (not shown in algorithm)
     if len(tomb_mb) > 0 and self.r_min is not None:
+      meta = jax.tree_map(lambda x: x[tomb_mb.r > self.r_min], meta)
       tomb_mb = tomb_mb[tomb_mb.r > self.r_min]
+      
 
-    return tomb_mb
+    return tomb_mb, meta
 
   @staticmethod
   def spa(wupd: np.ndarray, wnew: np.ndarray,
@@ -336,3 +351,8 @@ class TOMBP:
     p_new = wnew / (wnew + np.sum(mu_ab, axis=0) + 1e-15)
 
     return p_upd, p_new
+
+  def _make_id(self, n: int) -> np.ndarray:
+    ids = np.arange(self.id_counter, self.id_counter + n)
+    self.id_counter += n
+    return ids

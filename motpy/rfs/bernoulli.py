@@ -9,11 +9,9 @@ from typing import Tuple, Optional, List, Union
 class MultiBernoulli():
   def __init__(self,
                r: np.ndarray = None,
-               state: GaussianState = None,
-               metadata: Optional[dict] = dict()):
+               state: GaussianState = None):
     self.r = r if r is not None else np.empty(0)
     self.state = state
-    self.metadata = metadata
 
   def __repr__(self) -> str:
     return f"""MultiBernoulli(
@@ -43,10 +41,8 @@ class MultiBernoulli():
     if len(self) == 0:
       return copy.copy(self)
 
-    pred_state, meta = state_estimator.predict(
-        state=self.state, dt=dt, metadata=self.metadata)
+    pred_state, filter_state = state_estimator.predict(state=self.state, dt=dt)
     return MultiBernoulli(
         r=self.r * ps,
         state=pred_state,
-        metadata=meta,
     )

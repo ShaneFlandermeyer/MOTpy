@@ -24,12 +24,10 @@ class Poisson:
       self,
       birth_distribution: GaussianState,
       init_distribution: Optional[GaussianState] = None,
-      metadata: Optional[dict] = dict(),
   ):
     self.birth_distribution = birth_distribution
 
     self.distribution = init_distribution
-    self.metadata = metadata
 
   def __repr__(self):
     return f"""Poisson(birth_distribution={self.birth_distribution},
@@ -68,8 +66,8 @@ class Poisson:
     pred_ppp = copy.copy(self)
 
     pred_ppp.distribution.weight *= ps
-    pred_ppp.distribution, pred_ppp.metadata = state_estimator.predict(
-        state=pred_ppp.distribution, dt=dt, metadata=self.metadata)
+    pred_ppp.distribution, filter_state = state_estimator.predict(
+        state=pred_ppp.distribution, dt=dt)
     pred_ppp.distribution.append(pred_ppp.birth_distribution)
 
     return pred_ppp
@@ -88,7 +86,7 @@ class Poisson:
       return None, 0
 
     # If a measurement is associated to a PPP component, we create a new Bernoulli whose existence probability depends on likelihood of measurement
-    mixture_up, _ = state_estimator.update(
+    mixture_up, filter_state = state_estimator.update(
         predicted_state=self.distribution[in_gate], measurement=measurement)
     mixture_up.weight *= likelihoods[in_gate] * pd[in_gate]
 
