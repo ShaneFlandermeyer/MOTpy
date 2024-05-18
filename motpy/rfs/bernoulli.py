@@ -3,7 +3,7 @@ import copy
 import numpy as np
 from motpy.kalman import KalmanFilter
 from motpy.distributions.gaussian import GaussianState
-from typing import Tuple, Optional, List, Union
+from typing import Dict, Tuple, Optional, List, Union
 
 
 class MultiBernoulli():
@@ -37,12 +37,13 @@ class MultiBernoulli():
   def predict(self,
               state_estimator: KalmanFilter,
               dt: float,
-              ps: float) -> MultiBernoulli:
+              ps: float,
+              filter_state: Optional[Dict] = None) -> MultiBernoulli:
     if len(self) == 0:
       return copy.copy(self)
 
-    pred_state, filter_state = state_estimator.predict(state=self.state, dt=dt)
-    return MultiBernoulli(
-        r=self.r * ps,
-        state=pred_state,
-    )
+    pred_state, filter_state = state_estimator.predict(
+        state=self.state, dt=dt, filter_state=filter_state)
+
+    pred_mb = MultiBernoulli(r=self.r * ps, state=pred_state)
+    return pred_mb, filter_state

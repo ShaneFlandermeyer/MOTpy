@@ -71,13 +71,16 @@ class TOMBP:
         A tuple containing the list of predicted Bernoulli components representing the multi-Bernoulli mixture (MBM), 
         and the predicted Poisson point process (PPP) representing the intensity of new objects.
     """
-    # Implement prediction algorithm
+    meta = self.metadata.copy()
 
     # Predict existing tracks
     if len(self.mb) > 0:
       ps_mb = ps_func(self.mb.state)
-      pred_mb = self.mb.predict(
+      pred_mb, filter_state = self.mb.predict(
           state_estimator=state_estimator, ps=ps_mb, dt=dt)
+      if 'mb' not in meta:
+        meta['mb'] = {}
+      meta['mb']['filter_state'] = filter_state
     else:
       pred_mb = MultiBernoulli()
 
@@ -294,7 +297,6 @@ class TOMBP:
     if len(tomb_mb) > 0 and self.r_min is not None:
       meta = jax.tree_map(lambda x: x[tomb_mb.r > self.r_min], meta)
       tomb_mb = tomb_mb[tomb_mb.r > self.r_min]
-      
 
     return tomb_mb, meta
 
