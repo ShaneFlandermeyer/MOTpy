@@ -9,10 +9,6 @@ from motpy.kalman import KalmanFilter
 from motpy.measures import mahalanobis
 from motpy.rfs.bernoulli import MultiBernoulli
 from motpy.distributions.gaussian import match_moments, GaussianState
-# from sklearn.cluster import DBSCAN
-# from motpy.measures import pairwise_euclidean
-from motpy.distributions.gaussian import merge_mixture
-from motpy.common import nextpow2
 
 
 class Poisson:
@@ -42,22 +38,6 @@ class Poisson:
     return self.distribution[idx]
 
   def append(self, state: GaussianState) -> None:
-    """
-    Append a new Gaussian state and its corresponding weight to the Poisson process.
-
-    The weight is converted to logarithmic scale before being appended.
-
-    Parameters
-    ----------
-    weight : float
-        The weight corresponding to the state. This is converted to a logarithmic scale for internal storage.
-    state : GaussianState
-        The Gaussian state to be appended.
-
-    Returns
-    -------
-    None
-    """
     self.distribution.append(state)
 
   def predict(self,
@@ -118,76 +98,21 @@ class Poisson:
 
     return pruned
 
-  def merge(self, threshold: float) -> Poisson:
-    """
-    Merge components that are close to each other.
-    """
-    fast_merge = True
-    if fast_merge:
-      nbirth = len(self.birth_distribution)
-      dist = self.distribution[:nbirth]
-      birth_dist = self.birth_distribution
-
-      wmix = np.stack((dist.weight, birth_dist.weight), axis=0)
-      wmix /= np.sum(wmix + 1e-15, axis=0)
-      Pmix = np.stack((dist.covar, birth_dist.covar), axis=0)
-      merged_distribution = GaussianState(
-          mean=dist.mean,
-          covar=np.einsum('i..., i...jk -> ...jk', wmix, Pmix),
-          weight=dist.weight + birth_dist.weight,
-      )
-    else:
-      # Pad inputs to the next power of 2
-      means = self.distribution.mean
-      covars = self.distribution.covar
-      weights = self.distribution.weight
-
-      npad = nextpow2(means.shape[0]) - means.shape[0]
-      means = np.append(means, np.zeros((npad, *means.shape[1:])), axis=0)
-      covars = np.append(covars, np.zeros((npad, *covars.shape[1:])), axis=0)
-      weights = np.append(weights, np.zeros(npad))
-
-      means, covars, weights = merge_mixture(
-          means=means,
-          covars=covars,
-          weights=weights,
-          threshold=threshold)
-
-      valid = weights > 0
-      merged_distribution = GaussianState(
-          mean=np.asarray(means)[valid],
-          covar=np.asarray(covars)[valid],
-          weight=np.asarray(weights)[valid]
-      )
-
+  def merge(self) -> Poisson:
+    nbirth = len(self.birth_distribution)
+    dist = self.distribution[:nbirth]
+    birth_dist = self.birth_distribution
+    wmix = np.stack((dist.weight, birth_dist.weight), axis=0)
+    wmix /= np.sum(wmix + 1e-15, axis=0)
+    Pmix = np.stack((dist.covar, birth_dist.covar), axis=0)
+    merged_distribution = GaussianState(
+        mean=dist.mean,
+        covar=np.einsum('i..., i...jk -> ...jk', wmix, Pmix),
+        weight=dist.weight + birth_dist.weight,
+    )
     return Poisson(birth_distribution=self.birth_distribution,
                    init_distribution=merged_distribution)
-
-  def intensity(self, grid: np.ndarray, H: np.ndarray) -> np.ndarray:
-    """
-    Compute the intensity of the Poisson process at a grid of points.
-
-    Parameters
-    ----------
-    grid : np.ndarray
-        Query points
-    H : np.ndarray
-        Matrix for extracting relevant dims
-
-    Returns
-    -------
-    np.ndarray
-        Intensity grid
-    """
-    raise NotImplementedError(
-        "Intensity currently not supported with GaussianMixture API")
-    intensity = np.zeros(grid.shape[:-1])
-    for i, state in enumerate(self.states):
-      mean = H @ state.mean[0]
-      cov = H @ state.covar[0] @ H.T
-      rv = multivariate_normal(mean=mean, cov=cov)
-      intensity += self.weights[i] * rv.pdf(grid)
-    return intensity
+    
 
 
 if __name__ == '__main__':

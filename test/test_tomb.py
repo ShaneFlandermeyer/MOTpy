@@ -124,7 +124,7 @@ def test_scenario_merge():
                   undetected_distribution=init_dist,
                   pg=1.0,
                   w_min=None,
-                  merge_threshold=0.1,
+                  merge_poisson=True,
                   r_min=1e-4,
                   )
 
@@ -170,7 +170,7 @@ def test_scenario_gate():
                   undetected_distribution=init_dist,
                   pg=0.999,
                   w_min=None,
-                  merge_threshold=0.1,
+                  merge_poisson=True,
                   r_min=1e-4,
                   )
 

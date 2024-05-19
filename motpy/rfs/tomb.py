@@ -21,23 +21,9 @@ class TOMBP:
                pg: float = None,
                w_min: float = None,
                r_min: float = None,
-               merge_threshold: float = None,
+               max_num_poisson: float = None,
+               merge_poisson: bool = False,
                ):
-    """
-
-    Parameters
-    ----------
-    birth_distribution : GaussianMixture
-        The birth distribution for the Poisson point process (PPP).
-    pg : float, optional
-        Gate probability. If None, gating is not performed, by default None
-    w_min : float, optional
-        Weight threshold for PPP pruning. If none, pruning is not performed, by default None
-    r_min : float, optional
-        Existence probability threshold for MB pruning. If none, pruning is not performed, by default None
-    merge_threshold : bool, optional
-        If True, similar PPP components are merged.
-    """
     self.poisson = Poisson(
         birth_distribution=birth_distribution, init_distribution=undetected_distribution)
     self.mb = MultiBernoulli()
@@ -45,7 +31,8 @@ class TOMBP:
     self.pg = pg
     self.r_min = r_min
     self.w_min = w_min
-    self.merge_threshold = merge_threshold
+    self.max_num_poisson = max_num_poisson
+    self.merge_poisson = merge_poisson
 
   def predict(self,
               state_estimator: KalmanFilter,
@@ -87,8 +74,8 @@ class TOMBP:
     # Not shown in paper--truncate low weight components
     if self.w_min is not None:
       pred_poisson = pred_poisson.prune(threshold=self.w_min)
-    if self.merge_threshold is not None:
-      pred_poisson = pred_poisson.merge(threshold=self.merge_threshold)
+    if self.merge_poisson:
+      pred_poisson = pred_poisson.merge()
     return pred_mb, pred_poisson
 
   def update(self,
