@@ -9,7 +9,6 @@ from motpy.kalman import KalmanFilter
 from motpy.measures import mahalanobis
 from motpy.rfs.bernoulli import MultiBernoulli
 from motpy.distributions.gaussian import match_moments, GaussianState
-from motpy.particle.resample import systematic_resample
 
 
 class Poisson:
@@ -99,19 +98,19 @@ class Poisson:
 
     return pruned
 
-  def resample(self, n: int) -> Poisson:
-    w = self.distribution.weight
-    wsum = w.sum()
-    inds, norm_weights = systematic_resample(weights=w / wsum, n=n)
-
-    new_poisson = copy.copy(self)
-    new_poisson.distribution = GaussianState(
-        mean=self.distribution.mean[inds],
-        covar=self.distribution.covar[inds],
-        weight=norm_weights * wsum
+  def merge(self) -> Poisson:
+    nbirth = len(self.birth_distribution)
+    dist = self.distribution[:nbirth]
+    birth_dist = self.birth_distribution
+    wmix = np.stack((dist.weight, birth_dist.weight), axis=0)
+    wmix /= np.sum(wmix + 1e-15, axis=0)
+    merged_distribution = GaussianState(
+        mean=dist.mean,
+        covar=dist.covar,
+        weight=dist.weight + birth_dist.weight,
     )
-
-    return new_poisson
+    return Poisson(birth_distribution=self.birth_distribution,
+                   init_distribution=merged_distribution)
 
 
 if __name__ == '__main__':
@@ -151,4 +150,4 @@ if __name__ == '__main__':
   ppp = Poisson(birth_distribution=birth_dist,
                 init_distribution=undetected_dist)
   ppp.append(birth_dist)
-  ppp.resample(n_init)
+  ppp.merge(threshold=0.1)
