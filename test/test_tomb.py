@@ -124,8 +124,8 @@ def test_scenario_merge():
                   undetected_distribution=init_dist,
                   pg=1.0,
                   w_min=None,
-                  merge_poisson=True,
                   r_min=1e-4,
+                  max_num_poisson=1,
                   )
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
@@ -141,6 +141,7 @@ def test_scenario_merge():
   assert len(tracker.poisson) == 1
   assert np.allclose(tracker.mb[0].r, 0.9999935076418562, atol=1e-6)
   assert np.allclose(tracker.mb[3].r, 0.9999901057591115, atol=1e-6)
+
 
 def test_scenario_gate():
   """
@@ -170,8 +171,8 @@ def test_scenario_gate():
                   undetected_distribution=init_dist,
                   pg=0.999,
                   w_min=None,
-                  merge_poisson=True,
                   r_min=1e-4,
+                  max_num_poisson=1,
                   )
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
@@ -187,6 +188,7 @@ def test_scenario_gate():
   assert len(tracker.poisson) == 1
   assert np.allclose(tracker.mb[0].r, 0.9999935076418562, atol=1e-6)
   assert np.allclose(tracker.mb[3].r, 0.9999901057591115, atol=1e-6)
+
 
 if __name__ == '__main__':
   test_scenario_gate()

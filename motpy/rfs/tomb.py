@@ -22,7 +22,6 @@ class TOMBP:
                w_min: float = None,
                r_min: float = None,
                max_num_poisson: float = None,
-               merge_poisson: bool = False,
                ):
     self.poisson = Poisson(
         birth_distribution=birth_distribution, init_distribution=undetected_distribution)
@@ -32,7 +31,6 @@ class TOMBP:
     self.r_min = r_min
     self.w_min = w_min
     self.max_num_poisson = max_num_poisson
-    self.merge_poisson = merge_poisson
 
   def predict(self,
               state_estimator: KalmanFilter,
@@ -74,8 +72,6 @@ class TOMBP:
     # Not shown in paper--truncate low weight components
     if self.w_min is not None:
       pred_poisson = pred_poisson.prune(threshold=self.w_min)
-    if self.merge_poisson:
-      pred_poisson = pred_poisson.merge()
     return pred_mb, pred_poisson
 
   def update(self,
@@ -193,8 +189,8 @@ class TOMBP:
           new_berns.append(r=bern.r, state=bern.state)
 
     # Update (i.e., thin) intensity of unknown targets
-    poisson_upd = copy.copy(self.poisson)
-    poisson_upd.distribution.weight *= 1 - pd_ppp
+    poisson_post = copy.copy(self.poisson)
+    poisson_post.distribution.weight *= 1 - pd_ppp
 
     if n == 0:
       pupd = np.zeros_like(wupd)
@@ -205,10 +201,14 @@ class TOMBP:
     else:
       pupd, pnew = self.spa(wupd=wupd, wnew=wnew)
 
-    mb_upd = self.tomb(pupd=pupd, mb_hypos=mb_hypos, pnew=pnew[wnew > 0],
+    mb_post = self.tomb(pupd=pupd, mb_hypos=mb_hypos, pnew=pnew[wnew > 0],
                        new_berns=new_berns, in_gate_mb=in_gate_mb)
 
-    return mb_upd, poisson_upd
+    if self.max_num_poisson is not None and \
+            len(poisson_post) > self.max_num_poisson:
+      poisson_post = poisson_post.resample(n=self.max_num_poisson)
+
+    return mb_post, poisson_post
 
   def tomb(self,
            pupd: np.ndarray,
