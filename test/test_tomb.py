@@ -80,6 +80,7 @@ def test_scenario_prune():
                   pg=1.0,
                   w_min=1e-4,
                   r_min=1e-4,
+                  merge_poisson=False,
                   )
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 
@@ -125,7 +126,7 @@ def test_scenario_merge():
                   pg=1.0,
                   w_min=None,
                   r_min=1e-4,
-                  max_num_poisson=1,
+                  merge_poisson=True,
                   )
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
@@ -172,7 +173,7 @@ def test_scenario_gate():
                   pg=0.999,
                   w_min=None,
                   r_min=1e-4,
-                  max_num_poisson=1,
+                  merge_poisson=True,
                   )
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
