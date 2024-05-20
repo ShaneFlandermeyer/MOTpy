@@ -242,7 +242,7 @@ class TOMBP:
         (np.ones((len(self.mb), 1), dtype=bool), in_gate_mb), axis=1)
 
     # Form continuing tracks
-    tomb_mb = MultiBernoulli()
+    mb = MultiBernoulli()
     for i in range(len(self.mb)):
       valid = valid_hypos[i]
       n_valid = np.count_nonzero(valid)
@@ -258,17 +258,17 @@ class TOMBP:
       else:
         x, P = match_moments(means=xupd, covars=Pupd, weights=pr)
 
-      tomb_mb.append(r=r, state=GaussianState(mean=x, covar=P))
+      mb.append(r=r, state=GaussianState(mean=x, covar=P))
 
     # Form new tracks (already single hypothesis)
     if len(new_berns) > 0:
-      tomb_mb.append(r=pnew*new_berns.r, state=new_berns.state)
+      mb.append(r=pnew*new_berns.r, state=new_berns.state)
 
     # Truncate tracks with low probability of existence (not shown in algorithm)
-    if len(tomb_mb) > 0 and self.r_min is not None:
-      tomb_mb = tomb_mb[tomb_mb.r > self.r_min]
+    if len(mb) > 0 and self.r_min is not None:
+      mb = mb[mb.r > self.r_min]
 
-    return tomb_mb
+    return mb
 
   @staticmethod
   def spa(wupd: np.ndarray, wnew: np.ndarray,

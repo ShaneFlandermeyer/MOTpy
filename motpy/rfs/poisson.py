@@ -99,11 +99,19 @@ class Poisson:
     return pruned
 
   def merge(self) -> Poisson:
+    """
+    "Merge" the birth distribution into the current distribution by adding the weights together.
+    
+    This is fast to compute, but only works under the assumption that the birth distribution components and the current components have the same spatial pdf (e.g., only their weights differ).
+
+    Returns
+    -------
+    Poisson
+        New Poisson RFS
+    """
     nbirth = len(self.birth_distribution)
     dist = self.distribution[:nbirth]
     birth_dist = self.birth_distribution
-    wmix = np.stack((dist.weight, birth_dist.weight), axis=0)
-    wmix /= np.sum(wmix + 1e-15, axis=0)
     merged_distribution = GaussianState(
         mean=dist.mean,
         covar=dist.covar,
