@@ -45,7 +45,6 @@ class TOMBP:
         'mb': [],
         'ppp': [],
     }
-    self.id_counter = 0
 
     self.pg = pg
     self.r_min = r_min
@@ -265,9 +264,7 @@ class TOMBP:
     # Form new tracks (already single hypothesis)
     if len(new_berns) > 0:
       mb.append(r=p_new*new_berns.r, state=new_berns.state)
-      new_ids = self._make_id(n=len(new_berns))
-      for i in range(len(new_berns)):
-        meta['mb'].append({'id': new_ids[i]})
+      meta['mb'].extend([{} for _ in range(len(new_berns))])
 
     # Truncate tracks with low probability of existence (not shown in algorithm)
     if len(mb) > 0 and self.r_min is not None:
@@ -331,8 +328,3 @@ class TOMBP:
     p_new = w_new / (w_new + np.sum(mu_ab, axis=0) + 1e-15)
 
     return p_upd, p_new
-
-  def _make_id(self, n: int) -> np.ndarray:
-    ids = np.arange(self.id_counter, self.id_counter + n)
-    self.id_counter += n
-    return ids
