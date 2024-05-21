@@ -1,5 +1,5 @@
 import copy
-from typing import Callable, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import jax
 import numpy as np
@@ -21,7 +21,7 @@ class TOMBP:
                pg: float = None,
                w_min: float = None,
                r_min: float = None,
-               merge_threshold: float = None,
+               merge_poisson: bool = False,
                ):
     """
 
@@ -41,11 +41,15 @@ class TOMBP:
     self.poisson = Poisson(
         birth_distribution=birth_distribution, init_distribution=undetected_distribution)
     self.mb = MultiBernoulli()
+    self.metadata = {
+        'mb': [],
+        'ppp': [],
+    }
 
     self.pg = pg
     self.r_min = r_min
     self.w_min = w_min
-    self.merge_threshold = merge_threshold
+    self.merge_poisson = merge_poisson
 
   def predict(self,
               state_estimator: KalmanFilter,
@@ -69,13 +73,14 @@ class TOMBP:
         A tuple containing the list of predicted Bernoulli components representing the multi-Bernoulli mixture (MBM), 
         and the predicted Poisson point process (PPP) representing the intensity of new objects.
     """
-    # Implement prediction algorithm
+    meta = self.metadata.copy()
 
     # Predict existing tracks
     if len(self.mb) > 0:
       ps_mb = ps_func(self.mb.state)
-      pred_mb = self.mb.predict(
+      pred_mb, filter_state = self.mb.predict(
           state_estimator=state_estimator, ps=ps_mb, dt=dt)
+      meta['filter_state'] = filter_state
     else:
       pred_mb = MultiBernoulli()
 
@@ -87,8 +92,8 @@ class TOMBP:
     # Not shown in paper--truncate low weight components
     if self.w_min is not None:
       pred_poisson = pred_poisson.prune(threshold=self.w_min)
-    if self.merge_threshold is not None:
-      pred_poisson = pred_poisson.merge(threshold=self.merge_threshold)
+    if self.merge_poisson:
+      pred_poisson = pred_poisson.merge()
     return pred_mb, pred_poisson
 
   def update(self,
@@ -168,7 +173,7 @@ class TOMBP:
               mb_hypos[valid_inds[i]].append(r=r_post[i], state=state_post[i])
 
     # Create a new track for each measurement by updating PPP with measurement
-    wnew = np.zeros(m)
+    w_new = np.zeros(m)
     new_berns = MultiBernoulli()
 
     pd_ppp = pd_func(self.poisson.distribution)
@@ -195,96 +200,82 @@ class TOMBP:
           predicted_state=detectable_ppp.distribution[used_ppp])
 
       for j in range(m):
-        bern, wnew[j] = detectable_ppp.update(
+        bern, w_new[j] = detectable_ppp.update(
             measurement=measurements[j],
             pd=pd_ppp[pd_ppp > 0],
             likelihoods=l_ppp[:, j],
             in_gate=in_gate_poisson[:, j],
             state_estimator=state_estimator,
             clutter_intensity=lambda_fa)
-        if wnew[j] > 0:
+        if w_new[j] > 0:
           new_berns.append(r=bern.r, state=bern.state)
 
     # Update (i.e., thin) intensity of unknown targets
-    poisson_upd = copy.copy(self.poisson)
-    poisson_upd.distribution.weight *= 1 - pd_ppp
+    poisson_post = copy.copy(self.poisson)
+    poisson_post.distribution.weight *= 1 - pd_ppp
 
     if n == 0:
-      pupd = np.zeros_like(wupd)
-      pnew = np.ones_like(wnew)
+      p_upd = np.zeros_like(wupd)
+      p_new = np.ones_like(w_new)
     elif m == 0:
-      pupd = wupd
-      pnew = np.zeros_like(wnew)
+      p_upd = wupd
+      p_new = np.zeros_like(w_new)
     else:
-      pupd, pnew = self.spa(wupd=wupd, wnew=wnew)
+      p_upd, p_new = self.spa(w_upd=wupd, w_new=w_new)
 
-    mb_upd = self.tomb(pupd=pupd, mb_hypos=mb_hypos, pnew=pnew[wnew > 0],
-                       new_berns=new_berns, in_gate_mb=in_gate_mb)
+    mb_post, meta = self.tomb(p_upd=p_upd,
+                              mb_hypos=mb_hypos,
+                              p_new=p_new[w_new > 0],
+                              new_berns=new_berns,
+                              in_gate_mb=in_gate_mb)
 
-    return mb_upd, poisson_upd
+    return mb_post, poisson_post, meta
 
   def tomb(self,
-           pupd: np.ndarray,
+           p_upd: np.ndarray,
            mb_hypos: List[MultiBernoulli],
-           pnew: np.ndarray,
+           p_new: np.ndarray,
            new_berns: MultiBernoulli,
            in_gate_mb: np.ndarray) -> MultiBernoulli:
-    """
-    Implements the Track-Oriented Multi-Bernoulli (TOMB) update step.
-
-    Parameters
-    ----------
-    pupd : np.ndarray
-        The marginal association probabilities for existing objects.
-    mb_hypos : np.ndarray
-        The Bernoulli components representing the hypotheses for existing objects.
-    pnew : np.ndarray
-        The marginal association probabilities for potential new objects.
-    new_berns : List[Bernoulli]
-        The Bernoulli components representing the hypotheses for potential new objects.
-    in_gate_mb : np.ndarray
-        A boolean array indicating which measurements are inside the gating region for each existing object.
-
-    Returns
-    -------
-    List[Bernoulli]
-        The list of updated Bernoulli components representing the multi-Bernoulli mixture (MBM) after the TOMB update step.
-    """
+    meta = copy.deepcopy(self.metadata)
     # Add false alarm hypothesis as valid
     valid_hypos = np.concatenate(
         (np.ones((len(self.mb), 1), dtype=bool), in_gate_mb), axis=1)
 
     # Form continuing tracks
-    tomb_mb = MultiBernoulli()
+    mb = MultiBernoulli()
     for i in range(len(self.mb)):
       valid = valid_hypos[i]
       n_valid = np.count_nonzero(valid)
       if n_valid == 0:
         continue
-      rupd = mb_hypos[i].r
-      xupd = mb_hypos[i].state.mean
-      Pupd = mb_hypos[i].state.covar
-      pr = pupd[i, valid] * rupd
+      rs = mb_hypos[i].r
+      xs = mb_hypos[i].state.mean
+      Ps = mb_hypos[i].state.covar
+      pr = p_upd[i, valid] * rs
       r = np.sum(pr)
       if n_valid == 1:
-        x, P = xupd, Pupd
+        x, P = xs, Ps
       else:
-        x, P = match_moments(means=xupd, covars=Pupd, weights=pr)
+        x, P = match_moments(means=xs, covars=Ps, weights=pr)
 
-      tomb_mb.append(r=r, state=GaussianState(mean=x, covar=P))
+      mb.append(r=r, state=GaussianState(mean=x, covar=P))
 
     # Form new tracks (already single hypothesis)
     if len(new_berns) > 0:
-      tomb_mb.append(r=pnew*new_berns.r, state=new_berns.state)
+      mb.append(r=p_new*new_berns.r, state=new_berns.state)
+      meta['mb'].extend([{} for _ in range(len(new_berns))])
 
     # Truncate tracks with low probability of existence (not shown in algorithm)
-    if len(tomb_mb) > 0 and self.r_min is not None:
-      tomb_mb = tomb_mb[tomb_mb.r > self.r_min]
+    if len(mb) > 0 and self.r_min is not None:
+      meta['mb'] = [meta['mb'][i]
+                    for i in range(len(mb)) if mb.r[i] > self.r_min]
+      mb = mb[mb.r > self.r_min]
 
-    return tomb_mb
+    return mb, meta
 
   @staticmethod
-  def spa(wupd: np.ndarray, wnew: np.ndarray,
+  def spa(w_upd: np.ndarray, w_new: np.ndarray,
           eps: float = 1e-4, max_iter: int = 10
           ) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -308,7 +299,7 @@ class TOMBP:
             Marginal association probabilities for new objects
     """
 
-    n, mp1 = wupd.shape
+    n, mp1 = w_upd.shape
     m = mp1 - 1
 
     mu_ba = np.ones((n, m))
@@ -319,10 +310,11 @@ class TOMBP:
     while True:
       mu_ba_old = mu_ba
 
-      w_muba = wupd[:, 1:] * mu_ba
-      mu_ab = wupd[:, 1:] / (wupd[:, 0][:, np.newaxis] +
-                             np.sum(w_muba, axis=1, keepdims=True) - w_muba + 1e-15)
-      mu_ba = 1 / (wnew + np.sum(mu_ab, axis=0, keepdims=True) - mu_ab + 1e-15)
+      w_muba = w_upd[:, 1:] * mu_ba
+      mu_ab = w_upd[:, 1:] / (w_upd[:, 0][:, np.newaxis] +
+                              np.sum(w_muba, axis=1, keepdims=True) - w_muba + 1e-15)
+      mu_ba = 1 / (w_new + np.sum(mu_ab, axis=0,
+                   keepdims=True) - mu_ab + 1e-15)
       i += 1
 
       if np.max(np.abs(mu_ba - mu_ba_old)) < eps or i == max_iter:
@@ -330,9 +322,9 @@ class TOMBP:
 
     # Compute marginal association probabilities
     mu_ba = np.concatenate((np.ones((n, 1)), mu_ba), axis=1)
-    p_upd = wupd * mu_ba / \
-        (np.sum(wupd * mu_ba, axis=1, keepdims=True) + 1e-15)
+    p_upd = w_upd * mu_ba / \
+        (np.sum(w_upd * mu_ba, axis=1, keepdims=True) + 1e-15)
 
-    p_new = wnew / (wnew + np.sum(mu_ab, axis=0) + 1e-15)
+    p_new = w_new / (w_new + np.sum(mu_ab, axis=0) + 1e-15)
 
     return p_upd, p_new

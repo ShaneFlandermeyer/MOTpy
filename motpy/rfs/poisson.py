@@ -24,12 +24,10 @@ class Poisson:
       self,
       birth_distribution: GaussianState,
       init_distribution: Optional[GaussianState] = None,
-      metadata: Optional[dict] = dict(),
   ):
     self.birth_distribution = birth_distribution
 
     self.distribution = init_distribution
-    self.metadata = metadata
 
   def __repr__(self):
     return f"""Poisson(birth_distribution={self.birth_distribution},
@@ -68,8 +66,8 @@ class Poisson:
     pred_ppp = copy.copy(self)
 
     pred_ppp.distribution.weight *= ps
-    pred_ppp.distribution, pred_ppp.metadata = state_estimator.predict(
-        state=pred_ppp.distribution, dt=dt, metadata=self.metadata)
+    pred_ppp.distribution, filter_state = state_estimator.predict(
+        state=pred_ppp.distribution, dt=dt)
     pred_ppp.distribution.append(pred_ppp.birth_distribution)
 
     return pred_ppp
@@ -88,7 +86,7 @@ class Poisson:
       return None, 0
 
     # If a measurement is associated to a PPP component, we create a new Bernoulli whose existence probability depends on likelihood of measurement
-    mixture_up, _ = state_estimator.update(
+    mixture_up, filter_state = state_estimator.update(
         predicted_state=self.distribution[in_gate], measurement=measurement)
     mixture_up.weight *= likelihoods[in_gate] * pd[in_gate]
 
@@ -118,113 +116,18 @@ class Poisson:
 
     return pruned
 
-  def merge(self, threshold: float) -> Poisson:
+  def merge(self) -> Poisson:
     """
     Merge components that are close to each other.
     """
-    fast_merge = True
-    if fast_merge:
-      nbirth = len(self.birth_distribution)
-      dist = self.distribution[:nbirth]
-      birth_dist = self.birth_distribution
-
-      wmix = np.stack((dist.weight, birth_dist.weight), axis=0)
-      wmix /= np.sum(wmix + 1e-15, axis=0)
-      Pmix = np.stack((dist.covar, birth_dist.covar), axis=0)
-      merged_distribution = GaussianState(
-          mean=dist.mean,
-          covar=np.einsum('i..., i...jk -> ...jk', wmix, Pmix),
-          weight=dist.weight + birth_dist.weight,
-      )
-    else:
-      # Pad inputs to the next power of 2
-      means = self.distribution.mean
-      covars = self.distribution.covar
-      weights = self.distribution.weight
-
-      npad = nextpow2(means.shape[0]) - means.shape[0]
-      means = np.append(means, np.zeros((npad, *means.shape[1:])), axis=0)
-      covars = np.append(covars, np.zeros((npad, *covars.shape[1:])), axis=0)
-      weights = np.append(weights, np.zeros(npad))
-
-      means, covars, weights = merge_mixture(
-          means=means,
-          covars=covars,
-          weights=weights,
-          threshold=threshold)
-
-      valid = weights > 0
-      merged_distribution = GaussianState(
-          mean=np.asarray(means)[valid],
-          covar=np.asarray(covars)[valid],
-          weight=np.asarray(weights)[valid]
-      )
+    nbirth = len(self.birth_distribution)
+    dist = self.distribution[:nbirth]
+    birth_dist = self.birth_distribution
+    merged_distribution = GaussianState(
+        mean=dist.mean,
+        covar=dist.covar,
+        weight=dist.weight + birth_dist.weight,
+    )
 
     return Poisson(birth_distribution=self.birth_distribution,
                    init_distribution=merged_distribution)
-
-  def intensity(self, grid: np.ndarray, H: np.ndarray) -> np.ndarray:
-    """
-    Compute the intensity of the Poisson process at a grid of points.
-
-    Parameters
-    ----------
-    grid : np.ndarray
-        Query points
-    H : np.ndarray
-        Matrix for extracting relevant dims
-
-    Returns
-    -------
-    np.ndarray
-        Intensity grid
-    """
-    raise NotImplementedError(
-        "Intensity currently not supported with GaussianMixture API")
-    intensity = np.zeros(grid.shape[:-1])
-    for i, state in enumerate(self.states):
-      mean = H @ state.mean[0]
-      cov = H @ state.covar[0] @ H.T
-      rv = multivariate_normal(mean=mean, cov=cov)
-      intensity += self.weights[i] * rv.pdf(grid)
-    return intensity
-
-
-if __name__ == '__main__':
-  grid_extents = np.array([-1, 1])
-  nx = ny = 10
-  n_init = 100
-  ngrid = nx * ny
-
-  dx = np.diff(grid_extents).item() / nx
-  dy = np.diff(grid_extents).item() / ny
-  ppp_x_pos, ppp_y_pos = np.meshgrid(
-      np.linspace(*(grid_extents+[dx/2, -dx/2]), nx),
-      np.linspace(*(grid_extents+[dy/2, -dy/2]), ny))
-  ppp_x_vel = np.zeros_like(ppp_x_pos)
-  ppp_y_vel = np.zeros_like(ppp_x_pos)
-
-  init_mean = np.stack(
-      (ppp_x_pos.ravel(), ppp_x_vel.ravel(),
-       ppp_y_pos.ravel(), ppp_y_vel.ravel()), axis=-1)
-  init_covar = np.repeat(np.diag([dx**2, 0, dy**2, 0])[np.newaxis, ...],
-                         len(init_mean), axis=0)
-  init_weights = np.ones((nx, ny))
-
-  undetected_dist = GaussianState(mean=init_mean,
-                                  covar=init_covar,
-                                  weight=init_weights.ravel())
-
-  birth_rate = 0.1
-  birth_weights = np.random.uniform(
-      low=0, high=2*birth_rate/ngrid, size=(nx, ny))
-  birth_mean = init_mean.copy()
-  birth_covar = init_covar.copy()
-  birth_dist = GaussianState(mean=birth_mean,
-                             covar=birth_covar,
-                             weight=birth_weights.ravel())
-
-  ppp = Poisson(birth_distribution=birth_dist,
-                init_distribution=undetected_dist)
-  ppp.append(birth_dist)
-  ppp.merge(threshold=0.1)

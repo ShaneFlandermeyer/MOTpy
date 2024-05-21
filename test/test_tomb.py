@@ -87,7 +87,7 @@ def test_scenario_prune():
     tracker.mb, tracker.poisson = tracker.predict(
         state_estimator=kf, dt=dt, ps_func=ps)
 
-    tracker.mb, tracker.poisson = tracker.update(
+    tracker.mb, tracker.poisson, tracker.metadata = tracker.update(
         measurements=Z[k], pd_func=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
 
   assert len(tracker.mb) == 54
@@ -124,7 +124,7 @@ def test_scenario_merge():
                   undetected_distribution=init_dist,
                   pg=1.0,
                   w_min=None,
-                  merge_threshold=0.1,
+                  merge_poisson=True,
                   r_min=1e-4,
                   )
 
@@ -134,13 +134,14 @@ def test_scenario_merge():
     tracker.mb, tracker.poisson = tracker.predict(
         state_estimator=kf, dt=dt, ps_func=ps)
 
-    tracker.mb, tracker.poisson = tracker.update(
+    tracker.mb, tracker.poisson, tracker.metadata = tracker.update(
         measurements=Z[k], pd_func=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
 
   assert len(tracker.mb) == 54
   assert len(tracker.poisson) == 1
   assert np.allclose(tracker.mb[0].r, 0.9999935076418562, atol=1e-6)
   assert np.allclose(tracker.mb[3].r, 0.9999901057591115, atol=1e-6)
+
 
 def test_scenario_gate():
   """
@@ -170,7 +171,7 @@ def test_scenario_gate():
                   undetected_distribution=init_dist,
                   pg=0.999,
                   w_min=None,
-                  merge_threshold=0.1,
+                  merge_poisson=True,
                   r_min=1e-4,
                   )
 
@@ -180,7 +181,7 @@ def test_scenario_gate():
     tracker.mb, tracker.poisson = tracker.predict(
         state_estimator=kf, dt=dt, ps_func=ps)
 
-    tracker.mb, tracker.poisson = tracker.update(
+    tracker.mb, tracker.poisson, tracker.metadata = tracker.update(
         measurements=Z[k], pd_func=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
 
   assert len(tracker.mb) == 53
@@ -188,6 +189,6 @@ def test_scenario_gate():
   assert np.allclose(tracker.mb[0].r, 0.9999935076418562, atol=1e-6)
   assert np.allclose(tracker.mb[3].r, 0.9999901057591115, atol=1e-6)
 
+
 if __name__ == '__main__':
-  test_scenario_gate()
   pytest.main([__file__])
