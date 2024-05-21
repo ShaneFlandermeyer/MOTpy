@@ -41,7 +41,10 @@ class TOMBP:
     self.poisson = Poisson(
         birth_distribution=birth_distribution, init_distribution=undetected_distribution)
     self.mb = MultiBernoulli()
-    self.metadata = {}
+    self.metadata = {
+        'mb': [],
+        'ppp': [],
+    }
     self.id_counter = 0
 
     self.pg = pg
@@ -78,9 +81,7 @@ class TOMBP:
       ps_mb = ps_func(self.mb.state)
       pred_mb, filter_state = self.mb.predict(
           state_estimator=state_estimator, ps=ps_mb, dt=dt)
-      if 'mb' not in meta:
-        meta['mb'] = {}
-      meta['mb']['filter_state'] = filter_state
+      meta['filter_state'] = filter_state
     else:
       pred_mb = MultiBernoulli()
 
@@ -265,15 +266,13 @@ class TOMBP:
     if len(new_berns) > 0:
       mb.append(r=p_new*new_berns.r, state=new_berns.state)
       new_ids = self._make_id(n=len(new_berns))
-
-      if 'id' in meta:
-        meta['id'] = np.concatenate((meta['id'], new_ids))
-      else:
-        meta['id'] = new_ids
+      for i in range(len(new_berns)):
+        meta['mb'].append({'id': new_ids[i]})
 
     # Truncate tracks with low probability of existence (not shown in algorithm)
     if len(mb) > 0 and self.r_min is not None:
-      meta = jax.tree_map(lambda x: x[mb.r > self.r_min], meta)
+      meta['mb'] = [meta['mb'][i]
+                    for i in range(len(mb)) if mb.r[i] > self.r_min]
       mb = mb[mb.r > self.r_min]
 
     return mb, meta
