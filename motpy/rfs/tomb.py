@@ -127,7 +127,7 @@ class TOMBP:
     m = len(measurements) if measurements is not None else 0
 
     # Update existing tracks
-    wupd = np.zeros((n, m + 1))
+    w_upd = np.zeros((n, m + 1))
     l_mb = np.zeros((n, m))
 
     # We create one MB hypothesis for each measurement, plus one missed detection hypothesis
@@ -139,8 +139,8 @@ class TOMBP:
 
       # Create missed detection hypothesis
       pd = pd_func(self.mb.state)
-      wupd[:, 0] = (1 - self.mb.r) + self.mb.r * (1 - pd)
-      r_post = self.mb.r * (1 - pd) / (wupd[:, 0] + 1e-15)
+      w_upd[:, 0] = (1 - self.mb.r) + self.mb.r * (1 - pd)
+      r_post = self.mb.r * (1 - pd) / (w_upd[:, 0] + 1e-15)
       state_post = self.mb.state
       for i in range(n):
         mb_hypos[i].append(r=r_post[i], state=state_post[i])
@@ -161,29 +161,29 @@ class TOMBP:
         for j in range(m):
           valid = in_gate_mb[:, j]
           valid_inds = np.nonzero(valid)[0]
-          n_valid = np.count_nonzero(valid)
+          num_valid = np.count_nonzero(valid)
           if np.any(valid):
-            r_post = np.ones(n_valid)
+            r_post = np.ones(num_valid)
             state_post, _ = state_estimator.update(
                 predicted_state=self.mb.state[valid],
                 measurement=measurements[j])
-            wupd[valid, j + 1] = self.mb[valid].r * \
+            w_upd[valid, j + 1] = self.mb[valid].r * \
                 pd_func(state_post) * l_mb[valid, j]
-            for i in range(n_valid):
+            for i in range(num_valid):
               mb_hypos[valid_inds[i]].append(r=r_post[i], state=state_post[i])
 
     # Create a new track for each measurement by updating PPP with measurement
     w_new = np.zeros(m)
     new_berns = MultiBernoulli()
 
-    pd_ppp = pd_func(self.poisson.distribution)
-    if isinstance(pd_ppp, float):
-      pd_ppp = np.full(nu, pd_ppp)
+    pd_poisson = pd_func(self.poisson.distribution)
+    if isinstance(pd_poisson, float):
+      pd_poisson = np.full(nu, pd_poisson)
 
     if m > 0:
       # We only care about PPP components that can be detected here. This allows us to save some matrix inverses
       detectable_ppp = copy.copy(self.poisson)
-      detectable_ppp.distribution = detectable_ppp.distribution[pd_ppp > 0]
+      detectable_ppp.distribution = detectable_ppp.distribution[pd_poisson > 0]
 
       # Gate PPP components
       in_gate_poisson = state_estimator.gate(
@@ -192,18 +192,18 @@ class TOMBP:
           pg=self.pg)
 
       # Compute likelihoods for PPP components with at least one measurement in the gate and measurements in at least one gate
-      l_ppp = np.zeros((len(detectable_ppp), m))
+      l_poisson = np.zeros((len(detectable_ppp), m))
       used_meas_ppp = np.argwhere(np.any(in_gate_poisson, axis=0)).ravel()
       used_ppp = np.argwhere(np.any(in_gate_poisson, axis=1)).ravel()
-      l_ppp[np.ix_(used_ppp, used_meas_ppp)] = state_estimator.likelihood(
+      l_poisson[np.ix_(used_ppp, used_meas_ppp)] = state_estimator.likelihood(
           measurement=measurements[used_meas_ppp],
           predicted_state=detectable_ppp.distribution[used_ppp])
 
       for j in range(m):
         bern, w_new[j] = detectable_ppp.update(
             measurement=measurements[j],
-            pd=pd_ppp[pd_ppp > 0],
-            likelihoods=l_ppp[:, j],
+            pd=pd_poisson[pd_poisson > 0],
+            likelihoods=l_poisson[:, j],
             in_gate=in_gate_poisson[:, j],
             state_estimator=state_estimator,
             clutter_intensity=lambda_fa)
@@ -212,16 +212,16 @@ class TOMBP:
 
     # Update (i.e., thin) intensity of unknown targets
     poisson_post = copy.copy(self.poisson)
-    poisson_post.distribution.weight *= 1 - pd_ppp
+    poisson_post.distribution.weight *= 1 - pd_poisson
 
     if n == 0:
-      p_upd = np.zeros_like(wupd)
+      p_upd = np.zeros_like(w_upd)
       p_new = np.ones_like(w_new)
     elif m == 0:
-      p_upd = wupd
+      p_upd = w_upd
       p_new = np.zeros_like(w_new)
     else:
-      p_upd, p_new = self.spa(w_upd=wupd, w_new=w_new)
+      p_upd, p_new = self.spa(w_upd=w_upd, w_new=w_new)
 
     mb_post, meta = self.tomb(p_upd=p_upd,
                               mb_hypos=mb_hypos,
@@ -238,30 +238,30 @@ class TOMBP:
            new_berns: MultiBernoulli,
            in_gate_mb: np.ndarray) -> MultiBernoulli:
     meta = copy.deepcopy(self.metadata)
-    # Add false alarm hypothesis as valid
+    # FaLse alarm hypothesis is never gated
     valid_hypos = np.concatenate(
         (np.ones((len(self.mb), 1), dtype=bool), in_gate_mb), axis=1)
 
-    # Form continuing tracks
+    # Form continuing tracks by marginalizing across measurements
     mb = MultiBernoulli()
     for i in range(len(self.mb)):
-      valid = valid_hypos[i]
-      n_valid = np.count_nonzero(valid)
-      if n_valid == 0:
+      is_valid = valid_hypos[i]
+      num_valid = np.count_nonzero(is_valid)
+      if num_valid == 0:
         continue
       rs = mb_hypos[i].r
       xs = mb_hypos[i].state.mean
       Ps = mb_hypos[i].state.covar
-      pr = p_upd[i, valid] * rs
+      pr = p_upd[i, is_valid] * rs
       r = np.sum(pr)
-      if n_valid == 1:
+      if num_valid == 1:
         x, P = xs, Ps
       else:
         x, P = match_moments(means=xs, covars=Ps, weights=pr)
 
       mb.append(r=r, state=GaussianState(mean=x, covar=P))
 
-    # Form new tracks (already single hypothesis)
+    # Form new tracks
     if len(new_berns) > 0:
       mb.append(r=p_new*new_berns.r, state=new_berns.state)
       meta['mb'].extend([{} for _ in range(len(new_berns))])

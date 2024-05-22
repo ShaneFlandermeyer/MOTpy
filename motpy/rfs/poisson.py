@@ -118,14 +118,20 @@ class Poisson:
 
   def merge(self) -> Poisson:
     """
-    Merge components that are close to each other.
+    Merge the birth distribution back into the main distribution.
+
+    NOTE: This assumes that only the birth distribution contributes, such that we only need to change the weights and covariance matrices.
     """
     nbirth = len(self.birth_distribution)
     dist = self.distribution[:nbirth]
     birth_dist = self.birth_distribution
+
+    wmix = np.stack((dist.weight, birth_dist.weight), axis=0)
+    wmix /= np.sum(wmix + 1e-15, axis=0)
+    Pmix = np.stack((dist.covar, birth_dist.covar), axis=0)
     merged_distribution = GaussianState(
         mean=dist.mean,
-        covar=dist.covar,
+        covar=np.einsum('i..., i...jk -> ...jk', wmix, Pmix),
         weight=dist.weight + birth_dist.weight,
     )
 
