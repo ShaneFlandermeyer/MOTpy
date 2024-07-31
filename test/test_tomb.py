@@ -16,8 +16,8 @@ def make_data(dt, lambda_c, pd, n_steps):
   paths = [[np.array([-90, 1, -90, 1])], [np.array([-90, 1, 90, -1])]]
   cv = ConstantVelocity(ndim=2,
                         w=0.01,
-                        position_mapping=[0, 2],
-                        velocity_mapping=[1, 3],
+                        position_inds=[0, 2],
+                        velocity_inds=[1, 3],
                         seed=seed)
   linear = LinearMeasurementModel(
       ndim_state=4, covar=np.eye(2), measured_dims=[0, 2], seed=seed)
