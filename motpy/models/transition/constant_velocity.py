@@ -1,74 +1,37 @@
 import functools
-from typing import Union
+from typing import Union, Literal
 from scipy.linalg import block_diag
 import numpy as np
 from motpy.models.transition.base import TransitionModel
 
 
 class ConstantVelocity(TransitionModel):
-  r"""This is a class implementation of a discrete, time-variant 1D
-    Linear-Gaussian Constant Velocity Transition Model.
+  """
+  A nearly constant velocity (NCV) kinematic transition model with continuous or discrete white noise acceleration (C/DWNA).
 
-    The target is assumed to move with (nearly) constant velocity, where
-    target acceleration is modelled as white noise.
 
-    This is a faster than the :class:`ConstantVelocity` model in StoneSoup since it can be vectorized and avoids the for loops in the transition and covariance matrix computations. This also makes it less extensible to higher-order motion models.
-
-    The model is described by the following SDEs:
-
-        .. math::
-            :nowrap:
-
-            \begin{eqnarray}
-                dx_{pos} & = & x_{vel} d & | {Position \ on \
-                X-axis (m)} \\
-                dx_{vel} & = & q\cdot dW_t,\ W_t \sim \mathcal{N}(0,q^2) & | \
-                Speed on\ X-axis (m/s)
-            \end{eqnarray}
-
-    Or equivalently:
-
-        .. math::
-            x_t = F_t x_{t-1} + w_t,\ w_t \sim \mathcal{N}(0,Q_t)
-
-    where:
-
-        .. math::
-            x & = & \begin{bmatrix}
-                        x_{pos} \\
-                        x_{vel}
-                \end{bmatrix}
-
-        .. math::
-            F_t & = & \begin{bmatrix}
-                        1 & dt\\
-                        0 & 1
-                \end{bmatrix}
-
-        .. math::
-            Q_t & = & \begin{bmatrix}
-                        \frac{dt^3}{3} & \frac{dt^2}{2} \\
-                        \frac{dt^2}{2} & dt
-                \end{bmatrix} q
-    """
+  """
 
   def __init__(self,
-               ndim_pos: float,
-               q: float,
+               ndim: float,
+               w: float,
                position_mapping: np.array = None,
                velocity_mapping: np.array = None,
+               noise_type: Literal["continuous", "discrete"] = "continuous",
                seed: int = np.random.randint(0, 2**32-1),
                ):
-    self.ndim_pos = ndim_pos
-    self.ndim = self.ndim_pos*2
-    self.q = q
+    self.ndim = ndim
+    self.ndim_state = 2*self.ndim
+    self.w = w
+    self.noise_type = noise_type.lower()
 
     self.position_mapping = position_mapping
     self.velocity_mapping = velocity_mapping
     if position_mapping is None:
-      self.position_mapping = np.arange(0, self.ndim, 2)
+      self.position_mapping = np.arange(0, self.ndim_state, 2)
     if velocity_mapping is None:
-      self.velocity_mapping = np.arange(1, self.ndim, 2)
+      self.velocity_mapping = np.arange(1, self.ndim_state, 2)
+
     self.np_random = np.random.RandomState(seed)
 
   def __call__(
@@ -81,15 +44,18 @@ class ConstantVelocity(TransitionModel):
     next_state[..., self.position_mapping] += x[..., self.velocity_mapping]*dt
 
     if noise:
-      n_states = x.shape[0] if x.ndim > 1 else 1
-      next_state += self.sample_noise(dt, n=n_states)
+      n = x.shape[0] if x.ndim > 1 else 1
+      mean = np.zeros((self.ndim_state))
+      covar = self.covar(dt)
+      noise = self.np_random.multivariate_normal(mean=mean, cov=covar, size=n)
+      next_state += noise
 
     return next_state
 
   @functools.lru_cache()
   def matrix(self, dt: float):
-    F = np.zeros((self.ndim, self.ndim))
-    
+    F = np.zeros((self.ndim_state, self.ndim_state))
+
     pos, vel = self.position_mapping, self.velocity_mapping
     F[pos, pos] = 1
     F[pos, vel] = dt
@@ -98,20 +64,19 @@ class ConstantVelocity(TransitionModel):
 
   @functools.lru_cache()
   def covar(self, dt: float):
-    Q = np.zeros((self.ndim, self.ndim))
-    
     pos, vel = self.position_mapping, self.velocity_mapping
-    Q[pos, pos] = self.q * dt**3 / 3
-    Q[pos, vel] = self.q * dt**2 / 2
-    Q[vel, pos] = self.q * dt**2 / 2
-    Q[vel, vel] = self.q * dt
-    return Q
+    Q = np.zeros((self.ndim_state, self.ndim_state))
 
-  def sample_noise(self,
-                   dt: float = 0,
-                   n: int = 1,
-                   ) -> np.array:
-    covar = self.covar(dt)
-    noise = self.np_random.multivariate_normal(
-        mean=np.zeros((self.ndim)), cov=covar, size=n)
-    return np.asarray(noise)
+    if self.noise_type == "continuous":
+      Q[pos, pos] = dt**3 / 3
+      Q[pos, vel] = dt**2 / 2
+      Q[vel, pos] = dt**2 / 2
+      Q[vel, vel] = dt
+    elif self.noise_type == "discrete":
+      Q[pos, pos] = dt**4 / 4
+      Q[pos, vel] = dt**3 / 2
+      Q[vel, pos] = dt**2 / 2
+      Q[vel, vel] = dt**2
+    Q *= self.w
+
+    return Q

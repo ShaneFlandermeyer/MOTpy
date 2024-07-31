@@ -14,8 +14,8 @@ def make_data(dt, lambda_c, pd, n_steps):
   noisy = False
   # Object trajectories
   paths = [[np.array([-90, 1, -90, 1])], [np.array([-90, 1, 90, -1])]]
-  cv = ConstantVelocity(ndim_pos=2,
-                        q=0.01,
+  cv = ConstantVelocity(ndim=2,
+                        w=0.01,
                         position_mapping=[0, 2],
                         velocity_mapping=[1, 3],
                         seed=seed)

@@ -36,7 +36,7 @@ def test_ukf():
   trajectory = []
   init_mean, init_covar = np.array([0, 1, 0, 1]), np.diag([1., 0.5, 1., 0.5])
   trajectory.append(init_mean)
-  cv = ConstantVelocity(ndim_pos=2, q=0.05)
+  cv = ConstantVelocity(ndim=2, w=0.05)
   for i in range(n_steps):
     state = cv(trajectory[-1], dt=dt, noise=False)
     trajectory.append(state)
@@ -76,7 +76,7 @@ def test_ukf():
 def test_linear_predict():
   seed = 0
   np.random.seed(seed)
-  cv = ConstantVelocity(ndim_pos=2, q=0.05, seed=seed)
+  cv = ConstantVelocity(ndim=2, w=0.05, seed=seed)
   ukf = UnscentedKalmanFilter(transition_model=cv, measurement_model=None)
   kf = KalmanFilter(transition_model=cv, measurement_model=None)
   state = GaussianState(mean=np.random.uniform(size=4),
