@@ -12,9 +12,9 @@ from motpy.measures import pairwise_euclidean, pairwise_mahalanobis
 
 class GaussianState():
   """
-  A general class to represent both Gaussian state and Gaussian mixture distributions. 
+  A general class to represent both Gaussian state and Gaussian mixture distributions.
 
-  Representing these with one class simplifies the code and makes it easy to support batched operations.  
+  Representing these with one class simplifies the code and makes it easy to support batched operations.
   """
 
   def __init__(
@@ -53,6 +53,21 @@ class GaussianState():
     self.mean = np.concatenate((self.mean, state.mean), axis=0)
     self.covar = np.concatenate((self.covar, state.covar), axis=0)
     self.weight = np.concatenate((self.weight, state.weight), axis=0)
+
+  def sample(self,
+             num_points: int,
+             dims: Sequence[int],
+             rng: np.random.Generator = np.random.default_rng()
+             ) -> np.ndarray:
+    """
+    Sample points from each Gaussian component at the specified dimensions.
+    """
+    covar_inds = np.ix_(dims, dims)
+    P = self.covar[:, covar_inds[0], covar_inds[1]]
+
+    mu = self.mean[..., None, dims]
+    std_normal = rng.normal(size=(len(self), num_points, len(dims)))
+    return mu + np.einsum('nij, nmj -> nmi', np.linalg.cholesky(P), std_normal)
 
 
 def match_moments(means: np.ndarray,
@@ -123,7 +138,7 @@ def likelihood(z: np.ndarray,
   return likelihoods
 
 
-@jax.jit
+@ jax.jit
 def merge_mixture(means: np.ndarray,
                   covars: np.ndarray,
                   weights: np.ndarray,
