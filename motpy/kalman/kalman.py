@@ -38,7 +38,7 @@ class KalmanFilter():
 
   def update(self,
              predicted_state: GaussianState,
-             measurement: np.ndarray,
+             measurement: Optional[np.ndarray] = None,
              filter_state: Optional[Dict] = None,
              ) -> Tuple[GaussianState, Dict]:
     assert self.measurement_model is not None
@@ -54,8 +54,11 @@ class KalmanFilter():
     P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
     P_post = (P_post + P_post.swapaxes(-1, -2)) / 2
 
-    z_pred = x_pred @ H.T
-    x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, z - z_pred)
+    if z is None:
+      x_post = x_pred
+    else:
+      z_pred = x_pred @ H.T
+      x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, z - z_pred)
 
     post_state = GaussianState(
         mean=x_post, covar=P_post, weight=predicted_state.weight)
