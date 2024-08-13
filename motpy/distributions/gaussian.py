@@ -91,6 +91,8 @@ def match_moments(means: np.ndarray,
     Mixture PDF mean and covariance
 
   """
+  if len(weights) == 1:
+    return means, covars
   x = means
   P = covars
   w = weights / (np.sum(weights, axis=-1, keepdims=True) + 1e-15)

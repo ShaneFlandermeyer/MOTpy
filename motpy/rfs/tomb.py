@@ -247,17 +247,12 @@ class TOMBP:
     for i in range(len(self.mb)):
       is_valid = valid_hypos[i]
       num_valid = np.count_nonzero(is_valid)
-      if num_valid == 0:
-        continue
       rs = mb_hypos[i].r
       xs = mb_hypos[i].state.mean
       Ps = mb_hypos[i].state.covar
       pr = p_upd[i, is_valid] * rs
       r = np.sum(pr)
-      if num_valid == 1:
-        x, P = xs, Ps
-      else:
-        x, P = match_moments(means=xs, covars=Ps, weights=pr)
+      x, P = match_moments(means=xs, covars=Ps, weights=pr)
 
       mb.append(r=r, state=GaussianState(mean=x, covar=P))
 
@@ -267,10 +262,10 @@ class TOMBP:
       meta['mb'].extend([{} for _ in range(len(new_berns))])
 
     # Truncate tracks with low probability of existence (not shown in algorithm)
-    if len(mb) > 0 and self.r_min is not None:
-      meta['mb'] = [meta['mb'][i]
-                    for i in range(len(mb)) if mb.r[i] > self.r_min]
-      mb = mb[mb.r > self.r_min]
+    if self.r_min is not None and len(mb) > 0:
+      valid = mb.r > self.r_min
+      meta['mb'] = [meta['mb'][i] for i in range(len(mb)) if valid[i]]
+      mb = mb[valid]
 
     return mb, meta
 
