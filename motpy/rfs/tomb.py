@@ -128,6 +128,7 @@ class TOMBP:
 
     # Update existing tracks
     w_upd = np.zeros((n, m + 1))
+    w_new = np.zeros(m)
     l_mb = np.zeros((n, m))
 
     # We create one MB hypothesis for each measurement, plus one missed detection hypothesis
@@ -173,7 +174,6 @@ class TOMBP:
               mb_hypos[valid_inds[i]].append(r=r_post[i], state=state_post[i])
 
     # Create a new track for each measurement by updating PPP with measurement
-    w_new = np.zeros(m)
     new_berns = MultiBernoulli()
 
     pd_poisson = pd_func(self.poisson.distribution)
@@ -246,7 +246,6 @@ class TOMBP:
     mb = MultiBernoulli()
     for i in range(len(self.mb)):
       is_valid = valid_hypos[i]
-      num_valid = np.count_nonzero(is_valid)
       rs = mb_hypos[i].r
       xs = mb_hypos[i].state.mean
       Ps = mb_hypos[i].state.covar
@@ -255,11 +254,13 @@ class TOMBP:
       x, P = match_moments(means=xs, covars=Ps, weights=pr)
 
       mb.append(r=r, state=GaussianState(mean=x, covar=P))
+      meta['mb'][i].update(
+          {'p_upd': p_upd[i], 'p_new': 0, 'in_gate': in_gate_mb[i]})
 
     # Form new tracks
     if len(new_berns) > 0:
       mb.append(r=p_new*new_berns.r, state=new_berns.state)
-      meta['mb'].extend([{} for _ in range(len(new_berns))])
+      meta['mb'].extend([{'p_new': p_new[i]} for i in range(len(new_berns))])
 
     # Truncate tracks with low probability of existence (not shown in algorithm)
     if self.r_min is not None and len(mb) > 0:
