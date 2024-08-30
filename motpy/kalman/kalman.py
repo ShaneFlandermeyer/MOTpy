@@ -32,7 +32,10 @@ class KalmanFilter():
     P_pred = F @ P @ F.T + Q
 
     predicted_state = GaussianState(
-        mean=x_pred, covar=P_pred, weight=state.weight)
+        state_dim=state.state_dim,
+        mean=x_pred,
+        covar=P_pred,
+        weight=state.weight)
 
     return predicted_state, filter_state
 
@@ -61,7 +64,10 @@ class KalmanFilter():
       x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, z - z_pred)
 
     post_state = GaussianState(
-        mean=x_post, covar=P_post, weight=predicted_state.weight)
+        state_dim=x_post.shape[-1],
+        mean=x_post,
+        covar=P_post,
+        weight=predicted_state.weight)
 
     return post_state, filter_state
 

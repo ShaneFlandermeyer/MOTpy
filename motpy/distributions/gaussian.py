@@ -19,40 +19,51 @@ class GaussianState():
 
   def __init__(
       self,
-      mean: np.ndarray,
-      covar: np.ndarray,
+      state_dim: int,
+      mean: Optional[np.ndarray],
+      covar: Optional[np.ndarray],
       weight: Optional[np.ndarray] = None,
   ):
-    self.mean = np.atleast_2d(mean)
-    self.state_dim = self.mean.shape[-1]
-
-    n_components = self.mean.shape[0]
-    self.covar = covar.reshape(n_components, self.state_dim, self.state_dim)
-
+    self.state_dim = state_dim
+    self.mean = np.asarray(mean)
+    self.covar = np.asarray(covar).reshape(*self.shape, state_dim, state_dim)
     if weight is None:
-      weight = np.zeros(n_components)
+      self.weight = None
     else:
-      weight = np.asarray(weight).reshape(n_components)
-    self.weight = weight
+      self.weight = np.asarray(weight).reshape(*self.shape)
 
   def __repr__(self):
     return f"""GaussianMixture(
-      n_components={len(self)},
+      shape={self.shape},
       means={self.mean}
       covars=\n{self.covar})
       weights={self.weight}
       """
 
+  @property
+  def shape(self):
+    return self.mean.shape[:-1]
+
   def __len__(self):
-    return len(self.mean)
+    return int(np.prod(self.shape[:-1]))
 
   def __getitem__(self, idx):
-    return GaussianState(mean=self.mean[idx], covar=self.covar[idx], weight=self.weight[idx])
+    return GaussianState(
+        state_dim=self.state_dim,
+        mean=self.mean[idx],
+        covar=self.covar[idx],
+        weight=self.weight[idx]
+    )
 
-  def append(self, state: GaussianState) -> None:
-    self.mean = np.concatenate((self.mean, state.mean), axis=0)
-    self.covar = np.concatenate((self.covar, state.covar), axis=0)
-    self.weight = np.concatenate((self.weight, state.weight), axis=0)
+  def append(self, state: GaussianState, axis: int = 0) -> None:
+    self.mean = np.append(self.mean, state.mean, axis=axis)
+    self.covar = np.append(self.covar, state.covar, axis=axis)
+    self.weight = np.append(self.weight, state.weight, axis=axis)
+
+  def stack(self, state: GaussianState, axis: int = 0) -> None:
+    self.mean = np.stack(self.mean, state.mean, axis=axis)
+    self.covar = np.stack(self.covar, state.covar, axis=axis)
+    self.weight = np.stack(self.weight, state.weight, axis=axis)
 
   def sample(self,
              num_points: int,
@@ -63,7 +74,7 @@ class GaussianState():
     Sample points from each Gaussian component at the specified dimensions.
     """
     covar_inds = np.ix_(dims, dims)
-    P = self.covar[:, covar_inds[0], covar_inds[1]]
+    P = self.covar[..., covar_inds[0], covar_inds[1]]
 
     mu = self.mean[..., None, dims]
     std_normal = rng.normal(size=(len(self), num_points, len(dims)))
