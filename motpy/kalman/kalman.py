@@ -19,7 +19,8 @@ class KalmanFilter():
   def predict(self,
               state: GaussianState,
               dt: float,
-              filter_state: Optional[Dict] = None
+              filter_state: Optional[Dict] = None,
+              **kwargs
               ) -> Tuple[GaussianState, Dict]:
     assert self.transition_model is not None
 
@@ -28,7 +29,7 @@ class KalmanFilter():
     F = self.transition_model.matrix(dt=dt)
     Q = self.transition_model.covar(dt=dt)
 
-    x_pred = x @ F.T
+    x_pred = self.transition_model(x, dt=dt, **kwargs)
     P_pred = F @ P @ F.T + Q
 
     predicted_state = GaussianState(
@@ -43,6 +44,7 @@ class KalmanFilter():
              predicted_state: GaussianState,
              measurement: Optional[np.ndarray] = None,
              filter_state: Optional[Dict] = None,
+             **kwargs
              ) -> Tuple[GaussianState, Dict]:
     assert self.measurement_model is not None
 
@@ -60,11 +62,11 @@ class KalmanFilter():
     if z is None:
       x_post = x_pred
     else:
-      z_pred = x_pred @ H.T
+      z_pred = self.measurement_model(x_pred, **kwargs)
       x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, z - z_pred)
 
     post_state = GaussianState(
-        state_dim=x_post.shape[-1],
+        state_dim=predicted_state.state_dim,
         mean=x_post,
         covar=P_post,
         weight=predicted_state.weight)

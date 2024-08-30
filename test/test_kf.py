@@ -13,24 +13,24 @@ from motpy.models.measurement import LinearMeasurementModel
 
 
 class TestLinearTransitionModel():
-  def function(self, prior, dt, noise=False):
+  def __call__(self, state, dt, noise=False, **_):
     if noise:
       process_noise = self.covar()
     else:
       process_noise = 0
 
-    return self.matrix(dt) @ prior + process_noise
+    return self.matrix(dt) @ state + process_noise
 
-  def matrix(self, dt):
+  def matrix(self, dt, **_):
     return np.array([[1, dt], [0, 1]])
 
-  def covar(self, dt=None):
+  def covar(self, **_):
     return np.array([[0.588, 1.175],
                      [1.175, 2.35]])
 
 
 class TestLinearMeasurementModel():
-  def function(self, state):
+  def __call__(self, state):
     return self.matrix() @ state
 
   def matrix(self):

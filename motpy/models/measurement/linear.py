@@ -1,5 +1,5 @@
 import functools
-from typing import List, Union
+from typing import List, Optional, Union
 
 import numpy as np
 
@@ -10,7 +10,7 @@ class LinearMeasurementModel(MeasurementModel):
   def __init__(self,
                ndim_state: int,
                covar: np.ndarray,
-               measured_dims: np.ndarray = None,
+               measured_dims: Optional[np.ndarray] = None,
                seed: int = np.random.randint(0, 2**32-1),
                ):
 
@@ -25,7 +25,9 @@ class LinearMeasurementModel(MeasurementModel):
 
   def __call__(self,
                x: np.ndarray,
-               noise: bool = False) -> List[np.ndarray]:
+               noise: bool = False,
+               **_
+               ) -> List[np.ndarray]:
     out = x[..., self.measured_dims].astype(float)
 
     if noise:
@@ -36,12 +38,12 @@ class LinearMeasurementModel(MeasurementModel):
     return out
 
   @functools.lru_cache(maxsize=1)
-  def matrix(self, **kwargs):
+  def matrix(self, **_):
     H = np.zeros((self.ndim, self.ndim_state))
     H[np.arange(self.ndim), self.measured_dims] = 1
     return H
 
-  def covar(self, **kwargs):
+  def covar(self, **_):
     return self.noise_covar
 
   def sample_noise(self, size: int = 1):

@@ -36,7 +36,8 @@ class ConstantVelocity(TransitionModel):
       self,
       x: np.ndarray,
       dt: float = 0,
-      noise: bool = False
+      noise: bool = False,
+      **_
   ) -> np.ndarray:
     next_state = x.astype(float)
     next_state[..., self.position_inds] += x[..., self.velocity_inds]*dt
@@ -51,7 +52,7 @@ class ConstantVelocity(TransitionModel):
     return next_state
 
   @functools.lru_cache()
-  def matrix(self, dt: float):
+  def matrix(self, dt: float, **_):
     F = np.zeros((self.ndim_state, self.ndim_state))
 
     pos, vel = self.position_inds, self.velocity_inds
@@ -61,7 +62,7 @@ class ConstantVelocity(TransitionModel):
     return F
 
   @functools.lru_cache()
-  def covar(self, dt: float):
+  def covar(self, dt: float, **_):
     ipos, ivel = self.position_inds, self.velocity_inds
     Q = np.zeros((self.ndim_state, self.ndim_state))
 
