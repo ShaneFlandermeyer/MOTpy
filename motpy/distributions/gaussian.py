@@ -19,22 +19,23 @@ class GaussianState():
 
   def __init__(
       self,
-      state_dim: int,
       mean: Optional[np.ndarray],
       covar: Optional[np.ndarray],
       weight: Optional[np.ndarray] = None,
   ):
-    self.state_dim = state_dim
-    self.mean = np.asarray(mean)
-    self.covar = np.asarray(covar).reshape(*self.shape, state_dim, state_dim)
-    if weight is None:
-      self.weight = None
+    shape, state_dim = mean.shape[:-1], mean.shape[-1]
+
+    self.mean = np.reshape(mean, shape + (state_dim,))
+    self.covar = np.reshape(covar, shape + (state_dim, state_dim))
+    if weight is not None:
+      self.weight = np.reshape(weight, shape)
     else:
-      self.weight = np.asarray(weight).reshape(*self.shape)
+      self.weight = None
 
   def __repr__(self):
     return f"""GaussianMixture(
       shape={self.shape},
+      state_dim={self.state_dim},
       means={self.mean}
       covars=\n{self.covar})
       weights={self.weight}
@@ -42,28 +43,57 @@ class GaussianState():
 
   @property
   def shape(self):
-    return self.mean.shape[:-1]
+    shape = self.mean.shape[:-1]
+    if self.covar.shape[:-2] != shape:
+      raise ValueError("Mean and covariance shapes do not match")
+    if self.weight is not None and self.weight.shape != shape:
+      raise ValueError("Mean and weight shapes do not match")
+    return shape
+
+  @property
+  def state_dim(self):
+    state_dim = self.mean.shape[-1]
+    if self.covar.shape[-2:] != (state_dim, state_dim):
+      raise ValueError("Covariance matrix has incorrect state dimension")
+
+    return self.mean.shape[-1]
 
   def __len__(self):
-    return int(np.prod(self.shape[:-1]))
+    return len(self.mean)
 
   def __getitem__(self, idx):
     return GaussianState(
-        state_dim=self.state_dim,
         mean=self.mean[idx],
         covar=self.covar[idx],
-        weight=self.weight[idx]
+        weight=self.weight[idx] if self.weight is not None else None
     )
 
   def append(self, state: GaussianState, axis: int = 0) -> None:
-    self.mean = np.append(self.mean, state.mean, axis=axis)
-    self.covar = np.append(self.covar, state.covar, axis=axis)
-    self.weight = np.append(self.weight, state.weight, axis=axis)
+    means = np.append(self.mean, state.mean, axis=axis)
+    covars = np.append(self.covar, state.covar, axis=axis)
+    if self.weight is not None:
+      weights = np.append(self.weight, state.weight, axis=axis)
+    else:
+      weights = None
+    return GaussianState(mean=means, covar=covars, weight=weights)
 
   def stack(self, state: GaussianState, axis: int = 0) -> None:
-    self.mean = np.stack(self.mean, state.mean, axis=axis)
-    self.covar = np.stack(self.covar, state.covar, axis=axis)
-    self.weight = np.stack(self.weight, state.weight, axis=axis)
+    means = np.stack([self.mean, state.mean], axis=axis)
+    covars = np.stack([self.covar, state.covar], axis=axis)
+    if self.weight is not None:
+      weights = np.stack([self.weight, state.weight], axis=axis)
+    else:
+      weights = None
+    return GaussianState(mean=means, covar=covars, weight=weights)
+
+  def concatenate(self, state: GaussianState, axis: int = 0) -> None:
+    means = np.concatenate([self.mean, state.mean], axis=axis)
+    covars = np.concatenate([self.covar, state.covar], axis=axis)
+    if self.weight is not None:
+      weights = np.concatenate([self.weight, state.weight], axis=axis)
+    else:
+      weights = None
+    return GaussianState(mean=means, covar=covars, weight=weights)
 
   def sample(self,
              num_points: int,
@@ -122,7 +152,7 @@ def likelihood(z: np.ndarray,
   """
   Compute the likelihood for a set of measurement/state pairs.
 
-  Parameters
+  Parameters>
   ----------
   z : np.ndarray
       Array of measurements. Shape: (M, nz)
