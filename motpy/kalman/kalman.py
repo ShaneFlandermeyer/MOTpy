@@ -20,7 +20,7 @@ class KalmanFilter():
               state: GaussianState,
               dt: float,
               filter_state: Optional[Dict] = None,
-              **kwargs
+              model_args: Optional[dict] = dict(),
               ) -> Tuple[GaussianState, Dict]:
     assert self.transition_model is not None
 
@@ -29,26 +29,24 @@ class KalmanFilter():
     F = self.transition_model.matrix(dt=dt)
     Q = self.transition_model.covar(dt=dt)
 
-    x_pred = self.transition_model(x, dt=dt, **kwargs)
+    x_pred = self.transition_model(x, dt=dt, **model_args)
     P_pred = F @ P @ F.T + Q
 
-    predicted_state = GaussianState(
-        state_dim=state.state_dim,
-        mean=x_pred,
-        covar=P_pred,
-        weight=state.weight)
+    predicted_state = GaussianState(mean=x_pred,
+                                    covar=P_pred,
+                                    weight=state.weight)
 
     return predicted_state, filter_state
 
   def update(self,
-             predicted_state: GaussianState,
+             state: GaussianState,
              measurement: Optional[np.ndarray] = None,
              filter_state: Optional[Dict] = None,
-             **kwargs
+             model_args: Optional[dict] = dict(),
              ) -> Tuple[GaussianState, Dict]:
     assert self.measurement_model is not None
 
-    x_pred, P_pred = predicted_state.mean, predicted_state.covar
+    x_pred, P_pred = state.mean, state.covar
 
     z = measurement
     H = self.measurement_model.matrix()
@@ -62,14 +60,12 @@ class KalmanFilter():
     if z is None:
       x_post = x_pred
     else:
-      z_pred = self.measurement_model(x_pred, **kwargs)
+      z_pred = self.measurement_model(x_pred, **model_args)
       x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, z - z_pred)
 
-    post_state = GaussianState(
-        state_dim=predicted_state.state_dim,
-        mean=x_post,
-        covar=P_post,
-        weight=predicted_state.weight)
+    post_state = GaussianState(mean=x_post,
+                               covar=P_post,
+                               weight=state.weight)
 
     return post_state, filter_state
 

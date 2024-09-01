@@ -42,7 +42,7 @@ class GaussianState():
       """
 
   @property
-  def shape(self):
+  def shape(self) -> Tuple[int]:
     shape = self.mean.shape[:-1]
     if self.covar.shape[:-2] != shape:
       raise ValueError("Covariance array has incorrect shape")
@@ -51,17 +51,17 @@ class GaussianState():
     return shape
 
   @property
-  def state_dim(self):
+  def size(self) -> int:
+    return np.prod(self.shape)
+
+  @property
+  def state_dim(self) -> int:
     state_dim = self.mean.shape[-1]
     if self.covar.shape[-2:] != (state_dim, state_dim):
       raise ValueError("Covariance array has incorrect shape")
+    return state_dim
 
-    return self.mean.shape[-1]
-
-  def __len__(self):
-    return len(self.mean)
-
-  def __getitem__(self, idx):
+  def __getitem__(self, idx) -> GaussianState:
     return GaussianState(
         mean=self.mean[idx],
         covar=self.covar[idx],

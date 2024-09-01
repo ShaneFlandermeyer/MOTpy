@@ -45,7 +45,6 @@ def test_kalman_predict():
   Test kalman predict step. Example data from kalman filter ebook.
   """
   state = GaussianState(
-      state_dim=2,
       mean=np.array([11.35, 4.5]),
       covar=np.array([[545, 150], [150, 500]]))
   dt = 0.3
@@ -72,7 +71,6 @@ def test_kalman_update():
   H = measurement_model.matrix()
   z = 1
   state = GaussianState(
-      state_dim=2,
       mean=np.array([12.7, 4.5]),
       covar=np.array([[545, 150], [150, 500]]),
   )
@@ -81,7 +79,7 @@ def test_kalman_update():
       measurement_model=TestLinearMeasurementModel(),
   )
 
-  state_post, meta = kf.update(measurement=z, predicted_state=state)
+  state_post, meta = kf.update(measurement=z, state=state)
   x_expected, P_expected = update(
       x=state.mean, P=state.covar, z=z, R=R, H=H)
   assert np.allclose(state_post.mean, x_expected)
