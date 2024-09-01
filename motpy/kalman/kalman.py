@@ -20,7 +20,7 @@ class KalmanFilter():
               state: GaussianState,
               dt: float,
               filter_state: Optional[Dict] = None,
-              model_args: Optional[dict] = dict(),
+              model_args: Optional[Dict] = dict(),
               ) -> Tuple[GaussianState, Dict]:
     assert self.transition_model is not None
 
@@ -42,7 +42,7 @@ class KalmanFilter():
              state: GaussianState,
              measurement: Optional[np.ndarray] = None,
              filter_state: Optional[Dict] = None,
-             model_args: Optional[dict] = dict(),
+             model_args: Optional[Dict] = dict(),
              ) -> Tuple[GaussianState, Dict]:
     assert self.measurement_model is not None
 
