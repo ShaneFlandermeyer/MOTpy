@@ -45,16 +45,16 @@ class GaussianState():
   def shape(self):
     shape = self.mean.shape[:-1]
     if self.covar.shape[:-2] != shape:
-      raise ValueError("Mean and covariance shapes do not match")
+      raise ValueError("Covariance array has incorrect shape")
     if self.weight is not None and self.weight.shape != shape:
-      raise ValueError("Mean and weight shapes do not match")
+      raise ValueError("Weight array has incorrect shape")
     return shape
 
   @property
   def state_dim(self):
     state_dim = self.mean.shape[-1]
     if self.covar.shape[-2:] != (state_dim, state_dim):
-      raise ValueError("Covariance matrix has incorrect state dimension")
+      raise ValueError("Covariance array has incorrect shape")
 
     return self.mean.shape[-1]
 
