@@ -40,7 +40,7 @@ class TestLinearMeasurementModel():
     return np.array([[5.]])
 
 
-def test_kalman_predict():
+def test_predict():
   """
   Test kalman predict step. Example data from kalman filter ebook.
   """
@@ -62,7 +62,7 @@ def test_kalman_predict():
   assert np.allclose(state_pred.covar, P_expected)
 
 
-def test_kalman_update():
+def test_update():
   """
   Test kalman update step. Example data from kalman filter ebook.
   """

@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
@@ -14,38 +14,60 @@ class UnscentedKalmanFilter():
                measurement_model: MeasurementModel,
                state_residual_fn: callable = np.subtract,
                measurement_residual_fn: callable = np.subtract,
-               # Sigma point parameters
-               alpha: float = 0.1,
-               beta: float = 2,
-               kappa: float = 0,
                ):
     self.transition_model = transition_model
     self.measurement_model = measurement_model
     self.state_residual_fn = state_residual_fn
     self.measurement_residual_fn = measurement_residual_fn
 
-    self.alpha = alpha
-    self.beta = beta
-    self.kappa = kappa
-
   def predict(self,
               state: GaussianState,
               dt: float,
-              metadata: Optional[dict] = dict(),
+              filter_state: Dict[str, Any] = dict(),
               ) -> Tuple[GaussianState, Dict]:
+    """
+    UKF predict step
+
+    Parameters
+    ----------
+    state : GaussianState
+        Object states
+    dt : float
+        Prediction time step
+    filter_state : Dict[str, Any]
+        Filter state dictionary. This dict should contain the following keys:
+        - alpha: Merwe scaling parameter
+        - beta: Merwe scaling parameter
+        - kappa: Merwe scaling parameter
+
+    Returns
+    -------
+    Tuple[GaussianState, Dict]
+        A tuple containing the:
+        - Predicted state object
+        - Filter state dict with the following updated keys:
+            - predicted_sigmas: Predicted sigma points
+            - Wm: Mean weights for the unscented transform
+            - Wc: Covariance weights for the unscented transform
+    """
+    # Extract filter state variables
+    alpha = filter_state['alpha']
+    beta = filter_state['beta']
+    kappa = filter_state['kappa']
+
     # Compute sigma points and weights
     sigmas = merwe_scaled_sigma_points(
         x=state.mean,
         P=state.covar,
-        alpha=self.alpha,
-        beta=self.beta,
-        kappa=self.kappa,
+        alpha=alpha,
+        beta=beta,
+        kappa=kappa,
         subtract_fn=self.state_residual_fn)
     Wm, Wc = merwe_sigma_weights(
         ndim_state=state.mean.shape[-1],
-        alpha=self.alpha,
-        beta=self.beta,
-        kappa=self.kappa)
+        alpha=alpha,
+        beta=beta,
+        kappa=kappa)
 
     # Transform sigma points to the prediction space
     predicted_sigams = self.transition_model(sigmas, dt=dt, noise=False)
@@ -60,25 +82,46 @@ class UnscentedKalmanFilter():
     predicted_state = GaussianState(
         mean=predicted_mean, covar=predicted_covar, weight=state.weight)
 
-    metadata.update({'predicted_sigmas': predicted_sigams})
-    return predicted_state, metadata
+    filter_state.update(
+        predicted_sigmas=predicted_sigams,
+        Wm=Wm,
+        Wc=Wc,
+    )
+    return predicted_state, filter_state
 
   def update(self,
              predicted_state: GaussianState,
              measurement: np.ndarray,
-             metadata: Optional[dict] = dict(),
+             filter_state: Dict[str, Any],
              ) -> Tuple[GaussianState, Dict]:
+    """
+    UKF update step
 
-    # Extract information from predict step
-    predicted_sigmas = metadata.get('predicted_sigmas')
-    if predicted_sigmas is None:
-      raise ValueError('No sigma points found in the predicted state metadata')
+    Parameters
+    ----------
+    predicted_state : GaussianState
+        Predicted state
+    measurement : np.ndarray
+        Measurement vectors
+    filter_state : Dict[str, Any]
+        Filter state dictionary. This dict should contain the following keys:
+        - predicted_sigmas: Sigma points in prediction space
+        - Wm: Mean weights for the unscented transform
+        - Wc: Covariance weights for the unscented transform
 
-    Wm, Wc = merwe_sigma_weights(
-        ndim_state=predicted_sigmas.shape[-1],
-        alpha=self.alpha,
-        beta=self.beta,
-        kappa=self.kappa)
+    Returns
+    -------
+    Tuple[GaussianState, Dict]
+        A tuple containing the:
+        - Predicted state object
+        - Filter state dict with the following updated keys:
+            - measured_sigmas: Sigma points in measurement space
+    """
+
+    # Extract state variables
+    predicted_sigmas = filter_state['predicted_sigmas']
+    Wm = filter_state['Wm']
+    Wc = filter_state['Wc']
 
     # Unscented transform in measurement space
     measured_sigmas = self.measurement_model(predicted_sigmas, noise=False)
@@ -105,13 +148,10 @@ class UnscentedKalmanFilter():
     post_state = GaussianState(
         mean=x_post, covar=P_post, weight=predicted_state.weight)
 
-    metadata.update({
-        'measured_sigmas': measured_sigmas,
-        'cache': {'innovation_covar': S,
-                  'kalman_gain': K,
-                  'predicted_measurement': z_pred}
-    })
-    return post_state, metadata
+    filter_state.update(
+        measured_sigmas=measured_sigmas,
+    )
+    return post_state, filter_state
 
   @staticmethod
   def unscented_transform(sigmas: np.ndarray,
