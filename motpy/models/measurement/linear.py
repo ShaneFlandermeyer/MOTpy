@@ -25,8 +25,7 @@ class LinearMeasurementModel(MeasurementModel):
 
   def __call__(self,
                x: np.ndarray,
-               noise: bool = False,
-               **_
+               noise: bool = False
                ) -> List[np.ndarray]:
     out = x[..., self.measured_dims].astype(float)
 
@@ -36,12 +35,12 @@ class LinearMeasurementModel(MeasurementModel):
     return out
 
   @functools.lru_cache(maxsize=1)
-  def matrix(self, **_):
+  def matrix(self):
     H = np.zeros((self.ndim, self.ndim_state))
     H[np.arange(self.ndim), self.measured_dims] = 1
     return H
 
-  def covar(self, **_):
+  def covar(self):
     return self.noise_covar
 
   def sample_noise(self, size: Tuple[int, ...]) -> np.ndarray:

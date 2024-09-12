@@ -17,7 +17,7 @@ def test_predict():
 
   # Motpy UKF
   w = 0.01
-  cv = ConstantVelocity(ndim=2, w=w, seed=seed)
+  cv = ConstantVelocity(ndim_state=4, w=w, seed=seed)
   ukf = UnscentedKalmanFilter(transition_model=cv, measurement_model=None)
   filter_state = {
       'alpha': 0.1,
@@ -51,7 +51,7 @@ def test_update():
 
   # Motpy UKF
   R = np.diag([0.1, np.deg2rad(0.1)])
-  cv = ConstantVelocity(ndim=2, w=0, seed=seed)
+  cv = ConstantVelocity(ndim_state=4, w=0, seed=seed)
   range_bearing = RangeBearingModel(covar=R, seed=seed)
   ukf = UnscentedKalmanFilter(
       transition_model=cv, measurement_model=range_bearing)
