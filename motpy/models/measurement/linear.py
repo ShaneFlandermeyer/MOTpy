@@ -1,5 +1,5 @@
 import functools
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -31,9 +31,7 @@ class LinearMeasurementModel(MeasurementModel):
     out = x[..., self.measured_dims].astype(float)
 
     if noise:
-      n_measurements = x.shape[0] if x.ndim > 1 else 1
-      noise = self.sample_noise(size=n_measurements)
-      out = out + noise.reshape(out.shape)
+      out += self.sample_noise(size=out.shape[:-1])
 
     return out
 
@@ -46,7 +44,7 @@ class LinearMeasurementModel(MeasurementModel):
   def covar(self, **_):
     return self.noise_covar
 
-  def sample_noise(self, size: int = 1):
+  def sample_noise(self, size: Tuple[int, ...]) -> np.ndarray:
     noise = self.np_random.multivariate_normal(
         mean=np.zeros(self.ndim), cov=self.noise_covar, size=size)
     return noise
