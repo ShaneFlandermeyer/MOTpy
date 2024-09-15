@@ -28,7 +28,7 @@ class GaussianState():
     self.mean = np.reshape(mean, shape + (state_dim,))
     self.covar = np.reshape(covar, shape + (state_dim, state_dim))
     if weight is not None:
-      self.weight = np.reshape(weight, shape)
+      self.weight = np.reshape(weight, shape + (1,))
     else:
       self.weight = None
 
@@ -46,7 +46,7 @@ class GaussianState():
     shape = self.mean.shape[:-1]
     if self.covar.shape[:-2] != shape:
       raise ValueError("Covariance array has incorrect shape")
-    if self.weight is not None and self.weight.shape != shape:
+    if self.weight is not None and self.weight.shape[:-1] != shape:
       raise ValueError("Weight array has incorrect shape")
     return shape
 

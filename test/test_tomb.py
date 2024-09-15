@@ -14,7 +14,7 @@ def make_data(dt, lambda_c, pd, n_steps):
   noisy = False
   # Object trajectories
   paths = [[np.array([-90, 1, -90, 1])], [np.array([-90, 1, 90, -1])]]
-  cv = ConstantVelocity(ndim=2,
+  cv = ConstantVelocity(ndim_state=4,
                         w=0.01,
                         position_inds=[0, 2],
                         velocity_inds=[1, 3],
@@ -159,14 +159,14 @@ def test_scenario_gate():
 
   # Initialize TOMB filter
   birth_dist = GaussianState(
-      mean=np.array([0, 0, 0, 0]),
-      covar=np.diag([100, 1, 100, 1])**2,
-      weight=np.array([0.05]),
+      mean=np.array([0, 0, 0, 0])[None, :],
+      covar=np.diag([100, 1, 100, 1])[None, :]**2,
+      weight=np.array([[0.05]]),
   )
   init_dist = GaussianState(
       mean=birth_dist.mean,
       covar=birth_dist.covar,
-      weight=[10.0])
+      weight=np.array([[10.0]]))
   tracker = TOMBP(birth_distribution=birth_dist,
                   undetected_distribution=init_dist,
                   pg=0.999,
@@ -191,4 +191,5 @@ def test_scenario_gate():
 
 
 if __name__ == '__main__':
+  test_scenario_gate()
   pytest.main([__file__])

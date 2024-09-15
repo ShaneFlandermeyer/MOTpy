@@ -26,15 +26,19 @@ class Poisson:
       init_distribution: Optional[GaussianState] = None,
   ):
     self.birth_distribution = birth_distribution
-
     self.distribution = init_distribution
 
   def __repr__(self):
     return f"""Poisson(birth_distribution={self.birth_distribution},
   distribution={self.distribution})"""
 
-  def __len__(self):
-    return len(self.distribution)
+  @property
+  def shape(self) -> Tuple[int]:
+    return self.distribution.shape
+  
+  @property
+  def size(self) -> int:
+    return self.distribution.size
 
   def __getitem__(self, idx):
     return self.distribution[idx]
@@ -122,16 +126,14 @@ class Poisson:
 
     NOTE: This assumes that only the birth distribution contributes, such that we only need to change the weights and covariance matrices.
     """
-    nbirth = len(self.birth_distribution)
+    assert isinstance(self.birth_distribution, GaussianState)
+    nbirth = self.birth_distribution.size
     dist = self.distribution[:nbirth]
     birth_dist = self.birth_distribution
 
-    wmix = np.stack((dist.weight, birth_dist.weight), axis=0)
-    wmix /= np.sum(wmix + 1e-15, axis=0)
-    Pmix = np.stack((dist.covar, birth_dist.covar), axis=0)
     merged_distribution = GaussianState(
         mean=dist.mean,
-        covar=np.einsum('i..., i...jk -> ...jk', wmix, Pmix),
+        covar=dist.covar,
         weight=dist.weight + birth_dist.weight,
     )
 
