@@ -226,7 +226,7 @@ class TOMBP:
           x, P = x[None, ...], P[None, ...]
         mb = mb.append(r=np.array([r]), state=GaussianState(mean=x, covar=P))
         meta['mb'][imb].update(
-            {'p_upd': p_updated[imb], 'p_new': 0, 'in_gate': valid})
+            {'p_updated': p_updated[imb], 'p_new': 0, 'in_gate': valid})
 
     # Form new tracks
     n_new = new_berns.size
@@ -303,7 +303,8 @@ class TOMBP:
         mixture, _ = state_estimator.update(
             state=self.poisson.distribution[valid[:, im]],
             measurement=measurements[im])
-        mixture.weight *= l_poisson[detectable, im] * pd_poisson[detectable]
+        mixture.weight *= l_poisson[valid[:, im],
+                                    im] * pd_poisson[valid[:, im]]
 
         sum_w_mixture = np.sum(mixture.weight)
         w_new[im] = sum_w_mixture + lambda_fa
