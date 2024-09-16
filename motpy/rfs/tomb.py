@@ -122,16 +122,12 @@ class TOMBP:
         and the updated Poisson point process (PPP) representing the intensity of new objects.
     """
 
-    n = self.mb.size if self.mb is not None else 0
-    m = len(measurements) if measurements is not None else 0
-    n_u = self.poisson.size
-
     ########################################################
     # Poisson update
     ########################################################
     pd_poisson = pd_func(self.poisson.distribution)
     if isinstance(pd_poisson, float):
-      pd_poisson = np.full(n_u, pd_poisson)
+      pd_poisson = np.full(self.poisson.size, pd_poisson)
 
     new_berns, w_new = self.bernoulli_birth(
         state_estimator=state_estimator,
@@ -145,49 +141,13 @@ class TOMBP:
     ########################################################
     # MB Update
     ########################################################
-    # One MB hypothesis per measurement (including missed detection event)
-    mb_hypos = []
-    mb_hypo_mask = np.ones((n, m+1), dtype=bool)
-    w_upd = np.zeros((n, m+1))
-    if n > 0:
+    mb_hypos, mb_hypo_mask, w_upd = self.make_mb_hypos(
+        state_estimator=state_estimator,
+        measurements=measurements,
+        pd_func=pd_func)
 
-      # Missed detection hypothesis
-      pd = pd_func(self.mb.state)
-      w_upd[:, 0] = (1 - self.mb.r) + self.mb.r * (1 - pd)
-      r_post = self.mb.r * (1 - pd) / (w_upd[:, 0] + 1e-15)
-      state_post = self.mb.state
-      mb_hypos.append(MultiBernoulli(r=r_post, state=state_post))
-
-      # Gate MB components and compute likelihoods for state-measurement pairs
-      if m > 0:
-        in_gate = state_estimator.gate(
-            measurements=measurements,
-            state=self.mb.state,
-            pg=self.pg)
-        mb_hypo_mask[:, 1:] = in_gate
-
-        l_mb = np.zeros((n, m))
-        valid_meas = np.argwhere(np.any(in_gate, axis=0)).ravel()
-        valid_mb = np.argwhere(np.any(in_gate, axis=1)).ravel()
-        l_mb[np.ix_(valid_mb, valid_meas)] = state_estimator.likelihood(
-            measurement=measurements[valid_meas],
-            state=self.mb.state[valid_mb])
-
-        # Create hypotheses for each state-measurement pair
-        for im in range(m):
-          valid = in_gate[:, im]
-          n_valid = np.count_nonzero(valid)
-          if n_valid > 0:
-            state_post, _ = state_estimator.update(
-                state=self.mb.state[valid],
-                measurement=measurements[im])
-            r_post = np.ones(n_valid)
-            mb_hypos.append(MultiBernoulli(r=r_post, state=state_post))
-            w_upd[valid, im+1] = self.mb[valid].r * \
-                pd_func(state_post) * l_mb[valid, im]
-          else:
-            mb_hypos.append(None)
-
+    n = self.mb.size if self.mb is not None else 0
+    m = len(measurements) if measurements is not None else 0
     if n == 0:
       p_upd = np.zeros_like(w_upd)
       p_new = np.ones_like(w_new)
@@ -210,14 +170,14 @@ class TOMBP:
            p_new: np.ndarray,
            mb_hypos: List[MultiBernoulli],
            mb_hypo_mask: np.ndarray,
-           new_berns: MultiBernoulli) -> MultiBernoulli:
+           new_berns: MultiBernoulli
+           ) -> MultiBernoulli:
+    meta = copy.deepcopy(self.metadata)
     n_mb, mp1 = p_upd.shape
     m = mp1 - 1
 
-    meta = copy.deepcopy(self.metadata)
-
+    # NOTE: Makes Gaussian assumption
     mb = MultiBernoulli()
-
     if len(mb_hypos) > 0:
       state_dim = mb_hypos[0].state.state_dim
       rs = np.zeros((n_mb, m+1))
@@ -261,13 +221,12 @@ class TOMBP:
 
     return mb, meta
 
-  def bernoulli_birth(
-      self,
-      state_estimator: KalmanFilter,
-      measurements: np.ndarray,
-      pd_poisson: np.ndarray,
-      lambda_fa: float
-  ) -> Tuple[MultiBernoulli, np.ndarray]:
+  def bernoulli_birth(self,
+                      state_estimator: KalmanFilter,
+                      measurements: np.ndarray,
+                      pd_poisson: np.ndarray,
+                      lambda_fa: float,
+                      ) -> Tuple[MultiBernoulli, np.ndarray]:
     m = len(measurements)
     n_u = self.poisson.size
     w_new = np.zeros(m)
@@ -326,6 +285,58 @@ class TOMBP:
       )
 
     return new_berns, w_new
+
+  def make_mb_hypos(self,
+                    state_estimator: KalmanFilter,
+                    measurements: np.ndarray,
+                    pd_func: Callable
+                    ) -> Tuple[List[MultiBernoulli], np.ndarray, np.ndarray]:
+    n = self.mb.size if self.mb is not None else 0
+    m = len(measurements) if measurements is not None else 0
+
+    # One MB hypothesis per measurement (including missed detection event)
+    hypos = []
+    mask = np.ones((n, m+1), dtype=bool)
+    w_upd = np.zeros((n, m+1))
+    if n > 0:
+      # Missed detection hypothesis
+      pd = pd_func(self.mb.state)
+      w_upd[:, 0] = (1 - self.mb.r) + self.mb.r * (1 - pd)
+      r_post = self.mb.r * (1 - pd) / (w_upd[:, 0] + 1e-15)
+      state_post = self.mb.state
+      hypos.append(MultiBernoulli(r=r_post, state=state_post))
+
+      # Gate MB components and compute likelihoods for state-measurement pairs
+      if m > 0:
+        in_gate = state_estimator.gate(
+            measurements=measurements,
+            state=self.mb.state,
+            pg=self.pg)
+        mask[:, 1:] = in_gate
+
+        l_mb = np.zeros((n, m))
+        valid_meas = np.argwhere(np.any(in_gate, axis=0)).ravel()
+        valid_mb = np.argwhere(np.any(in_gate, axis=1)).ravel()
+        l_mb[np.ix_(valid_mb, valid_meas)] = state_estimator.likelihood(
+            measurement=measurements[valid_meas],
+            state=self.mb.state[valid_mb])
+
+        # Create hypotheses for each state-measurement pair
+        for im in range(m):
+          valid = in_gate[:, im]
+          n_valid = np.count_nonzero(valid)
+          if n_valid > 0:
+            state_post, _ = state_estimator.update(
+                state=self.mb.state[valid],
+                measurement=measurements[im])
+            r_post = np.ones(n_valid)
+            hypos.append(MultiBernoulli(r=r_post, state=state_post))
+            w_upd[valid, im+1] = self.mb[valid].r * \
+                pd_func(state_post) * l_mb[valid, im]
+          else:
+            hypos.append(None)
+
+    return hypos, mask, w_upd
 
   @staticmethod
   def spa(w_upd: np.ndarray, w_new: np.ndarray,
