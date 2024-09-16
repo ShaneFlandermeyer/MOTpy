@@ -68,6 +68,12 @@ class GaussianState():
         weight=self.weight[idx] if self.weight is not None else None
     )
 
+  def __setitem__(self, idx, value: GaussianState) -> None:
+    self.mean[idx] = value.mean
+    self.covar[idx] = value.covar
+    if self.weight is not None:
+      self.weight[idx] = value.weight
+
   def append(self, state: GaussianState, axis: int = 0) -> None:
     means = np.append(self.mean, state.mean, axis=axis)
     covars = np.append(self.covar, state.covar, axis=axis)

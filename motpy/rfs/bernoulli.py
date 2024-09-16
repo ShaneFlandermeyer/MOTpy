@@ -8,10 +8,11 @@ from typing import Dict, Tuple, Optional, List, Union
 
 class MultiBernoulli():
   def __init__(self,
-               r: np.ndarray = None,
-               state: GaussianState = None):
-    self.r = r if r is not None else np.empty(0)
+               state: GaussianState,
+               r: np.ndarray
+               ) -> None:
     self.state = state
+    self.r = r.reshape(state.shape + (1,))
 
   def __repr__(self) -> str:
     return f"""MultiBernoulli(
@@ -24,9 +25,7 @@ class MultiBernoulli():
   def __getitem__(self, idx) -> MultiBernoulli:
     return MultiBernoulli(r=self.r[idx], state=self.state[idx])
 
-  def append(self,
-             r: np.ndarray,
-             state: GaussianState) -> None:
+  def append(self, state: GaussianState, r: np.ndarray) -> None:
     if self.state is None:
       self.state = state
     else:
@@ -39,11 +38,8 @@ class MultiBernoulli():
               dt: float,
               ps: float,
               filter_state: Optional[Dict] = None) -> MultiBernoulli:
-    if len(self) == 0:
-      return copy.copy(self)
-
-    pred_state, filter_state = state_estimator.predict(
+    predicted_state, filter_state = state_estimator.predict(
         state=self.state, dt=dt, filter_state=filter_state)
 
-    pred_mb = MultiBernoulli(r=self.r * ps, state=pred_state)
+    predicted_mb = MultiBernoulli(r=self.r * ps, state=predicted_state)
     return pred_mb, filter_state
