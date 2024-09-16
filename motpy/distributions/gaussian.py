@@ -31,6 +31,7 @@ class GaussianState():
       self.weight = np.reshape(weight, shape + (1,))
     else:
       self.weight = None
+    self.state_dim = state_dim
 
   def __repr__(self):
     return f"""GaussianMixture(
@@ -43,23 +44,11 @@ class GaussianState():
 
   @property
   def shape(self) -> Tuple[int]:
-    shape = self.mean.shape[:-1]
-    if self.covar.shape[:-2] != shape:
-      raise ValueError("Covariance array has incorrect shape")
-    if self.weight is not None and self.weight.shape[:-1] != shape:
-      raise ValueError("Weight array has incorrect shape")
-    return shape
+    return self.mean.shape[:-1]
 
   @property
   def size(self) -> int:
     return np.prod(self.shape)
-
-  @property
-  def state_dim(self) -> int:
-    state_dim = self.mean.shape[-1]
-    if self.covar.shape[-2:] != (state_dim, state_dim):
-      raise ValueError("Covariance array has incorrect shape")
-    return state_dim
 
   def __getitem__(self, idx) -> GaussianState:
     return GaussianState(

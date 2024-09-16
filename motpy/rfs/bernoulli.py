@@ -19,11 +19,20 @@ class MultiBernoulli():
       r={self.r}
       state={self.state})"""
 
-  def __len__(self) -> int:
-    return len(self.r)
+  @property
+  def shape(self) -> Tuple[int]:
+    return self.state.shape
+
+  @property
+  def size(self) -> int:
+    return self.state.size
 
   def __getitem__(self, idx) -> MultiBernoulli:
-    return MultiBernoulli(r=self.r[idx], state=self.state[idx])
+    return MultiBernoulli(state=self.state[idx], r=self.r[idx])
+
+  def __setitem__(self, idx, value: MultiBernoulli) -> None:
+    self.r[idx] = value.r
+    self.state[idx] = value.state
 
   def append(self, state: GaussianState, r: np.ndarray) -> None:
     if self.state is None:

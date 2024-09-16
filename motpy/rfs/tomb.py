@@ -40,7 +40,7 @@ class TOMBP:
     """
     self.poisson = Poisson(
         birth_distribution=birth_distribution, init_distribution=undetected_distribution)
-    self.mb = MultiBernoulli()
+    self.mb = None
     self.metadata = {
         'mb': [],
         'ppp': [],
@@ -76,25 +76,25 @@ class TOMBP:
     meta = self.metadata.copy()
 
     # Predict existing tracks
-    if len(self.mb) > 0:
+    if self.mb is not None and self.mb.size > 0:
       ps_mb = ps_func(self.mb.state)
-      pred_mb, filter_state = self.mb.predict(
+      predicted_mb, filter_state = self.mb.predict(
           state_estimator=state_estimator, ps=ps_mb, dt=dt)
       meta['filter_state'] = filter_state
     else:
-      pred_mb = MultiBernoulli()
+      predicted_mb = self.mb
 
     # Predict existing PPP intensity
     ps_poisson = ps_func(self.poisson.distribution)
-    pred_poisson = self.poisson.predict(
+    predicted_poisson = self.poisson.predict(
         state_estimator=state_estimator, ps=ps_poisson, dt=dt)
 
     # Not shown in paper--truncate low weight components
     if self.w_min is not None:
-      pred_poisson = pred_poisson.prune(threshold=self.w_min)
+      predicted_poisson = predicted_poisson.prune(threshold=self.w_min)
     if self.merge_poisson:
-      pred_poisson = pred_poisson.merge()
-    return pred_mb, pred_poisson
+      predicted_poisson = predicted_poisson.merge()
+    return predicted_mb, predicted_poisson
 
   def update(self,
              measurements: np.ndarray,
@@ -123,7 +123,7 @@ class TOMBP:
     """
 
     n = len(self.mb)
-    nu = len(self.poisson)
+    nu = self.poisson.size
     m = len(measurements) if measurements is not None else 0
 
     # Update existing tracks
