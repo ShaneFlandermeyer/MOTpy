@@ -21,11 +21,11 @@ class MultiBernoulli():
 
   @property
   def shape(self) -> Tuple[int]:
-    return self.state.shape
+    return self.state.shape if self.state is not None else ()
 
   @property
   def size(self) -> int:
-    return self.state.size
+    return self.state.size if self.state is not None else 0
 
   def __getitem__(self, idx) -> MultiBernoulli:
     return MultiBernoulli(state=self.state[idx], r=self.r[idx])

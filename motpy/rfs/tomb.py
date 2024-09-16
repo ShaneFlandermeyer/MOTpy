@@ -324,6 +324,8 @@ class TOMBP:
           r=r,
           state=GaussianState(mean=means, covar=covars, weight=None)
       )
+    else:
+      new_berns = MultiBernoulli()
 
     return new_berns, w_new
 
