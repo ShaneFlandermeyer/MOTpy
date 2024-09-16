@@ -70,7 +70,7 @@ class TOMBP:
     Returns
     -------
     Tuple[List[Bernoulli], Poisson]
-        A tuple containing the list of predicted Bernoulli components representing the multi-Bernoulli mixture (MBM), 
+        A tuple containing the list of predicted Bernoulli components representing the multi-Bernoulli mixture (MBM),
         and the predicted Poisson point process (PPP) representing the intensity of new objects.
     """
     meta = self.metadata.copy()
@@ -118,101 +118,73 @@ class TOMBP:
     Returns
     -------
     Tuple[List[Bernoulli], Poisson]
-        A tuple containing the list of updated Bernoulli components representing the multi-Bernoulli mixture (MBM), 
+        A tuple containing the list of updated Bernoulli components representing the multi-Bernoulli mixture (MBM),
         and the updated Poisson point process (PPP) representing the intensity of new objects.
     """
 
-    n = len(self.mb)
-    nu = self.poisson.size
+    n = self.mb.size if self.mb is not None else 0
     m = len(measurements) if measurements is not None else 0
+    n_u = self.poisson.size
 
-    # Update existing tracks
-    w_upd = np.zeros((n, m + 1))
-    w_new = np.zeros(m)
-    l_mb = np.zeros((n, m))
+    ########################################################
+    # Poisson update
+    ########################################################
+    pd_poisson = pd_func(self.poisson.distribution)
+    if isinstance(pd_poisson, float):
+      pd_poisson = np.full(n_u, pd_poisson)
 
-    # We create one MB hypothesis for each measurement, plus one missed detection hypothesis
-    mb_hypos = [MultiBernoulli() for _ in range(n)]
+    new_berns, w_new = self.bernoulli_birth(
+        state_estimator=state_estimator,
+        measurements=measurements,
+        pd_poisson=pd_poisson,
+        lambda_fa=lambda_fa)
 
-    in_gate_mb = np.zeros((n, m), dtype=bool)
+    poisson_post = copy.deepcopy(self.poisson)
+    poisson_post.distribution.weight *= 1 - pd_poisson
 
+    ########################################################
+    # MB Update
+    ########################################################
+    # One MB hypothesis per measurement (including missed detection event)
+    mb_hypos = []
+    w_upd = np.zeros((n, m+1))
     if n > 0:
 
-      # Create missed detection hypothesis
+      # Missed detection hypothesis
       pd = pd_func(self.mb.state)
       w_upd[:, 0] = (1 - self.mb.r) + self.mb.r * (1 - pd)
       r_post = self.mb.r * (1 - pd) / (w_upd[:, 0] + 1e-15)
       state_post = self.mb.state
-      for i in range(n):
-        mb_hypos[i].append(r=r_post[i], state=state_post[i])
+      mb_hypos.append(MultiBernoulli(r=r_post, state=state_post))
 
       # Gate MB components and compute likelihoods for state-measurement pairs
       if m > 0:
-        in_gate_mb = state_estimator.gate(
-            measurements=measurements, predicted_state=self.mb.state, pg=self.pg)
+        in_gate = state_estimator.gate(
+            measurements=measurements,
+            predicted_state=self.mb.state,
+            pg=self.pg)
 
         l_mb = np.zeros((n, m))
-        used_meas_mb = np.argwhere(np.any(in_gate_mb, axis=0)).ravel()
-        used_mb = np.argwhere(np.any(in_gate_mb, axis=1)).ravel()
-        l_mb[np.ix_(used_mb, used_meas_mb)] = state_estimator.likelihood(
-            measurement=measurements[used_meas_mb],
-            predicted_state=self.mb.state[used_mb])
+        valid_meas = np.argwhere(np.any(in_gate, axis=0)).ravel()
+        valid_mb = np.argwhere(np.any(in_gate, axis=1)).ravel()
+        l_mb[np.ix_(valid_mb, valid_meas)] = state_estimator.likelihood(
+            measurement=measurements[valid_meas],
+            predicted_state=self.mb.state[valid_mb])
 
         # Create hypotheses for each state-measurement pair
-        for j in range(m):
-          valid = in_gate_mb[:, j]
-          valid_inds = np.nonzero(valid)[0]
-          num_valid = np.count_nonzero(valid)
-          if np.any(valid):
-            r_post = np.ones(num_valid)
+        for im in range(m):
+          valid = in_gate[:, im]
+          n_valid = np.count_nonzero(valid)
+          if n_valid > 0:
             state_post, _ = state_estimator.update(
-                predicted_state=self.mb.state[valid],
-                measurement=measurements[j])
-            w_upd[valid, j + 1] = self.mb[valid].r * \
-                pd_func(state_post) * l_mb[valid, j]
-            for i in range(num_valid):
-              mb_hypos[valid_inds[i]].append(r=r_post[i], state=state_post[i])
-
-    # Create a new track for each measurement by updating PPP with measurement
-    new_berns = MultiBernoulli()
-
-    pd_poisson = pd_func(self.poisson.distribution)
-    if isinstance(pd_poisson, float):
-      pd_poisson = np.full(nu, pd_poisson)
-
-    if m > 0:
-      # We only care about PPP components that can be detected here. This allows us to save some matrix inverses
-      detectable_ppp = copy.copy(self.poisson)
-      detectable_ppp.distribution = detectable_ppp.distribution[pd_poisson > 0]
-
-      # Gate PPP components
-      in_gate_poisson = state_estimator.gate(
-          measurements=measurements,
-          predicted_state=detectable_ppp.distribution,
-          pg=self.pg)
-
-      # Compute likelihoods for PPP components with at least one measurement in the gate and measurements in at least one gate
-      l_poisson = np.zeros((len(detectable_ppp), m))
-      used_meas_ppp = np.argwhere(np.any(in_gate_poisson, axis=0)).ravel()
-      used_ppp = np.argwhere(np.any(in_gate_poisson, axis=1)).ravel()
-      l_poisson[np.ix_(used_ppp, used_meas_ppp)] = state_estimator.likelihood(
-          measurement=measurements[used_meas_ppp],
-          predicted_state=detectable_ppp.distribution[used_ppp])
-
-      for j in range(m):
-        bern, w_new[j] = detectable_ppp.update(
-            measurement=measurements[j],
-            pd=pd_poisson[pd_poisson > 0],
-            likelihoods=l_poisson[:, j],
-            in_gate=in_gate_poisson[:, j],
-            state_estimator=state_estimator,
-            clutter_intensity=lambda_fa)
-        if w_new[j] > 0:
-          new_berns.append(r=bern.r, state=bern.state)
-
-    # Update (i.e., thin) intensity of unknown targets
-    poisson_post = copy.copy(self.poisson)
-    poisson_post.distribution.weight *= 1 - pd_poisson
+                state=self.mb.state[valid],
+                measurement=measurements[im])
+            r_post = np.ones(n_valid)
+            mb_hypos.append(MultiBernoulli(r=r_post, state=state_post))
+            w_upd[valid, im+1] = self.mb[valid].r * \
+                pd_func(state_post) * l_mb[valid, im]
+          else:
+            mb_hypos.append(None)
 
     if n == 0:
       p_upd = np.zeros_like(w_upd)
@@ -224,51 +196,133 @@ class TOMBP:
       p_upd, p_new = self.spa(w_upd=w_upd, w_new=w_new)
 
     mb_post, meta = self.tomb(p_upd=p_upd,
+                              p_new=p_new,
                               mb_hypos=mb_hypos,
-                              p_new=p_new[w_new > 0],
-                              new_berns=new_berns,
-                              in_gate_mb=in_gate_mb)
+                              new_berns=new_berns)
 
     return mb_post, poisson_post, meta
 
   def tomb(self,
            p_upd: np.ndarray,
-           mb_hypos: List[MultiBernoulli],
            p_new: np.ndarray,
-           new_berns: MultiBernoulli,
-           in_gate_mb: np.ndarray) -> MultiBernoulli:
+           mb_hypos: List[MultiBernoulli],
+           new_berns: MultiBernoulli) -> MultiBernoulli:
+    n_mb, mp1 = p_upd.shape
+    m = mp1 - 1
+
     meta = copy.deepcopy(self.metadata)
-    # FaLse alarm hypothesis is never gated
-    valid_hypos = np.concatenate(
-        (np.ones((len(self.mb), 1), dtype=bool), in_gate_mb), axis=1)
 
-    # Form continuing tracks by marginalizing across measurements
     mb = MultiBernoulli()
-    for i in range(len(self.mb)):
-      is_valid = valid_hypos[i]
-      rs = mb_hypos[i].r
-      xs = mb_hypos[i].state.mean
-      Ps = mb_hypos[i].state.covar
-      pr = p_upd[i, is_valid] * rs
-      r = np.sum(pr)
-      x, P = match_moments(means=xs, covars=Ps, weights=pr)
+    mb_valid = p_upd > 0
 
-      mb.append(r=r, state=GaussianState(mean=x, covar=P))
-      meta['mb'][i].update(
-          {'p_upd': p_upd[i], 'p_new': 0, 'in_gate': in_gate_mb[i]})
+    if len(mb_hypos) > 0:
+      state_dim = mb_hypos[0].state.state_dim
+      rs = np.zeros((n_mb, m+1))
+      xs = np.zeros((n_mb, m+1, state_dim))
+      Ps = np.zeros((n_mb, m+1, state_dim, state_dim))
+      # Transpose hypotheses to track-oriented format
+      for im in range(m+1):
+        if mb_hypos[im] is None:
+          continue
+        valid = mb_valid[:, im]
+        rs[valid, im] = mb_hypos[im].r
+        xs[valid, im] = mb_hypos[im].state.mean
+        Ps[valid, im] = mb_hypos[im].state.covar
+
+      # Marginalize over hypotheses
+      for imb in range(n_mb):
+        valid = mb_valid[imb]
+        pr = p_upd[imb, valid] * rs[imb, valid]
+        r = np.sum(pr)
+        if np.count_nonzero(valid) == 1:
+          x, P = xs[imb, valid], Ps[imb, valid]
+        else:
+          x, P = match_moments(
+              means=xs[imb, valid], covars=Ps[imb, valid], weights=pr)
+          x, P = x[None, ...], P[None, ...]
+        mb = mb.append(r=np.array([r]), state=GaussianState(mean=x, covar=P))
+        meta['mb'][imb].update(
+            {'p_upd': p_upd[imb], 'p_new': 0, 'in_gate': valid})
 
     # Form new tracks
-    if len(new_berns) > 0:
-      mb.append(r=p_new*new_berns.r, state=new_berns.state)
-      meta['mb'].extend([{'p_new': p_new[i]} for i in range(len(new_berns))])
+    n_new = new_berns.size
+    if n_new > 0:
+      mb = mb.append(r=p_new*new_berns.r, state=new_berns.state)
+      meta['mb'].extend([{'p_new': p_new[i]} for i in range(n_new)])
 
     # Truncate tracks with low probability of existence (not shown in algorithm)
-    if self.r_min is not None and len(mb) > 0:
+    if self.r_min is not None and mb.size > 0:
       valid = mb.r > self.r_min
-      meta['mb'] = [meta['mb'][i] for i in range(len(mb)) if valid[i]]
+      meta['mb'] = [meta['mb'][i] for i in range(mb.size) if valid[i]]
       mb = mb[valid]
 
     return mb, meta
+
+  def bernoulli_birth(
+      self,
+      state_estimator: KalmanFilter,
+      measurements: np.ndarray,
+      pd_poisson: np.ndarray,
+      lambda_fa: float
+  ) -> Tuple[MultiBernoulli, np.ndarray]:
+    m = len(measurements)
+    n_u = self.poisson.size
+    w_new = np.zeros(m)
+
+    state_dim = self.poisson.distribution.state_dim
+    rs = np.zeros(m)
+    means = np.zeros((m, state_dim))
+    covars = np.zeros((m, state_dim, state_dim))
+    if m > 0:
+      # Valid poisson-measurement pairs
+      # Valid = in gate and detectable (pd > 0)
+      detectable = pd_poisson > 0
+      valid = np.zeros((n_u, m), dtype=bool)
+      valid[detectable] = state_estimator.gate(
+          measurements=measurements,
+          predicted_state=self.poisson.distribution[detectable],
+          pg=self.pg)
+
+      # Compute likelihoods for all valid Poisson-measurement pairs
+      l_poisson = np.zeros((n_u, m))
+      valid_meas = np.argwhere(np.any(valid, axis=0)).ravel()
+      valid_poisson = np.argwhere(np.any(valid, axis=1)).ravel()
+      l_poisson[np.ix_(valid_poisson, valid_meas)] = state_estimator.likelihood(
+          measurement=measurements[valid_meas],
+          predicted_state=self.poisson.distribution[valid_poisson])
+
+      # Create a new track hypothesis for each measurement
+      for im in range(m):
+        n_valid = np.count_nonzero(valid[:, im])
+        if n_valid == 0:
+          continue
+
+        mixture, _ = state_estimator.update(
+            state=self.poisson.distribution[valid[:, im]],
+            measurement=measurements[im])
+        mixture.weight *= l_poisson[detectable, im] * pd_poisson[detectable]
+
+        sum_w_mixture = np.sum(mixture.weight)
+        w_new[im] = sum_w_mixture + lambda_fa
+        rs[im] = sum_w_mixture / (w_new[im] + 1e-15)
+
+        # Reduce the mixture to a single Gaussian
+        # NOTE: Makes Gaussian assumption for Poisson components
+        if n_valid == 1:
+          means[im], covars[im] = mixture.mean, mixture.covar
+        else:
+          means[im], covars[im] = match_moments(
+              means=mixture.mean,
+              covars=mixture.covar,
+              weights=mixture.weight)
+
+      # Create Bernoulli components for each measurement
+      new_berns = MultiBernoulli(
+          r=rs,
+          state=GaussianState(mean=means, covar=covars, weight=None)
+      )
+
+    return new_berns, w_new
 
   @staticmethod
   def spa(w_upd: np.ndarray, w_new: np.ndarray,
@@ -310,7 +364,7 @@ class TOMBP:
       mu_ab = w_upd[:, 1:] / (w_upd[:, 0][:, np.newaxis] +
                               np.sum(w_muba, axis=1, keepdims=True) - w_muba + 1e-15)
       mu_ba = 1 / (w_new + np.sum(mu_ab, axis=0,
-                   keepdims=True) - mu_ab + 1e-15)
+                                  keepdims=True) - mu_ab + 1e-15)
       i += 1
 
       if np.max(np.abs(mu_ba - mu_ba_old)) < eps or i == max_iter:

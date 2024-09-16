@@ -161,12 +161,12 @@ def test_scenario_gate():
   birth_dist = GaussianState(
       mean=np.array([0, 0, 0, 0])[None, :],
       covar=np.diag([100, 1, 100, 1])[None, :]**2,
-      weight=np.array([[0.05]]),
+      weight=np.array([0.05]),
   )
   init_dist = GaussianState(
       mean=birth_dist.mean,
       covar=birth_dist.covar,
-      weight=np.array([[10.0]]))
+      weight=np.array([10.0]))
   tracker = TOMBP(birth_distribution=birth_dist,
                   undetected_distribution=init_dist,
                   pg=0.999,
@@ -184,12 +184,11 @@ def test_scenario_gate():
     tracker.mb, tracker.poisson, tracker.metadata = tracker.update(
         measurements=Z[k], pd_func=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
 
-  assert len(tracker.mb) == 53
-  assert len(tracker.poisson) == 1
+  assert tracker.mb.size == 53
+  assert tracker.poisson.size == 1
   assert np.allclose(tracker.mb[0].r, 0.9999935076418562, atol=1e-6)
   assert np.allclose(tracker.mb[3].r, 0.9999901057591115, atol=1e-6)
 
 
 if __name__ == '__main__':
-  test_scenario_gate()
   pytest.main([__file__])
