@@ -1,19 +1,9 @@
 from __future__ import annotations
 import copy
-import time
-import jax
-import numpy as np
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Optional, Tuple
 
 from motpy.kalman import KalmanFilter
-from motpy.measures import mahalanobis
-from motpy.rfs.bernoulli import MultiBernoulli
-from motpy.distributions.gaussian import match_moments, GaussianState
-# from sklearn.cluster import DBSCAN
-# from motpy.measures import pairwise_euclidean
-from motpy.distributions.gaussian import merge_mixture
-from motpy.common import nextpow2
-
+from motpy.distributions.gaussian import GaussianState
 
 class Poisson:
   """
@@ -23,10 +13,10 @@ class Poisson:
   def __init__(
       self,
       birth_distribution: GaussianState,
-      init_distribution: Optional[GaussianState] = None,
+      distribution: Optional[GaussianState] = None,
   ):
     self.birth_distribution = birth_distribution
-    self.distribution = init_distribution
+    self.distribution = distribution
 
   def __repr__(self):
     return f"""Poisson(birth_distribution={self.birth_distribution},
@@ -39,9 +29,6 @@ class Poisson:
   @property
   def size(self) -> int:
     return self.distribution.size
-
-  def __getitem__(self, idx):
-    return self.distribution[idx]
 
   def predict(self,
               state_estimator: KalmanFilter,
@@ -85,4 +72,4 @@ class Poisson:
     )
 
     return Poisson(birth_distribution=self.birth_distribution,
-                   init_distribution=merged_distribution)
+                   distribution=merged_distribution)

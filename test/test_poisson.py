@@ -97,7 +97,7 @@ def test_predict():
       covar=np.eye(5).reshape(1, 5, 5).repeat(3, axis=0),
       weight=np.exp(np.array([-0.6035, -0.0434, -0.0357])))
   ppp = Poisson(birth_distribution=birth_distribution,
-                init_distribution=init_distribution)
+                distribution=init_distribution)
   ppp = ppp.predict(state_estimator=ekf, ps=ps, dt=T)
 
   expected_weights = np.array(
@@ -132,7 +132,7 @@ def test_measurement_update():
       covar=np.eye(5).reshape(1, 5, 5).repeat(3, axis=0),
       weight=np.exp(np.array([-2.0637, -0.0906, -0.4583])))
   ppp = Poisson(birth_distribution=None,
-                init_distribution=init_distribution)
+                distribution=init_distribution)
 
   in_gate = np.array([True, False, True])
   z = ekf.measurement_model(ppp.distribution.mean[0][None, ...])
