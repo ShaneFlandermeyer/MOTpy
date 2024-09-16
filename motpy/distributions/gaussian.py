@@ -19,40 +19,76 @@ class GaussianState():
 
   def __init__(
       self,
-      mean: np.ndarray,
-      covar: np.ndarray,
+      mean: Optional[np.ndarray],
+      covar: Optional[np.ndarray],
       weight: Optional[np.ndarray] = None,
   ):
-    self.mean = np.atleast_2d(mean)
-    self.state_dim = self.mean.shape[-1]
+    shape, state_dim = mean.shape[:-1], mean.shape[-1]
 
-    n_components = self.mean.shape[0]
-    self.covar = covar.reshape(n_components, self.state_dim, self.state_dim)
-
-    if weight is None:
-      weight = np.zeros(n_components)
+    self.mean = np.reshape(mean, shape + (state_dim,))
+    self.covar = np.reshape(covar, shape + (state_dim, state_dim))
+    if weight is not None:
+      self.weight = np.reshape(weight, shape)
     else:
-      weight = np.asarray(weight).reshape(n_components)
-    self.weight = weight
+      self.weight = None
+    self.state_dim = state_dim
 
   def __repr__(self):
     return f"""GaussianMixture(
-      n_components={len(self)},
+      shape={self.shape},
+      state_dim={self.state_dim},
       means={self.mean}
       covars=\n{self.covar})
       weights={self.weight}
       """
 
-  def __len__(self):
-    return len(self.mean)
+  @property
+  def shape(self) -> Tuple[int]:
+    return self.mean.shape[:-1]
 
-  def __getitem__(self, idx):
-    return GaussianState(mean=self.mean[idx], covar=self.covar[idx], weight=self.weight[idx])
+  @property
+  def size(self) -> int:
+    return np.prod(self.shape)
 
-  def append(self, state: GaussianState) -> None:
-    self.mean = np.concatenate((self.mean, state.mean), axis=0)
-    self.covar = np.concatenate((self.covar, state.covar), axis=0)
-    self.weight = np.concatenate((self.weight, state.weight), axis=0)
+  def __getitem__(self, idx) -> GaussianState:
+    return GaussianState(
+        mean=self.mean[idx],
+        covar=self.covar[idx],
+        weight=self.weight[idx] if self.weight is not None else None
+    )
+
+  def __setitem__(self, idx, value: GaussianState) -> None:
+    self.mean[idx] = value.mean
+    self.covar[idx] = value.covar
+    if self.weight is not None:
+      self.weight[idx] = value.weight
+
+  def append(self, state: GaussianState, axis: int = 0) -> None:
+    means = np.append(self.mean, state.mean, axis=axis)
+    covars = np.append(self.covar, state.covar, axis=axis)
+    if self.weight is not None:
+      weights = np.append(self.weight, state.weight, axis=axis)
+    else:
+      weights = None
+    return GaussianState(mean=means, covar=covars, weight=weights)
+
+  def stack(self, state: GaussianState, axis: int = 0) -> None:
+    means = np.stack([self.mean, state.mean], axis=axis)
+    covars = np.stack([self.covar, state.covar], axis=axis)
+    if self.weight is not None:
+      weights = np.stack([self.weight, state.weight], axis=axis)
+    else:
+      weights = None
+    return GaussianState(mean=means, covar=covars, weight=weights)
+
+  def concatenate(self, state: GaussianState, axis: int = 0) -> None:
+    means = np.concatenate([self.mean, state.mean], axis=axis)
+    covars = np.concatenate([self.covar, state.covar], axis=axis)
+    if self.weight is not None:
+      weights = np.concatenate([self.weight, state.weight], axis=axis)
+    else:
+      weights = None
+    return GaussianState(mean=means, covar=covars, weight=weights)
 
   def sample(self,
              num_points: int,
@@ -63,7 +99,7 @@ class GaussianState():
     Sample points from each Gaussian component at the specified dimensions.
     """
     covar_inds = np.ix_(dims, dims)
-    P = self.covar[:, covar_inds[0], covar_inds[1]]
+    P = self.covar[..., covar_inds[0], covar_inds[1]]
 
     mu = self.mean[..., None, dims]
     std_normal = rng.normal(size=(len(self), num_points, len(dims)))
@@ -91,8 +127,6 @@ def match_moments(means: np.ndarray,
     Mixture PDF mean and covariance
 
   """
-  if len(weights) == 1:
-    return means, covars
   x = means
   P = covars
   w = weights / (np.sum(weights, axis=-1, keepdims=True) + 1e-15)
@@ -111,7 +145,7 @@ def likelihood(z: np.ndarray,
   """
   Compute the likelihood for a set of measurement/state pairs.
 
-  Parameters
+  Parameters>
   ----------
   z : np.ndarray
       Array of measurements. Shape: (M, nz)

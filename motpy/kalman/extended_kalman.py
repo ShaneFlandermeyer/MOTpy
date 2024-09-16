@@ -16,7 +16,6 @@ class ExtendedKalmanFilter():
                state_residual_fn: callable = np.subtract,
                measurement_residual_fn: callable = np.subtract,
                ):
-    raise NotImplementedError("This class is deprecated. Please do not use")
     self.transition_model = transition_model
     self.measurement_model = measurement_model
 
@@ -27,16 +26,21 @@ class ExtendedKalmanFilter():
               state: GaussianState,
               dt: float,
               metadata: Optional[Dict] = dict(),
+              **kwargs
               ) -> Tuple[GaussianState, Dict]:
     x, P = state.mean, state.covar
 
-    F = self.transition_model.matrix(x, dt=dt)
-    Q = self.transition_model.covar(dt=dt)
+    F = self.transition_model.matrix(dt=dt, **kwargs)
+    Q = self.transition_model.covar(dt=dt, **kwargs)
 
-    x_pred = self.transition_model(x, dt=dt, noise=False)
+    x_pred = self.transition_model(x, dt=dt, **kwargs)
     P_pred = F @ P @ F.T + Q
 
-    pred_state = GaussianState(mean=x_pred, covar=P_pred, weight=state.weight)
+    pred_state = GaussianState(
+        state_dim=state.state_dim,
+        mean=x_pred,
+        covar=P_pred,
+        weight=state.weight)
 
     return pred_state, metadata
 
@@ -44,26 +48,30 @@ class ExtendedKalmanFilter():
              predicted_state: GaussianState,
              measurement: np.ndarray,
              metadata: Optional[Dict] = dict(),
+             **kwargs
              ) -> Tuple[GaussianState, Dict]:
     assert self.measurement_model is not None
 
     x_pred, P_pred = predicted_state.mean, predicted_state.covar
 
     z = measurement
-    H = self.measurement_model.matrix(x_pred)
-    R = self.measurement_model.covar()
+    H = self.measurement_model.matrix(**kwargs)
+    R = self.measurement_model.covar(**kwargs)
 
     S = H @ P_pred @ H.swapaxes(-1, -2) + R
     K = P_pred @ H.swapaxes(-1, -2) @ np.linalg.inv(S)
     P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
     P_post = (P_post + P_post.swapaxes(-1, -2)) / 2
 
-    z_pred = self.measurement_model(x_pred, noise=False)
+    z_pred = self.measurement_model(x_pred, **kwargs)
     y = self.measurement_residual_fn(z, z_pred)
     x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, y)
 
     post_state = GaussianState(
-        mean=x_post, covar=P_post, weight=predicted_state.weight)
+        state_dim=predicted_state.state_dim,
+        mean=x_post,
+        covar=P_post,
+        weight=predicted_state.weight)
 
     return post_state, metadata
 
@@ -108,7 +116,7 @@ class ExtendedKalmanFilter():
   def likelihood(
       self,
       measurement: np.ndarray,
-      predicted_state: GaussianState,
+      state: GaussianState,
   ) -> float:
     """
     Compute the likelihood of a measurement given the predicted state
@@ -117,7 +125,7 @@ class ExtendedKalmanFilter():
     ----------
     measurement : np.ndarray
         Measurement
-    predicted_state : GaussianState
+    state : GaussianState
         Predicted state
 
     Returns
@@ -126,7 +134,7 @@ class ExtendedKalmanFilter():
         Likelihood
     """
 
-    x, P = predicted_state.mean, predicted_state.covar
+    x, P = state.mean, state.covar
 
     H = self.measurement_model.matrix(x=x)
     R = self.measurement_model.covar()

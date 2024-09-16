@@ -8,42 +8,48 @@ from typing import Dict, Tuple, Optional, List, Union
 
 class MultiBernoulli():
   def __init__(self,
-               r: np.ndarray = None,
-               state: GaussianState = None):
-    self.r = r if r is not None else np.empty(0)
+               state: Optional[GaussianState] = None,
+               r: Optional[np.ndarray] = None
+               ) -> None:
     self.state = state
+    self.r = r
 
   def __repr__(self) -> str:
     return f"""MultiBernoulli(
       r={self.r}
       state={self.state})"""
 
-  def __len__(self) -> int:
-    return len(self.r)
+  @property
+  def shape(self) -> Tuple[int]:
+    return self.state.shape
+
+  @property
+  def size(self) -> int:
+    return self.state.size
 
   def __getitem__(self, idx) -> MultiBernoulli:
-    return MultiBernoulli(r=self.r[idx], state=self.state[idx])
+    return MultiBernoulli(state=self.state[idx], r=self.r[idx])
 
-  def append(self,
-             r: np.ndarray,
-             state: GaussianState) -> None:
-    if self.state is None:
-      self.state = state
-    else:
-      self.state.append(state)
+  def __setitem__(self, idx, value: MultiBernoulli) -> None:
+    self.r[idx] = value.r
+    self.state[idx] = value.state
 
-    self.r = np.append(self.r, r)
+  def append(self, state: GaussianState, r: np.ndarray) -> MultiBernoulli:
+    if self.state is not None:
+      state = self.state.append(state)
+
+    if self.r is not None:
+      r = np.append(self.r, r)
+
+    return MultiBernoulli(state=state, r=r)
 
   def predict(self,
               state_estimator: KalmanFilter,
               dt: float,
               ps: float,
               filter_state: Optional[Dict] = None) -> MultiBernoulli:
-    if len(self) == 0:
-      return copy.copy(self)
-
-    pred_state, filter_state = state_estimator.predict(
+    predicted_state, filter_state = state_estimator.predict(
         state=self.state, dt=dt, filter_state=filter_state)
 
-    pred_mb = MultiBernoulli(r=self.r * ps, state=pred_state)
-    return pred_mb, filter_state
+    predicted_mb = MultiBernoulli(r=self.r * ps, state=predicted_state)
+    return predicted_mb, filter_state

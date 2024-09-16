@@ -19,7 +19,8 @@ class KalmanFilter():
   def predict(self,
               state: GaussianState,
               dt: float,
-              filter_state: Optional[Dict] = None
+              filter_state: Optional[Dict] = None,
+              model_args: Optional[Dict] = dict(),
               ) -> Tuple[GaussianState, Dict]:
     assert self.transition_model is not None
 
@@ -28,22 +29,24 @@ class KalmanFilter():
     F = self.transition_model.matrix(dt=dt)
     Q = self.transition_model.covar(dt=dt)
 
-    x_pred = x @ F.T
+    x_pred = self.transition_model(x, dt=dt, **model_args)
     P_pred = F @ P @ F.T + Q
 
-    predicted_state = GaussianState(
-        mean=x_pred, covar=P_pred, weight=state.weight)
+    predicted_state = GaussianState(mean=x_pred,
+                                    covar=P_pred,
+                                    weight=state.weight)
 
     return predicted_state, filter_state
 
   def update(self,
-             predicted_state: GaussianState,
+             state: GaussianState,
              measurement: Optional[np.ndarray] = None,
              filter_state: Optional[Dict] = None,
+             model_args: Optional[Dict] = dict(),
              ) -> Tuple[GaussianState, Dict]:
     assert self.measurement_model is not None
 
-    x_pred, P_pred = predicted_state.mean, predicted_state.covar
+    x_pred, P_pred = state.mean, state.covar
 
     z = measurement
     H = self.measurement_model.matrix()
@@ -57,16 +60,17 @@ class KalmanFilter():
     if z is None:
       x_post = x_pred
     else:
-      z_pred = x_pred @ H.T
+      z_pred = self.measurement_model(x_pred, **model_args)
       x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, z - z_pred)
 
-    post_state = GaussianState(
-        mean=x_post, covar=P_post, weight=predicted_state.weight)
+    post_state = GaussianState(mean=x_post,
+                               covar=P_post,
+                               weight=state.weight)
 
     return post_state, filter_state
 
   def gate(self,
-           predicted_state: GaussianState,
+           state: GaussianState,
            measurements: np.ndarray,
            pg: float = 0.999,
            ) -> np.ndarray:
@@ -77,7 +81,7 @@ class KalmanFilter():
     ----------
     measurements : np.ndarray
         Measurements to gate. Shape: (M, nz)
-    predicted_state : Union[GaussianState, GaussianMixture]
+    state : Union[GaussianState, GaussianMixture]
         Predicted state distribution.
     pg : float, optional
         Gate probability, by default 0.999
@@ -89,9 +93,9 @@ class KalmanFilter():
     assert self.measurement_model is not None
 
     if pg == 1.0:
-      return np.ones((len(predicted_state), len(measurements)), dtype=bool)
+      return np.ones((*state.shape, len(measurements)), dtype=bool)
 
-    x, P = predicted_state.mean, predicted_state.covar
+    x, P = state.mean, state.covar
 
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
@@ -105,7 +109,7 @@ class KalmanFilter():
   def likelihood(
       self,
       measurement: np.ndarray,
-      predicted_state: GaussianState,
+      state: GaussianState,
   ) -> float:
     """
     Compute the likelihood of a measurement given the predicted state
@@ -123,7 +127,7 @@ class KalmanFilter():
         Likelihood
     """
 
-    x, P = predicted_state.mean, predicted_state.covar
+    x, P = state.mean, state.covar
 
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
