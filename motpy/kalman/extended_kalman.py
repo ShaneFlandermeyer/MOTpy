@@ -116,7 +116,7 @@ class ExtendedKalmanFilter():
   def likelihood(
       self,
       measurement: np.ndarray,
-      predicted_state: GaussianState,
+      state: GaussianState,
   ) -> float:
     """
     Compute the likelihood of a measurement given the predicted state
@@ -125,7 +125,7 @@ class ExtendedKalmanFilter():
     ----------
     measurement : np.ndarray
         Measurement
-    predicted_state : GaussianState
+    state : GaussianState
         Predicted state
 
     Returns
@@ -134,7 +134,7 @@ class ExtendedKalmanFilter():
         Likelihood
     """
 
-    x, P = predicted_state.mean, predicted_state.covar
+    x, P = state.mean, state.covar
 
     H = self.measurement_model.matrix(x=x)
     R = self.measurement_model.covar()

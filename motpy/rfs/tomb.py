@@ -147,6 +147,7 @@ class TOMBP:
     ########################################################
     # One MB hypothesis per measurement (including missed detection event)
     mb_hypos = []
+    mb_hypo_mask = np.ones((n, m+1), dtype=bool)
     w_upd = np.zeros((n, m+1))
     if n > 0:
 
@@ -161,15 +162,16 @@ class TOMBP:
       if m > 0:
         in_gate = state_estimator.gate(
             measurements=measurements,
-            predicted_state=self.mb.state,
+            state=self.mb.state,
             pg=self.pg)
+        mb_hypo_mask[:, 1:] = in_gate
 
         l_mb = np.zeros((n, m))
         valid_meas = np.argwhere(np.any(in_gate, axis=0)).ravel()
         valid_mb = np.argwhere(np.any(in_gate, axis=1)).ravel()
         l_mb[np.ix_(valid_mb, valid_meas)] = state_estimator.likelihood(
             measurement=measurements[valid_meas],
-            predicted_state=self.mb.state[valid_mb])
+            state=self.mb.state[valid_mb])
 
         # Create hypotheses for each state-measurement pair
         for im in range(m):
@@ -198,6 +200,7 @@ class TOMBP:
     mb_post, meta = self.tomb(p_upd=p_upd,
                               p_new=p_new,
                               mb_hypos=mb_hypos,
+                              mb_hypo_mask=mb_hypo_mask,
                               new_berns=new_berns)
 
     return mb_post, poisson_post, meta
@@ -206,6 +209,7 @@ class TOMBP:
            p_upd: np.ndarray,
            p_new: np.ndarray,
            mb_hypos: List[MultiBernoulli],
+           mb_hypo_mask: np.ndarray,
            new_berns: MultiBernoulli) -> MultiBernoulli:
     n_mb, mp1 = p_upd.shape
     m = mp1 - 1
@@ -213,7 +217,6 @@ class TOMBP:
     meta = copy.deepcopy(self.metadata)
 
     mb = MultiBernoulli()
-    mb_valid = p_upd > 0
 
     if len(mb_hypos) > 0:
       state_dim = mb_hypos[0].state.state_dim
@@ -224,14 +227,14 @@ class TOMBP:
       for im in range(m+1):
         if mb_hypos[im] is None:
           continue
-        valid = mb_valid[:, im]
+        valid = mb_hypo_mask[:, im]
         rs[valid, im] = mb_hypos[im].r
         xs[valid, im] = mb_hypos[im].state.mean
         Ps[valid, im] = mb_hypos[im].state.covar
 
       # Marginalize over hypotheses
       for imb in range(n_mb):
-        valid = mb_valid[imb]
+        valid = mb_hypo_mask[imb]
         pr = p_upd[imb, valid] * rs[imb, valid]
         r = np.sum(pr)
         if np.count_nonzero(valid) == 1:
@@ -280,7 +283,7 @@ class TOMBP:
       valid = np.zeros((n_u, m), dtype=bool)
       valid[detectable] = state_estimator.gate(
           measurements=measurements,
-          predicted_state=self.poisson.distribution[detectable],
+          state=self.poisson.distribution[detectable],
           pg=self.pg)
 
       # Compute likelihoods for all valid Poisson-measurement pairs
@@ -289,7 +292,7 @@ class TOMBP:
       valid_poisson = np.argwhere(np.any(valid, axis=1)).ravel()
       l_poisson[np.ix_(valid_poisson, valid_meas)] = state_estimator.likelihood(
           measurement=measurements[valid_meas],
-          predicted_state=self.poisson.distribution[valid_poisson])
+          state=self.poisson.distribution[valid_poisson])
 
       # Create a new track hypothesis for each measurement
       for im in range(m):

@@ -28,7 +28,7 @@ class GaussianState():
     self.mean = np.reshape(mean, shape + (state_dim,))
     self.covar = np.reshape(covar, shape + (state_dim, state_dim))
     if weight is not None:
-      self.weight = np.reshape(weight, shape + (1,))
+      self.weight = np.reshape(weight, shape)
     else:
       self.weight = None
     self.state_dim = state_dim
