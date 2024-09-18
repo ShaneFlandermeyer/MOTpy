@@ -92,17 +92,23 @@ class GaussianState():
 
   def sample(self,
              num_points: int,
-             dims: Sequence[int],
-             rng: np.random.Generator = np.random.default_rng()
+             dims: Optional[Sequence[int]] = None,
+             truncate_std: Optional[float] = None,
+             rng: np.random.Generator = np.random.default_rng(),
              ) -> np.ndarray:
     """
     Sample points from each Gaussian component at the specified dimensions.
     """
+    if dims is None:
+      dims = np.arange(self.state_dim)
+
     covar_inds = np.ix_(dims, dims)
     P = self.covar[..., covar_inds[0], covar_inds[1]]
 
     mu = self.mean[..., None, dims]
-    std_normal = rng.normal(size=(len(self), num_points, len(dims)))
+    std_normal = rng.normal(size=(*self.shape, num_points, mu.shape[-1]))
+    if truncate_std is not None:
+      std_normal = np.clip(std_normal, -truncate_std, truncate_std)
     return mu + np.einsum('nij, nmj -> nmi', np.linalg.cholesky(P), std_normal)
 
 

@@ -178,7 +178,7 @@ class TOMBP:
            ) -> MultiBernoulli:
     """
     Add new Bernoulli components to the filter and marginalize existing components across measurement hypotheses
-    
+
     NOTE: Makes Gaussian state assumption in marginalization step
 
     Parameters
@@ -255,7 +255,7 @@ class TOMBP:
                       ) -> Tuple[MultiBernoulli, np.ndarray]:
     """
     Create new Bernoulli components from the Poisson distribution based on measurements
-    
+
     NOTE: Makes Gaussian state assumption for Poisson components
 
     Parameters
@@ -284,18 +284,19 @@ class TOMBP:
     means = np.zeros((m, state_dim))
     covars = np.zeros((m, state_dim, state_dim))
     if m > 0:
+      valid = np.zeros((n_u, m), dtype=bool)
       # Valid poisson-measurement pairs
       # Valid = in gate and detectable (pd > 0)
       if self.poisson_pd_gate_threshold is None:
         detectable = np.ones(n_u, dtype=bool)
       else:
         detectable = pd_poisson > self.poisson_pd_gate_threshold
-      valid = np.zeros((n_u, m), dtype=bool)
-      valid[detectable] = state_estimator.gate(
+      in_gate = state_estimator.gate(
           measurements=measurements,
           state=self.poisson.distribution[detectable],
           pg=self.pg)
-
+      valid[detectable] = in_gate
+      
       # Compute likelihoods for all valid Poisson-measurement pairs
       l_poisson = np.zeros((n_u, m))
       valid_meas = np.argwhere(np.any(valid, axis=0)).ravel()
