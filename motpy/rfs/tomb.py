@@ -178,6 +178,8 @@ class TOMBP:
            ) -> MultiBernoulli:
     """
     Add new Bernoulli components to the filter and marginalize existing components across measurement hypotheses
+    
+    NOTE: Makes Gaussian state assumption in marginalization step
 
     Parameters
     ----------
@@ -201,7 +203,6 @@ class TOMBP:
     n_mb, mp1 = p_updated.shape
     m = mp1 - 1
 
-    # NOTE: Makes Gaussian assumption
     mb = MultiBernoulli()
     if len(mb_hypos) > 0:
       state_dim = mb_hypos[0].state.state_dim
@@ -254,6 +255,8 @@ class TOMBP:
                       ) -> Tuple[MultiBernoulli, np.ndarray]:
     """
     Create new Bernoulli components from the Poisson distribution based on measurements
+    
+    NOTE: Makes Gaussian state assumption for Poisson components
 
     Parameters
     ----------
@@ -318,7 +321,6 @@ class TOMBP:
         r[im] = sum_w_mixture / (w_new[im] + 1e-15)
 
         # Reduce the mixture to a single Gaussian
-        # NOTE: Makes Gaussian assumption for Poisson components
         if n_valid == 1:
           means[im], covars[im] = mixture.mean, mixture.covar
         else:
@@ -367,7 +369,7 @@ class TOMBP:
 
     # One MB hypothesis per measurement (including missed detection event)
     hypos = []
-    mask = np.ones((n, m+1), dtype=bool)
+    mask = np.zeros((n, m+1), dtype=bool)
     w_upd = np.zeros((n, m+1))
     if n > 0:
       # Missed detection hypothesis
@@ -376,6 +378,7 @@ class TOMBP:
       r_post = self.mb.r * (1 - pd) / (w_upd[:, 0] + 1e-15)
       state_post = self.mb.state
       hypos.append(MultiBernoulli(r=r_post, state=state_post))
+      mask[:, 0] = True
 
       # Gate MB components and compute likelihoods for state-measurement pairs
       if m > 0:
