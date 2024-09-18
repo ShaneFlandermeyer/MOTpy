@@ -17,10 +17,11 @@ class TOMBP:
   def __init__(self,
                birth_distribution: GaussianState,
                undetected_distribution: Optional[GaussianState] = None,
-               pg: Optional[float] = None,
                w_min: Optional[float] = None,
                r_min: Optional[float] = None,
                merge_poisson: bool = False,
+               pg: Optional[float] = None,
+               poisson_pd_gate_threshold: Optional[float] = None,
                ):
     """
     Parameters
@@ -31,6 +32,8 @@ class TOMBP:
         The initial distribution for the Poisson component
     pg : float, optional
         Gate probability for measurement association
+    poisson_pd_gate_threshold : float, optional
+        Detection probability threshold which determines if a Poisson component is detectable. This gate is applied before standard gating to reduce the number of matrix inverses required. If none, all Poisson components are considered detectable, by default None
     w_min : float, optional
         Weight threshold for PPP pruning. If none, pruning is not performed, by default None
     r_min : float, optional
@@ -41,15 +44,16 @@ class TOMBP:
     self.poisson = Poisson(
         birth_distribution=birth_distribution, distribution=undetected_distribution)
     self.mb = None
-    self.metadata = {
-        'mb': [],
-        'ppp': [],
-    }
+    self.metadata = dict(
+        mb=[],
+        ppp=[],
+    )
 
     self.pg = pg
     self.r_min = r_min
     self.w_min = w_min
     self.merge_poisson = merge_poisson
+    self.poisson_pd_gate_threshold = poisson_pd_gate_threshold
 
   def predict(self,
               state_estimator: KalmanFilter,
@@ -279,7 +283,10 @@ class TOMBP:
     if m > 0:
       # Valid poisson-measurement pairs
       # Valid = in gate and detectable (pd > 0)
-      detectable = pd_poisson > 0
+      if self.poisson_pd_gate_threshold is None:
+        detectable = np.ones(n_u, dtype=bool)
+      else:
+        detectable = pd_poisson > self.poisson_pd_gate_threshold
       valid = np.zeros((n_u, m), dtype=bool)
       valid[detectable] = state_estimator.gate(
           measurements=measurements,
