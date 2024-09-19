@@ -78,17 +78,20 @@ def test_scenario_prune():
   tracker = TOMBP(birth_distribution=birth_dist,
                   undetected_distribution=init_dist,
                   pg=1.0,
-                  w_min=1e-4,
-                  r_min=1e-4,
                   )
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 
   for k in range(n_steps):
     tracker.mb, tracker.poisson = tracker.predict(
         state_estimator=kf, dt=dt, ps_func=ps)
+    tracker.poisson, _ = tracker.poisson.prune(threshold=1e-4)
 
     tracker.mb, tracker.poisson, tracker.metadata = tracker.update(
         measurements=Z[k], pd_func=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
+    if tracker.mb.size > 0:
+      tracker.mb, tracker.metadata['mb'] = tracker.mb.prune(
+          meta=tracker.metadata['mb'],
+          threshold=1e-4)
 
   assert tracker.mb.size == 54
   assert tracker.poisson.size == 4
@@ -123,9 +126,6 @@ def test_scenario_merge():
   tracker = TOMBP(birth_distribution=birth_dist,
                   undetected_distribution=init_dist,
                   pg=1.0,
-                  w_min=None,
-                  merge_poisson=True,
-                  r_min=1e-4,
                   )
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
@@ -133,9 +133,14 @@ def test_scenario_merge():
   for k in range(n_steps):
     tracker.mb, tracker.poisson = tracker.predict(
         state_estimator=kf, dt=dt, ps_func=ps)
+    tracker.poisson = tracker.poisson.merge()
 
     tracker.mb, tracker.poisson, tracker.metadata = tracker.update(
         measurements=Z[k], pd_func=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
+    if tracker.mb.size > 0:
+      tracker.mb, tracker.metadata['mb'] = tracker.mb.prune(
+          meta=tracker.metadata['mb'],
+          threshold=1e-4)
 
   assert tracker.mb.size == 54
   assert tracker.poisson.size == 1
@@ -170,9 +175,6 @@ def test_scenario_gate():
   tracker = TOMBP(birth_distribution=birth_dist,
                   undetected_distribution=init_dist,
                   pg=0.999,
-                  w_min=None,
-                  merge_poisson=True,
-                  r_min=1e-4,
                   )
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
@@ -180,9 +182,14 @@ def test_scenario_gate():
   for k in range(n_steps):
     tracker.mb, tracker.poisson = tracker.predict(
         state_estimator=kf, dt=dt, ps_func=ps)
+    tracker.poisson = tracker.poisson.merge()
 
     tracker.mb, tracker.poisson, tracker.metadata = tracker.update(
         measurements=Z[k], pd_func=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
+    if tracker.mb.size > 0:
+      tracker.mb, tracker.metadata['mb'] = tracker.mb.prune(
+          meta=tracker.metadata['mb'],
+          threshold=1e-4)
 
   assert tracker.mb.size == 53
   assert tracker.poisson.size == 1
@@ -191,4 +198,5 @@ def test_scenario_gate():
 
 
 if __name__ == '__main__':
+  test_scenario_prune()
   pytest.main([__file__])

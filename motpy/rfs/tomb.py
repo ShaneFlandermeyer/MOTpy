@@ -1,5 +1,5 @@
 import copy
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, Any
 
 import numpy as np
 
@@ -17,9 +17,6 @@ class TOMBP:
   def __init__(self,
                birth_distribution: GaussianState,
                undetected_distribution: Optional[GaussianState] = None,
-               w_min: Optional[float] = None,
-               r_min: Optional[float] = None,
-               merge_poisson: bool = False,
                pg: Optional[float] = None,
                poisson_pd_gate_threshold: Optional[float] = None,
                ):
@@ -34,12 +31,6 @@ class TOMBP:
         Gate probability for measurement association
     poisson_pd_gate_threshold : float, optional
         Detection probability threshold which determines if a Poisson component is detectable. This gate is applied before standard gating to reduce the number of matrix inverses required. If none, all Poisson components are considered detectable, by default None
-    w_min : float, optional
-        Weight threshold for PPP pruning. If none, pruning is not performed, by default None
-    r_min : float, optional
-        Existence probability threshold for MB pruning. If none, pruning is not performed, by default None
-    merge_poisson : bool, optional
-        If true, merge the Poisson distribution to reduce its dimensionality after each predict step, by default False
     """""
     self.poisson = Poisson(
         birth_distribution=birth_distribution, distribution=undetected_distribution)
@@ -50,9 +41,6 @@ class TOMBP:
     )
 
     self.pg = pg
-    self.r_min = r_min
-    self.w_min = w_min
-    self.merge_poisson = merge_poisson
     self.poisson_pd_gate_threshold = poisson_pd_gate_threshold
 
   def predict(self,
@@ -93,11 +81,6 @@ class TOMBP:
     predicted_poisson = self.poisson.predict(
         state_estimator=state_estimator, ps=ps_poisson, dt=dt)
 
-    # Not shown in paper--truncate low weight components
-    if self.w_min is not None:
-      predicted_poisson = predicted_poisson.prune(threshold=self.w_min)
-    if self.merge_poisson:
-      predicted_poisson = predicted_poisson.merge()
     return predicted_mb, predicted_poisson
 
   def update(self,
@@ -239,12 +222,6 @@ class TOMBP:
       mb = mb.append(r=p_new * new_berns.r, state=new_berns.state)
       meta['mb'].extend([dict(p_new=p_new[i]) for i in range(n_new)])
 
-    # Truncate tracks with low probability of existence (not shown in algorithm)
-    if self.r_min is not None and mb.size > 0:
-      valid = mb.r > self.r_min
-      meta['mb'] = [meta['mb'][i] for i in range(mb.size) if valid[i]]
-      mb = mb[valid]
-
     return mb, meta
 
   def bernoulli_birth(self,
@@ -296,7 +273,7 @@ class TOMBP:
           state=self.poisson.distribution[detectable],
           pg=self.pg)
       valid[detectable] = in_gate
-      
+
       # Compute likelihoods for all valid Poisson-measurement pairs
       l_poisson = np.zeros((n_u, m))
       valid_meas = np.argwhere(np.any(valid, axis=0)).ravel()

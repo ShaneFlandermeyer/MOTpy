@@ -1,9 +1,10 @@
 from __future__ import annotations
 import copy
-from typing import Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from motpy.kalman import KalmanFilter
 from motpy.distributions.gaussian import GaussianState
+
 
 class Poisson:
   """
@@ -44,15 +45,24 @@ class Poisson:
 
     return predicted
 
-  def prune(self, threshold: float) -> Poisson:
+  def prune(
+          self,
+          threshold: float,
+          meta: Optional[List[Dict[str, Any]]] = None
+  ) -> Poisson:
     """
     Prune components below weight threshold
     """
     pruned = copy.deepcopy(self)
-    keep = self.distribution.weight > threshold
-    pruned.distribution = self.distribution[keep]
+    valid = pruned.distribution.weight > threshold
+    pruned.distribution = pruned.distribution[valid]
 
-    return pruned
+    if meta is None:
+      new_meta = None
+    else:
+      new_meta = [meta[i] for i in range(len(meta)) if valid[i]]
+
+    return pruned, new_meta
 
   def merge(self) -> Poisson:
     """

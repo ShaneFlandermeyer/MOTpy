@@ -3,7 +3,7 @@ import copy
 import numpy as np
 from motpy.kalman import KalmanFilter
 from motpy.distributions.gaussian import GaussianState
-from typing import Dict, Tuple, Optional, List, Union
+from typing import Dict, Tuple, Optional, List, Union, Any
 
 
 class MultiBernoulli():
@@ -53,3 +53,19 @@ class MultiBernoulli():
 
     predicted_mb = MultiBernoulli(r=self.r * ps, state=predicted_state)
     return predicted_mb, filter_state
+
+  def prune(self: MultiBernoulli,
+            threshold: float = 1e-4,
+            meta: Optional[Dict[str, Any]] = None
+            ) -> Tuple[MultiBernoulli, Optional[Dict[str, Any]]]:
+    pruned = copy.deepcopy(self)
+
+    valid = self.r > threshold
+    pruned = pruned[valid]
+
+    if meta is None:
+      new_meta = None
+    else:
+      new_meta = [meta[i] for i in range(len(meta)) if valid[i]]
+
+    return pruned, new_meta
