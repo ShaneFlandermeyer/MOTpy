@@ -93,7 +93,7 @@ class GaussianState():
   def sample(self,
              num_points: int,
              dims: Optional[Sequence[int]] = None,
-             truncate_std: Optional[float] = None,
+             max_distance: Optional[float] = None,
              rng: np.random.Generator = np.random.default_rng(),
              ) -> np.ndarray:
     """
@@ -107,8 +107,9 @@ class GaussianState():
 
     mu = self.mean[..., None, dims]
     std_normal = rng.normal(size=(*self.shape, num_points, mu.shape[-1]))
-    if truncate_std is not None:
-      std_normal = np.clip(std_normal, -truncate_std, truncate_std)
+    if max_distance is not None:
+      max_val = max_distance / np.sqrt(len(dims))
+      std_normal = std_normal.clip(-max_val, max_val)
     return mu + np.einsum('nij, nmj -> nmi', np.linalg.cholesky(P), std_normal)
 
 
