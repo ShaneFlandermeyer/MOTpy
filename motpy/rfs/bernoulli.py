@@ -2,13 +2,13 @@ from __future__ import annotations
 import copy
 import numpy as np
 from motpy.kalman import KalmanFilter
-from motpy.distributions.gaussian import GaussianState
+from motpy.distributions.gaussian import Gaussian
 from typing import Dict, Tuple, Optional, List, Union, Any
 
 
 class MultiBernoulli():
   def __init__(self,
-               state: Optional[GaussianState] = None,
+               state: Optional[Gaussian] = None,
                r: Optional[np.ndarray] = None
                ) -> None:
     self.state = state
@@ -34,7 +34,7 @@ class MultiBernoulli():
     self.r[idx] = value.r
     self.state[idx] = value.state
 
-  def append(self, state: GaussianState, r: np.ndarray) -> MultiBernoulli:
+  def append(self, state: Gaussian, r: np.ndarray) -> MultiBernoulli:
     if self.state is not None:
       state = self.state.append(state)
 

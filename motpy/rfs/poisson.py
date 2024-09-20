@@ -3,7 +3,7 @@ import copy
 from typing import Any, Dict, List, Optional, Tuple
 
 from motpy.kalman import KalmanFilter
-from motpy.distributions.gaussian import GaussianState
+from motpy.distributions.gaussian import Gaussian
 
 
 class Poisson:
@@ -13,8 +13,8 @@ class Poisson:
 
   def __init__(
       self,
-      birth_distribution: GaussianState,
-      distribution: Optional[GaussianState] = None,
+      birth_distribution: Gaussian,
+      distribution: Optional[Gaussian] = None,
   ):
     self.birth_distribution = birth_distribution
     self.distribution = distribution
@@ -70,12 +70,12 @@ class Poisson:
 
     NOTE: This assumes that only the birth distribution contributes, such that we only need to change the weights and covariance matrices.
     """
-    assert isinstance(self.birth_distribution, GaussianState)
+    assert isinstance(self.birth_distribution, Gaussian)
     nbirth = self.birth_distribution.size
     dist = self.distribution[:nbirth]
     birth_dist = self.birth_distribution
 
-    merged_distribution = GaussianState(
+    merged_distribution = Gaussian(
         mean=dist.mean,
         covar=dist.covar,
         weight=dist.weight + birth_dist.weight,

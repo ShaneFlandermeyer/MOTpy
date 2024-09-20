@@ -1,7 +1,7 @@
 from motpy.rfs.tomb import TOMBP
 import pytest
 import numpy as np
-from motpy.distributions.gaussian import GaussianState
+from motpy.distributions.gaussian import Gaussian
 from motpy.kalman import KalmanFilter
 from motpy.models.measurement import LinearMeasurementModel
 from motpy.models.transition import ConstantVelocity
@@ -66,12 +66,12 @@ def test_scenario_prune():
       dt=dt, lambda_c=lambda_c, pd=pd, n_steps=n_steps)
 
   # Initialize TOMB filter
-  birth_dist = GaussianState(
+  birth_dist = Gaussian(
       mean=np.array([0, 0, 0, 0])[None, :],
       covar=np.diag([100, 1, 100, 1])[None, :]**2,
       weight=np.array([0.05]),
   )
-  init_dist = GaussianState(
+  init_dist = Gaussian(
       mean=birth_dist.mean,
       covar=birth_dist.covar,
       weight=np.array([10.0]))
@@ -114,12 +114,12 @@ def test_scenario_merge():
       dt=dt, lambda_c=lambda_c, pd=pd, n_steps=n_steps)
 
   # Initialize TOMB filter
-  birth_dist = GaussianState(
+  birth_dist = Gaussian(
       mean=np.array([0, 0, 0, 0])[None, ...],
       covar=np.diag([100, 1, 100, 1])[None, ...]**2,
       weight=np.array([0.05]),
   )
-  init_dist = GaussianState(
+  init_dist = Gaussian(
       mean=birth_dist.mean,
       covar=birth_dist.covar,
       weight=np.array([10.0]))
@@ -163,12 +163,12 @@ def test_scenario_gate():
       dt=dt, lambda_c=lambda_c, pd=pd, n_steps=n_steps)
 
   # Initialize TOMB filter
-  birth_dist = GaussianState(
+  birth_dist = Gaussian(
       mean=np.array([0, 0, 0, 0])[None, :],
       covar=np.diag([100, 1, 100, 1])[None, :]**2,
       weight=np.array([0.05]),
   )
-  init_dist = GaussianState(
+  init_dist = Gaussian(
       mean=birth_dist.mean,
       covar=birth_dist.covar,
       weight=np.array([10.0]))

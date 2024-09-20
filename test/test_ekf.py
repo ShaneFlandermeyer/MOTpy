@@ -2,10 +2,10 @@ import numpy as np
 import pytest
 from filterpy.kalman import predict, update
 
-from motpy.distributions.gaussian import GaussianState
+from motpy.distributions.gaussian import Gaussian
 import numpy as np
 
-from motpy.distributions import GaussianState
+from motpy.distributions import Gaussian
 from motpy.kalman import ExtendedKalmanFilter
 from motpy.models.transition import ConstantVelocity
 from motpy.models.measurement import LinearMeasurementModel
@@ -43,8 +43,7 @@ def test_predict():
   """
   Test kalman predict step. Example data from kalman filter ebook.
   """
-  state = GaussianState(
-      state_dim=2,
+  state = Gaussian(
       mean=np.array([11.35, 4.5]),
       covar=np.array([[545, 150], [150, 500]]))
   dt = 0.3
@@ -70,8 +69,7 @@ def test_update():
   R = measurement_model.covar()
   H = measurement_model.matrix()
   z = 1
-  state = GaussianState(
-      state_dim=2,
+  state = Gaussian(
       mean=np.array([12.7, 4.5]),
       covar=np.array([[545, 150], [150, 500]]))
   kf = ExtendedKalmanFilter(

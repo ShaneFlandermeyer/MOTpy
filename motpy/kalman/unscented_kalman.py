@@ -5,7 +5,7 @@ import numpy as np
 from motpy.kalman.sigma_points import merwe_scaled_sigma_points, merwe_sigma_weights
 from motpy.models.measurement import MeasurementModel
 from motpy.models.transition import TransitionModel
-from motpy.distributions.gaussian import GaussianState
+from motpy.distributions.gaussian import Gaussian
 
 
 class UnscentedKalmanFilter():
@@ -21,16 +21,16 @@ class UnscentedKalmanFilter():
     self.measurement_residual_fn = measurement_residual_fn
 
   def predict(self,
-              state: GaussianState,
+              state: Gaussian,
               dt: float,
               filter_state: Dict[str, Any] = dict(),
-              ) -> Tuple[GaussianState, Dict]:
+              ) -> Tuple[Gaussian, Dict]:
     """
     UKF predict step
 
     Parameters
     ----------
-    state : GaussianState
+    state : Gaussian
         Object states
     dt : float
         Prediction time step
@@ -42,7 +42,7 @@ class UnscentedKalmanFilter():
 
     Returns
     -------
-    Tuple[GaussianState, Dict]
+    Tuple[Gaussian, Dict]
         A tuple containing the:
         - Predicted state object
         - Filter state dict with the following updated keys:
@@ -79,7 +79,7 @@ class UnscentedKalmanFilter():
         noise_covar=self.transition_model.covar(dt=dt),
         residual_fn=self.state_residual_fn,
     )
-    predicted_state = GaussianState(
+    predicted_state = Gaussian(
         mean=predicted_mean, covar=predicted_covar, weight=state.weight)
 
     filter_state.update(
@@ -90,10 +90,10 @@ class UnscentedKalmanFilter():
     return predicted_state, filter_state
 
   def update(self,
-             predicted_state: GaussianState,
+             predicted_state: Gaussian,
              measurement: np.ndarray,
              filter_state: Dict[str, Any],
-             ) -> Tuple[GaussianState, Dict]:
+             ) -> Tuple[Gaussian, Dict]:
     """
     UKF update step
 
@@ -145,7 +145,7 @@ class UnscentedKalmanFilter():
     x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, y)
     P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
     P_post = (P_post + P_post.swapaxes(-1, -2)) / 2
-    post_state = GaussianState(
+    post_state = Gaussian(
         mean=x_post, covar=P_post, weight=predicted_state.weight)
 
     filter_state.update(

@@ -3,7 +3,7 @@ from typing import Callable, List, Tuple
 
 import numpy as np
 
-from motpy.distributions.gaussian import GaussianState, match_moments
+from motpy.distributions.gaussian import Gaussian, match_moments
 from motpy.kalman import KalmanFilter
 from motpy.rfs.bernoulli import Bernoulli, MultiBernoulli
 from motpy.rfs.poisson import Poisson

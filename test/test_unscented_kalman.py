@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 from motpy.models.transition import ConstantVelocity
 from motpy.kalman import UnscentedKalmanFilter
-from motpy.distributions.gaussian import GaussianState
+from motpy.distributions.gaussian import Gaussian
 import matplotlib.pyplot as plt
 from motpy.models.measurement.range_bearing import RangeBearingModel
 
@@ -11,7 +11,7 @@ from motpy.models.measurement.range_bearing import RangeBearingModel
 def test_predict():
   seed = 0
 
-  state = GaussianState(
+  state = Gaussian(
       mean=np.array([0, 1, 0, 1]),
       covar=np.diag([1., 0.5, 1., 0.5]))
 
@@ -44,7 +44,7 @@ def test_predict():
 
 def test_update():
   seed = 0
-  state = GaussianState(
+  state = Gaussian(
       mean=np.array([0, 1, 0, 1]),
       covar=np.diag([1., 0.5, 1., 0.5]))
   ground_truth = np.array([0, 1, 0, 1])

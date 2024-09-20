@@ -6,7 +6,7 @@ from motpy.gate import EllipsoidalGate
 
 from motpy.models.measurement import MeasurementModel
 from motpy.models.transition import TransitionModel
-from motpy.distributions.gaussian import GaussianState
+from motpy.distributions.gaussian import Gaussian
 
 
 class ExtendedKalmanFilter():
@@ -23,11 +23,11 @@ class ExtendedKalmanFilter():
     self.measurement_residual_fn = measurement_residual_fn
 
   def predict(self,
-              state: GaussianState,
+              state: Gaussian,
               dt: float,
               metadata: Optional[Dict] = dict(),
               **kwargs
-              ) -> Tuple[GaussianState, Dict]:
+              ) -> Tuple[Gaussian, Dict]:
     x, P = state.mean, state.covar
 
     F = self.transition_model.matrix(dt=dt, **kwargs)
@@ -36,8 +36,7 @@ class ExtendedKalmanFilter():
     x_pred = self.transition_model(x, dt=dt, **kwargs)
     P_pred = F @ P @ F.T + Q
 
-    pred_state = GaussianState(
-        state_dim=state.state_dim,
+    pred_state = Gaussian(
         mean=x_pred,
         covar=P_pred,
         weight=state.weight)
@@ -45,11 +44,11 @@ class ExtendedKalmanFilter():
     return pred_state, metadata
 
   def update(self,
-             predicted_state: GaussianState,
+             predicted_state: Gaussian,
              measurement: np.ndarray,
              metadata: Optional[Dict] = dict(),
              **kwargs
-             ) -> Tuple[GaussianState, Dict]:
+             ) -> Tuple[Gaussian, Dict]:
     assert self.measurement_model is not None
 
     x_pred, P_pred = predicted_state.mean, predicted_state.covar
@@ -67,8 +66,7 @@ class ExtendedKalmanFilter():
     y = self.measurement_residual_fn(z, z_pred)
     x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, y)
 
-    post_state = GaussianState(
-        state_dim=predicted_state.state_dim,
+    post_state = Gaussian(
         mean=x_post,
         covar=P_post,
         weight=predicted_state.weight)
@@ -77,7 +75,7 @@ class ExtendedKalmanFilter():
 
   def gate(self,
            measurements: np.ndarray,
-           predicted_state: GaussianState,
+           predicted_state: Gaussian,
            pg: float = 0.999,
            ) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -116,7 +114,7 @@ class ExtendedKalmanFilter():
   def likelihood(
       self,
       measurement: np.ndarray,
-      state: GaussianState,
+      state: Gaussian,
   ) -> float:
     """
     Compute the likelihood of a measurement given the predicted state

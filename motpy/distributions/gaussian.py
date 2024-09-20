@@ -10,7 +10,7 @@ import numpy as np
 from motpy.measures import pairwise_euclidean, pairwise_mahalanobis
 
 
-class GaussianState():
+class Gaussian():
   """
   A general class to represent both Gaussian state and Gaussian mixture distributions.
 
@@ -50,45 +50,45 @@ class GaussianState():
   def size(self) -> int:
     return np.prod(self.shape)
 
-  def __getitem__(self, idx) -> GaussianState:
-    return GaussianState(
+  def __getitem__(self, idx) -> Gaussian:
+    return Gaussian(
         mean=self.mean[idx],
         covar=self.covar[idx],
         weight=self.weight[idx] if self.weight is not None else None
     )
 
-  def __setitem__(self, idx, value: GaussianState) -> None:
+  def __setitem__(self, idx, value: Gaussian) -> None:
     self.mean[idx] = value.mean
     self.covar[idx] = value.covar
     if self.weight is not None:
       self.weight[idx] = value.weight
 
-  def append(self, state: GaussianState, axis: int = 0) -> None:
+  def append(self, state: Gaussian, axis: int = 0) -> None:
     means = np.append(self.mean, state.mean, axis=axis)
     covars = np.append(self.covar, state.covar, axis=axis)
     if self.weight is not None:
       weights = np.append(self.weight, state.weight, axis=axis)
     else:
       weights = None
-    return GaussianState(mean=means, covar=covars, weight=weights)
+    return Gaussian(mean=means, covar=covars, weight=weights)
 
-  def stack(self, state: GaussianState, axis: int = 0) -> None:
+  def stack(self, state: Gaussian, axis: int = 0) -> None:
     means = np.stack([self.mean, state.mean], axis=axis)
     covars = np.stack([self.covar, state.covar], axis=axis)
     if self.weight is not None:
       weights = np.stack([self.weight, state.weight], axis=axis)
     else:
       weights = None
-    return GaussianState(mean=means, covar=covars, weight=weights)
+    return Gaussian(mean=means, covar=covars, weight=weights)
 
-  def concatenate(self, state: GaussianState, axis: int = 0) -> None:
+  def concatenate(self, state: Gaussian, axis: int = 0) -> None:
     means = np.concatenate([self.mean, state.mean], axis=axis)
     covars = np.concatenate([self.covar, state.covar], axis=axis)
     if self.weight is not None:
       weights = np.concatenate([self.weight, state.weight], axis=axis)
     else:
       weights = None
-    return GaussianState(mean=means, covar=covars, weight=weights)
+    return Gaussian(mean=means, covar=covars, weight=weights)
 
   def sample(self,
              num_points: int,

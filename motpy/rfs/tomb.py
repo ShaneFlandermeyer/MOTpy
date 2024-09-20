@@ -3,7 +3,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Any
 
 import numpy as np
 
-from motpy.distributions.gaussian import GaussianState, match_moments
+from motpy.distributions.gaussian import Gaussian, match_moments
 from motpy.kalman import KalmanFilter
 from motpy.rfs.bernoulli import MultiBernoulli
 from motpy.rfs.poisson import Poisson
@@ -15,8 +15,8 @@ class TOMBP:
   """
 
   def __init__(self,
-               birth_distribution: GaussianState,
-               undetected_distribution: Optional[GaussianState] = None,
+               birth_distribution: Gaussian,
+               undetected_distribution: Optional[Gaussian] = None,
                pg: Optional[float] = None,
                poisson_pd_gate_threshold: Optional[float] = None,
                ):
@@ -212,7 +212,7 @@ class TOMBP:
           x, P = match_moments(
               means=xs[imb, valid], covars=Ps[imb, valid], weights=pr)
           x, P = x[None, ...], P[None, ...]
-        mb = mb.append(r=np.array([r]), state=GaussianState(mean=x, covar=P))
+        mb = mb.append(r=np.array([r]), state=Gaussian(mean=x, covar=P))
         meta['mb'][imb].update(
             {'p_updated': p_updated[imb], 'p_new': 0, 'in_gate': valid})
 
@@ -310,7 +310,7 @@ class TOMBP:
       # Create Bernoulli components for each measurement
       new_berns = MultiBernoulli(
           r=r,
-          state=GaussianState(mean=means, covar=covars, weight=None)
+          state=Gaussian(mean=means, covar=covars, weight=None)
       )
     else:
       new_berns = MultiBernoulli()
