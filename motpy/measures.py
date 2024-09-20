@@ -25,17 +25,9 @@ def mahalanobis(mean: np.ndarray,
   np.ndarray
       Mahalanobis distance for each reference/query pair. Shape (N, M).
   """
-  mu = np.atleast_2d(mean)
-  x = np.atleast_2d(points)
-  n, d = mu.shape
-  m, _ = x.shape
-
-  y = x.reshape(1, m, d) - mu.reshape(n, 1, d)
+  y = mean[...,  None, :] - points[..., None, :, :]
   Si_y = np.linalg.inv(covar) @ y.swapaxes(-1, -2)
-  dist = np.sqrt(np.einsum('nmi, nim -> nm', y, Si_y))
-
-  if mean.ndim == 1:
-    dist = dist.squeeze(0)
+  dist = np.sqrt(np.einsum('...nmd, ...ndm ->...nm', y, Si_y))
   return dist
 
 
@@ -56,6 +48,7 @@ def pairwise_euclidean(x: np.ndarray, y: np.ndarray) -> np.ndarray:
       Pairwise Euclidean distance. Shape (N, M).
   """
   return jnp.sqrt(jnp.sum((x[:, None] - y[None])**2, axis=-1))
+
 
 def pairwise_mahalanobis(means: np.ndarray, covars: np.ndarray):
   y = means[None, :, :] - means[:, None, :]
