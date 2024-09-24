@@ -96,8 +96,8 @@ def test_predict():
                       [-20, 10, -10, 0, np.pi/360]]),
       covar=np.eye(5).reshape(1, 5, 5).repeat(3, axis=0),
       weight=np.exp(np.array([-0.6035, -0.0434, -0.0357])))
-  ppp = Poisson(birth_distribution=birth_distribution,
-                distribution=init_distribution)
+  ppp = Poisson(birth_state=birth_distribution,
+                state=init_distribution)
   ppp = ppp.predict(state_estimator=ekf, ps=ps, dt=T)
 
   expected_weights = np.array(
@@ -108,12 +108,12 @@ def test_predict():
                              [1,  0, 2, 0, 0.],
                              [0,  5, 0, 2, 1.],
                              [0,  0, 0, 1, 1.00030462]])
-  assert np.allclose(ppp.distribution.weight, expected_weights, atol=1e-4)
+  assert np.allclose(ppp.state.weight, expected_weights, atol=1e-4)
   assert np.allclose(
-      ppp.distribution.mean[0], expected_mean, atol=1e-4)
+      ppp.state.mean[0], expected_mean, atol=1e-4)
   assert np.allclose(
-      ppp.distribution.covar[0], expected_covar, atol=1e-4)
-  assert len(ppp.distribution) == 7
+      ppp.state.covar[0], expected_covar, atol=1e-4)
+  assert len(ppp.state) == 7
 
 
 def test_measurement_update():
@@ -131,12 +131,12 @@ def test_measurement_update():
                       [-20, 10, -10, 0, np.pi/360]]),
       covar=np.eye(5).reshape(1, 5, 5).repeat(3, axis=0),
       weight=np.exp(np.array([-2.0637, -0.0906, -0.4583])))
-  ppp = Poisson(birth_distribution=None,
-                distribution=init_distribution)
+  ppp = Poisson(birth_state=None,
+                state=init_distribution)
 
   in_gate = np.array([True, False, True])
-  z = ekf.measurement_model(ppp.distribution.mean[0][None, ...])
-  likelihoods = ekf.likelihood(measurement=z, predicted_state=ppp.distribution)
+  z = ekf.measurement_model(ppp.state.mean[0][None, ...])
+  likelihoods = ekf.likelihood(measurement=z, predicted_state=ppp.state)
   bern, bern_weight = ppp.update(
       measurement=z, in_gate=in_gate, state_estimator=ekf,
       pd=np.full(3, pd), clutter_intensity=clutter_intensity, likelihoods=likelihoods)

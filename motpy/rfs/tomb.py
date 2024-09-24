@@ -15,10 +15,11 @@ class TOMBP:
   """
 
   def __init__(self,
-               birth_distribution: Gaussian,
-               undetected_distribution: Optional[Gaussian] = None,
+               birth_state: Gaussian,
+               undetected_state: Optional[Gaussian] = None,
                pg: Optional[float] = None,
                poisson_pd_gate_threshold: Optional[float] = None,
+               static_poisson: Optional[bool] = False
                ):
     """
     Parameters
@@ -33,7 +34,10 @@ class TOMBP:
         Detection probability threshold which determines if a Poisson component is detectable. This gate is applied before standard gating to reduce the number of matrix inverses required. If none, all Poisson components are considered detectable, by default None
     """""
     self.poisson = Poisson(
-        birth_distribution=birth_distribution, distribution=undetected_distribution)
+        birth_state=birth_state,
+        state=undetected_state,
+        static=static_poisson
+    )
     self.mb = None
     self.metadata = dict(
         mb=[],
@@ -77,7 +81,7 @@ class TOMBP:
       predicted_mb = self.mb
 
     # Predict existing PPP intensity
-    ps_poisson = ps_func(self.poisson.distribution)
+    ps_poisson = ps_func(self.poisson.state)
     predicted_poisson = self.poisson.predict(
         state_estimator=state_estimator, ps=ps_poisson, dt=dt)
 
@@ -112,7 +116,7 @@ class TOMBP:
     ########################################################
     # Poisson update
     ########################################################
-    pd_poisson = pd_func(self.poisson.distribution)
+    pd_poisson = pd_func(self.poisson.state)
     if isinstance(pd_poisson, float):
       pd_poisson = np.full(self.poisson.size, pd_poisson)
 
@@ -123,7 +127,7 @@ class TOMBP:
         lambda_fa=lambda_fa)
 
     poisson_post = copy.deepcopy(self.poisson)
-    poisson_post.distribution.weight *= 1 - pd_poisson
+    poisson_post.state.weight *= 1 - pd_poisson
 
     ########################################################
     # MB Update
@@ -256,7 +260,7 @@ class TOMBP:
     n_u = self.poisson.size
     w_new = np.zeros(m)
 
-    state_dim = self.poisson.distribution.state_dim
+    state_dim = self.poisson.state.state_dim
     r = np.zeros(m)
     means = np.zeros((m, state_dim))
     covars = np.zeros((m, state_dim, state_dim))
@@ -270,7 +274,7 @@ class TOMBP:
         detectable = pd_poisson > self.poisson_pd_gate_threshold
       in_gate = state_estimator.gate(
           measurements=measurements,
-          state=self.poisson.distribution[detectable],
+          state=self.poisson.state[detectable],
           pg=self.pg)
       valid[detectable] = in_gate
 
@@ -280,7 +284,7 @@ class TOMBP:
       valid_poisson = np.argwhere(np.any(valid, axis=1)).ravel()
       l_poisson[np.ix_(valid_poisson, valid_meas)] = state_estimator.likelihood(
           measurement=measurements[valid_meas],
-          state=self.poisson.distribution[valid_poisson])
+          state=self.poisson.state[valid_poisson])
 
       # Create a new track hypothesis for each measurement
       for im in range(m):
@@ -289,7 +293,7 @@ class TOMBP:
           continue
 
         mixture, _ = state_estimator.update(
-            state=self.poisson.distribution[valid[:, im]],
+            state=self.poisson.state[valid[:, im]],
             measurement=measurements[im])
         mixture.weight *= l_poisson[valid[:, im],
                                     im] * pd_poisson[valid[:, im]]

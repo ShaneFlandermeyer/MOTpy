@@ -83,7 +83,7 @@ def test_scenario_prune():
                r_min=1e-4,
                r_estimate_threshold=0.5,
                )
-  momb.poisson.distribution = init_dist
+  momb.poisson.state = init_dist
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 
@@ -129,7 +129,7 @@ def test_scenario_merge():
                r_min=1e-4,
                r_estimate_threshold=0.5,
                )
-  momb.poisson.distribution = init_dist
+  momb.poisson.state = init_dist
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 

@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from motpy.kalman import KalmanFilter
 from motpy.distributions.gaussian import Gaussian
+import numpy as np
 
 
 class Poisson:
@@ -13,35 +14,37 @@ class Poisson:
 
   def __init__(
       self,
-      birth_distribution: Gaussian,
-      distribution: Optional[Gaussian] = None,
+      birth_state: Gaussian,
+      state: Optional[Gaussian] = None,
+      static: Optional[bool] = False
   ):
-    self.birth_distribution = birth_distribution
-    self.distribution = distribution
+    self.birth_state = birth_state
+    self.state = state
+    self.static = static
 
   def __repr__(self):
-    return f"""Poisson(birth_distribution={self.birth_distribution},
-  distribution={self.distribution})"""
+    return f"""Poisson(birth_distribution={self.birth_state},
+  distribution={self.state})"""
 
   @property
   def shape(self) -> Tuple[int]:
-    return self.distribution.shape
+    return self.state.shape
 
   @property
   def size(self) -> int:
-    return self.distribution.size
+    return self.state.size
 
   def predict(self,
               state_estimator: KalmanFilter,
               ps: float,
               dt: float) -> Poisson:
     predicted = copy.deepcopy(self)
+    predicted.state.weight *= ps
 
-    predicted.distribution.weight *= ps
-    predicted.distribution, filter_state = state_estimator.predict(
-        state=predicted.distribution, dt=dt)
-    predicted.distribution = predicted.distribution.append(
-        self.birth_distribution)
+    if not self.static:
+      predicted.state, filter_state = state_estimator.predict(
+          state=predicted.state, dt=dt)
+      predicted.state = predicted.state.append(self.birth_state)
 
     return predicted
 
@@ -54,8 +57,8 @@ class Poisson:
     Prune components below weight threshold
     """
     pruned = copy.deepcopy(self)
-    valid = pruned.distribution.weight > threshold
-    pruned.distribution = pruned.distribution[valid]
+    valid = pruned.state.weight > threshold
+    pruned.state = pruned.state[valid]
 
     if meta is None:
       new_meta = None
@@ -70,16 +73,29 @@ class Poisson:
 
     NOTE: This assumes that only the birth distribution contributes, such that we only need to change the weights and covariance matrices.
     """
-    assert isinstance(self.birth_distribution, Gaussian)
-    nbirth = self.birth_distribution.size
-    dist = self.distribution[:nbirth]
-    birth_dist = self.birth_distribution
+    assert isinstance(self.birth_state, Gaussian)
+    merged = copy.deepcopy(self)
 
-    merged_distribution = Gaussian(
-        mean=dist.mean,
-        covar=dist.covar,
-        weight=dist.weight + birth_dist.weight,
-    )
-
-    return Poisson(birth_distribution=self.birth_distribution,
-                   distribution=merged_distribution)
+    if self.static:
+      merged_state = Gaussian(
+          mean=self.state.mean,
+          covar=self.state.covar,
+          weight=self.state.weight + self.birth_state.weight,
+      )
+    else:
+      nbirth = self.birth_state.size
+      state, birth_state = self.state[:nbirth], self.birth_state
+      wmix = np.stack((state.weight, birth_state.weight), axis=0)
+      wmix /= np.sum(wmix + 1e-15, axis=0)
+      xmix = np.stack((state.mean, birth_state.mean), axis=0)
+      Pmix = np.stack((state.covar, birth_state.covar), axis=0)
+      merged_state = Gaussian(
+          mean=np.einsum('i..., i...j -> ...j', wmix, xmix),
+          covar=np.einsum('i..., i...jk -> ...jk', wmix, Pmix),
+          weight=state.weight + birth_state.weight,
+      )
+      
+    
+    
+    merged.state = merged_state
+    return merged

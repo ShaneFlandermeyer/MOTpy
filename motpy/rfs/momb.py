@@ -55,7 +55,7 @@ class MOMBP:
     r_estimate_threshold : float, optional
         The threshold for the probability of existence above which an object is estimated to exist, by default None.
     """
-    self.poisson = Poisson(birth_distribution=birth_distribution)
+    self.poisson = Poisson(birth_state=birth_distribution)
     self.mb = MultiBernoulli()
 
     self.pg = pg
@@ -206,7 +206,7 @@ class MOMBP:
 
     # Update (i.e., thin) intensity of unknown targets
     poisson_upd = copy.copy(self.poisson)
-    poisson_upd.distribution.weight *= 1 - pd_ppp
+    poisson_upd.state.weight *= 1 - pd_ppp
 
     if wupd.size == 0:
       pupd = np.zeros_like(wupd)

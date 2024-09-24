@@ -75,8 +75,8 @@ def test_scenario_prune():
       mean=birth_dist.mean,
       covar=birth_dist.covar,
       weight=np.array([10.0]))
-  tracker = TOMBP(birth_distribution=birth_dist,
-                  undetected_distribution=init_dist,
+  tracker = TOMBP(birth_state=birth_dist,
+                  undetected_state=init_dist,
                   pg=1.0,
                   )
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
@@ -123,8 +123,8 @@ def test_scenario_merge():
       mean=birth_dist.mean,
       covar=birth_dist.covar,
       weight=np.array([10.0]))
-  tracker = TOMBP(birth_distribution=birth_dist,
-                  undetected_distribution=init_dist,
+  tracker = TOMBP(birth_state=birth_dist,
+                  undetected_state=init_dist,
                   pg=1.0,
                   )
 
@@ -172,8 +172,8 @@ def test_scenario_gate():
       mean=birth_dist.mean,
       covar=birth_dist.covar,
       weight=np.array([10.0]))
-  tracker = TOMBP(birth_distribution=birth_dist,
-                  undetected_distribution=init_dist,
+  tracker = TOMBP(birth_state=birth_dist,
+                  undetected_state=init_dist,
                   pg=0.999,
                   )
 
