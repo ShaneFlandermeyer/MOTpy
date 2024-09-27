@@ -41,7 +41,7 @@ class TOMBP:
     self.mb = None
     self.metadata = dict(
         mb=[],
-        ppp=[],
+        poisson=[dict() for _ in range(self.poisson.size)],
     )
 
     self.pg = pg
@@ -69,21 +69,25 @@ class TOMBP:
       - The MB distribution after prediction
       - The poisson distribution after prediction
     """
-    meta = self.metadata.copy()
+    meta = copy.deepcopy(self.metadata)
 
-    # Predict existing tracks
+    # Predict MB
     if self.mb is not None and self.mb.size > 0:
       ps_mb = ps_func(self.mb.state)
       predicted_mb, filter_state = self.mb.predict(
           state_estimator=state_estimator, ps=ps_mb, dt=dt)
-      meta['filter_state'] = filter_state
     else:
       predicted_mb = self.mb
 
-    # Predict existing PPP intensity
+    # Predict Poisson
     ps_poisson = ps_func(self.poisson.state)
     predicted_poisson = self.poisson.predict(
         state_estimator=state_estimator, ps=ps_poisson, dt=dt)
+
+    # Update metadata
+    if not self.poisson.static:  # New Poisson components created in predict
+      meta['poisson'].extend([dict()
+                         for _ in range(self.poisson.birth_state.size)])
 
     return predicted_mb, predicted_poisson
 
@@ -112,6 +116,7 @@ class TOMBP:
       - Updated MB distribution
       - Updated Poisson distribution
     """
+    meta = copy.deepcopy(self.metadata)
 
     ########################################################
     # Poisson update
@@ -129,6 +134,8 @@ class TOMBP:
     poisson_post = copy.deepcopy(self.poisson)
     poisson_post.state.weight *= 1 - pd_poisson
 
+    # Update metadata
+    meta['pd_poisson'] = pd_poisson
     ########################################################
     # MB Update
     ########################################################
@@ -137,6 +144,9 @@ class TOMBP:
         measurements=measurements,
         pd_func=pd_func)
 
+    ########################################################
+    # Data association and track updates
+    ########################################################
     n = self.mb.size if self.mb is not None else 0
     m = len(measurements) if measurements is not None else 0
     if n == 0:
@@ -152,7 +162,8 @@ class TOMBP:
                               p_new=p_new,
                               mb_hypos=mb_hypos,
                               mb_hypo_mask=mb_hypo_mask,
-                              new_berns=new_berns)
+                              new_berns=new_berns,
+                              meta=meta)
 
     return mb_post, poisson_post, meta
 
@@ -161,7 +172,8 @@ class TOMBP:
            p_new: np.ndarray,
            mb_hypos: List[MultiBernoulli],
            mb_hypo_mask: np.ndarray,
-           new_berns: MultiBernoulli
+           new_berns: MultiBernoulli,
+           meta: Dict[str, Any] = dict()
            ) -> MultiBernoulli:
     """
     Add new Bernoulli components to the filter and marginalize existing components across measurement hypotheses
@@ -186,7 +198,6 @@ class TOMBP:
     MultiBernoulli
         The updated MB distribution
     """
-    meta = copy.deepcopy(self.metadata)
     n_mb, mp1 = p_updated.shape
     m = mp1 - 1
 
