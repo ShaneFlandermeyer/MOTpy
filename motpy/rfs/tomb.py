@@ -45,7 +45,10 @@ class TOMBP:
     )
 
     self.pg = pg
-    self.poisson_pd_gate_threshold = poisson_pd_gate_threshold
+    if poisson_pd_gate_threshold is None:
+      self.poisson_pd_gate_threshold = 0
+    else:
+      self.poisson_pd_gate_threshold = poisson_pd_gate_threshold
 
   def predict(self,
               state_estimator: KalmanFilter,
@@ -278,11 +281,8 @@ class TOMBP:
     if m > 0:
       valid = np.zeros((n_u, m), dtype=bool)
       # Valid poisson-measurement pairs
-      # Valid = in gate and detectable (pd > 0)
-      if self.poisson_pd_gate_threshold is None:
-        detectable = np.ones(n_u, dtype=bool)
-      else:
-        detectable = pd_poisson > self.poisson_pd_gate_threshold
+      # Valid = in gate and detectable
+      detectable = pd_poisson > self.poisson_pd_gate_threshold
       in_gate = state_estimator.gate(
           measurements=measurements,
           state=self.poisson.state[detectable],
