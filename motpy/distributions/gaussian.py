@@ -134,8 +134,8 @@ def merge_gaussians(means: np.ndarray,
   P = covars
   w = weights
 
-  w_merged = np.sum(w, axis=-1, keepdims=True)
-  w /= w_merged
+  w_merged = np.sum(w, axis=-1)
+  w /= w_merged[..., None]
 
   mu_merged = np.einsum('...i, ...ij -> ...j', w, mu)
   P_merged = np.einsum('...i, ...ijk->...jk', w, P)
