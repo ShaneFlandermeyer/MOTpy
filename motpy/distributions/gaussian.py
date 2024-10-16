@@ -109,9 +109,9 @@ class Gaussian():
     return mu + np.einsum('nij, nmj -> nmi', np.linalg.cholesky(P), std_normal)
 
 
-def match_moments(means: np.ndarray,
-                  covars: np.ndarray,
-                  weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def merge_gaussians(means: np.ndarray,
+          covars: np.ndarray,
+          weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
   """
   Compute a Gaussian mixture as a weighted sum of N Gaussian distributions, each with dimension D.
 
@@ -130,15 +130,18 @@ def match_moments(means: np.ndarray,
     Mixture PDF mean and covariance
 
   """
-  x = means
+  mu = means
   P = covars
-  w = weights / (np.sum(weights, axis=-1, keepdims=True) + 1e-15)
+  w = weights
 
-  mix_mean = np.einsum('...i, ...ij -> ...j', w, x)
-  mix_covar = np.einsum('...i, ...ijk->...jk', w, P)
-  mix_covar += np.einsum('...i,...ij,...ik->...jk', w, x, x)
-  mix_covar -= np.einsum('...i,...j->...ij', mix_mean, mix_mean)
-  return mix_mean, mix_covar
+  w_merged = np.sum(w, axis=-1, keepdims=True)
+  w /= w_merged
+
+  mu_merged = np.einsum('...i, ...ij -> ...j', w, mu)
+  P_merged = np.einsum('...i, ...ijk->...jk', w, P)
+  P_merged += np.einsum('...i,...ij,...ik->...jk', w, mu, mu)
+  P_merged -= np.einsum('...i,...j->...ij', mu_merged, mu_merged)
+  return w_merged, mu_merged, P_merged
 
 
 def likelihood(z: np.ndarray,

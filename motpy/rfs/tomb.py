@@ -3,7 +3,7 @@ from typing import Callable, Dict, List, Optional, Tuple, Any
 
 import numpy as np
 
-from motpy.distributions.gaussian import Gaussian, match_moments
+from motpy.distributions.gaussian import Gaussian, merge_gaussians
 from motpy.kalman import KalmanFilter
 from motpy.rfs.bernoulli import MultiBernoulli
 from motpy.rfs.poisson import Poisson
@@ -223,11 +223,11 @@ class TOMBP:
       for imb in range(n_mb):
         valid = mb_hypo_mask[imb]
         pr = p_updated[imb, valid] * rs[imb, valid]
-        r = np.sum(pr)
         if np.count_nonzero(valid) == 1:
           x, P = xs[imb, valid], Ps[imb, valid]
+          r = pr
         else:
-          x, P = match_moments(
+          r, x, P = merge_gaussians(
               means=xs[imb, valid], covars=Ps[imb, valid], weights=pr)
           x, P = x[None, ...], P[None, ...]
         mb = mb.append(r=np.array([r]), state=Gaussian(mean=x, covar=P))
@@ -317,7 +317,7 @@ class TOMBP:
         if n_valid == 1:
           means[im], covars[im] = mixture.mean, mixture.covar
         else:
-          means[im], covars[im] = match_moments(
+          _, means[im], covars[im] = merge_gaussians(
               means=mixture.mean,
               covars=mixture.covar,
               weights=mixture.weight)
