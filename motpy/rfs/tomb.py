@@ -230,7 +230,7 @@ class TOMBP:
           r, x, P = merge_gaussians(
               means=xs[imb, valid], covars=Ps[imb, valid], weights=pr)
           x, P = x[None, ...], P[None, ...]
-        mb = mb.append(r=np.array([r]), state=Gaussian(mean=x, covar=P))
+        mb = mb.append(r=r, state=Gaussian(mean=x, covar=P))
         meta['mb'][imb].update(
             {'p_updated': p_updated[imb], 'p_new': 0, 'in_gate': valid})
 
