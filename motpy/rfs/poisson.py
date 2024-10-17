@@ -16,11 +16,9 @@ class Poisson:
       self,
       birth_state: Gaussian,
       state: Optional[Gaussian] = None,
-      static: Optional[bool] = False
   ):
     self.birth_state = birth_state
     self.state = state
-    self.static = static
 
   def __repr__(self):
     return f"""Poisson(birth_distribution={self.birth_state},
@@ -41,10 +39,9 @@ class Poisson:
     predicted = copy.deepcopy(self)
     predicted.state.weight *= ps
 
-    if not self.static:
-      predicted.state, filter_state = state_estimator.predict(
+    predicted.state, filter_state = state_estimator.predict(
           state=predicted.state, dt=dt)
-      predicted.state = predicted.state.append(self.birth_state)
+    predicted.state = predicted.state.append(self.birth_state)
 
     return predicted
 

@@ -19,7 +19,6 @@ class TOMBP:
                undetected_state: Optional[Gaussian] = None,
                pg: Optional[float] = None,
                poisson_pd_gate_threshold: Optional[float] = None,
-               static_poisson: Optional[bool] = False
                ):
     """
     Parameters
@@ -36,7 +35,6 @@ class TOMBP:
     self.poisson = Poisson(
         birth_state=birth_state,
         state=undetected_state,
-        static=static_poisson
     )
     self.mb = None
     self.metadata = dict(
@@ -88,9 +86,8 @@ class TOMBP:
         state_estimator=state_estimator, ps=ps_poisson, dt=dt)
 
     # Update metadata
-    if not self.poisson.static:  # New Poisson components created in predict
-      meta['poisson'].extend([dict()
-                         for _ in range(self.poisson.birth_state.size)])
+    meta['poisson'].extend([dict()
+                            for _ in range(self.poisson.birth_state.size)])
 
     return predicted_mb, predicted_poisson
 

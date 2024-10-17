@@ -3,12 +3,83 @@ import numpy as np
 from motpy.distributions.gaussian import Gaussian, merge_gaussians
 
 
-def likelihood(x, mu, P):
-  scale = 1 / np.sqrt((2 * np.pi * np.linalg.det(P)))
+def likelihood(x, mu, P, fast: bool = False):
+
   y = x - mu
-  exp = np.exp(-0.5 * np.einsum('...i,...ii,...i->...',
-               y, np.linalg.inv(P), y))
+  if fast:
+    scale = 1 / np.trace(P, axis1=-1, axis2=-2)
+    exp = np.exp(-np.sum(y / np.diagonal(P, axis1=-1, axis2=-2) * y, axis=-1))
+  else:
+    scale = 1 / np.sqrt(2 * np.pi * np.linalg.det(P))
+    exp = np.exp(-0.5 * np.sum(y * np.linalg.solve(P, y), axis=-1))
+
   return scale * exp
+
+
+# @profile
+def west_reduce(distribution: Gaussian,
+                max_n: int,
+                ) -> Gaussian:
+  """
+  West's mixture reduction algorithm as described in [1].
+
+  [1] Crouse2011 - A Look at Gaussian Mixture Reduction Algorithms
+
+  Parameters
+  ----------
+  distribution : Gaussian
+      Distribution to reduce
+  max_n : int
+      Maximum number of components in the reduced distribution
+  gamma : float, optional
+      Cost threshold. If the minimum cost exceeds this, the algorithm halts, by default np.inf
+
+  Returns
+  -------
+  Gaussian
+      The reduced distribution
+  """
+  mu = distribution.mean.copy()
+  P = distribution.covar.copy()
+  w = distribution.weight.copy()
+  valid = np.ones(distribution.size, dtype=bool)
+
+  while np.count_nonzero(valid) > max_n:
+    # Compute modified weights for each component in the current mixture
+    traces = np.trace(P[valid], axis1=-1, axis2=-2)
+    wmod = w[valid] / traces
+
+    # Choose the i with the smallest modified weight
+    ic = np.argmin(wmod)
+    i = np.where(valid)[0][ic]
+
+    mu_i = mu[i][None, ...]
+    mu_j = mu[valid]
+    P_i = P[i, None, :, :]
+    P_j = P[valid]
+    P_ipj = P_i + P_j
+
+    # Compute ISE cost between each pair of components
+    l1 = likelihood(mu_j, mu_i, P_ipj)
+    l2 = likelihood(mu_i, mu_i, 2 * P_i) + likelihood(mu_j, mu_j, 2 * P_j)
+    c = -2 * l1 + l2
+    c[ic] = np.inf
+
+    # Choose the j with the smallest ISE cost and merge
+    jc = np.argmin(c)
+    j = np.where(valid)[0][jc]
+    w[i], mu[i], P[i] = merge_gaussians(
+        weights=w[[i, j]],
+        means=mu[[i, j]],
+        covars=P[[i, j]]
+    )
+
+    valid[j] = False
+
+  w_merged = w[valid]
+  mu_merged = mu[valid]
+  P_merged = P[valid]
+  return Gaussian(weight=w_merged, mean=mu_merged, covar=P_merged)
 
 
 def runnalls_reduce(distribution: Gaussian,
@@ -75,74 +146,6 @@ def runnalls_reduce(distribution: Gaussian,
   )
   return distribution
 
-
-def west_reduce(distribution: Gaussian,
-                max_n: int,
-                gamma: float = np.inf) -> Gaussian:
-  """
-  West's mixture reduction algorithm as described in [1].
-
-  [1] Crouse2011 - A Look at Gaussian Mixture Reduction Algorithms
-
-  Parameters
-  ----------
-  distribution : Gaussian
-      Distribution to reduce
-  max_n : int
-      Maximum number of components in the reduced distribution
-  gamma : float, optional
-      Cost threshold. If the minimum cost exceeds this, the algorithm halts, by default np.inf
-
-  Returns
-  -------
-  Gaussian
-      The reduced distribution
-  """
-  mu = distribution.mean.copy()
-  P = distribution.covar.copy()
-  w = distribution.weight.copy()
-  valid = np.ones(distribution.size, dtype=bool)
-
-  while np.count_nonzero(valid) > max_n:
-    # Compute modified weights for each component in the current mixture
-    traces = np.trace(P[valid], axis1=-1, axis2=-2)
-    wmod = w[valid] / traces
-
-    # Choose the i with the smallest modified weight
-    ic = np.argmin(wmod)
-    i = np.where(valid)[0][ic]
-
-    mu_i = mu[i][None, ...]
-    mu_j = mu[valid]
-    P_i = P[i, None, :, :]
-    P_j = P[valid]
-    P_ipj = P_i + P_j
-
-    # Compute ISE cost between each pair of components
-    l1 = likelihood(mu_j, mu_i, P_ipj)
-    l2 = likelihood(mu_i, mu_i, 2 * P_i) + likelihood(mu_j, mu_j, 2 * P_j)
-    c = -2 * l1 + l2
-    c[ic] = np.inf
-
-    # Choose the j with the smallest ISE cost and merge
-    jc = np.argmin(c)
-    j = np.where(valid)[0][jc]
-    if c[jc] > gamma:
-      break
-    w[i], mu[i], P[i] = merge_gaussians(
-        w=w[[i, j]],
-        mu=mu[[i, j]],
-        P=P[[i, j]]
-    )
-
-    valid[j] = False
-
-  w_merged = w[valid]
-  mu_merged = mu[valid]
-  P_merged = P[valid]
-  return Gaussian(weight=w_merged, mean=mu_merged, covar=P_merged)
-
-
 def mean_distance_reduce(distribution: Gaussian, max_n: int) -> Gaussian:
   """
   A simple non-iterative reduction algorithm I developed with the following steps:
@@ -151,7 +154,7 @@ def mean_distance_reduce(distribution: Gaussian, max_n: int) -> Gaussian:
   2. Select the max_n components with the largest modified weights to serve as the "anchor" components
   3. For all other components, assign them to the anchor component with the smallest Euclidean distance (using the mean)
   4. Merge each anchor component with its assigned components
-  
+
   This algorithm is not terribly accurate from a distribution representation perspective, but is orders of magnitude faster than West or Runnalls.
 
   Parameters
@@ -174,16 +177,11 @@ def mean_distance_reduce(distribution: Gaussian, max_n: int) -> Gaussian:
   mu = distribution.mean.copy()
   P = distribution.covar.copy()
 
-  wmod = w / np.trace(P, axis1=-1, axis2=-2)
-  anchor_inds = np.argpartition(wmod, -max_n)[-max_n:]
-  other_inds = np.setdiff1d(np.arange(n), anchor_inds)
-
   # Nearest neighbor assignment
-  distances = np.sum(
-      (mu[anchor_inds, None, :] - mu[None, other_inds, :])**2, axis=-1)
-  closest = np.zeros(n, dtype=int)
-  closest[:max_n] = np.arange(max_n)
-  closest[max_n:] = np.argmin(distances, axis=0)
+  distances = np.sum((mu[:, None, :] - mu[None, :, :])**2, axis=-1)
+  # Set diagonal to infinity so that we don't assign a component to itself
+  np.fill_diagonal(distances, np.inf)
+  closest = np.argmin(distances, axis=-1, keepdims=True)
 
   # Get group indices for each anchor component
   group_sizes = np.bincount(closest)
@@ -244,9 +242,9 @@ if __name__ == '__main__':
   )
   max_n = 64
   # reduced = runnalls_reduce(distribution, max_n)
-  reduced = mean_distance_reduce(distribution, max_n)
-  print(reduced)
+  # reduced = mean_distance_reduce(distribution, max_n)
+  # print(reduced)
   # for _ in range(1):
   #   # start = time.time()
 
-  #   # reduced = west_reduce(distribution, max_n)
+  reduced = west_reduce(distribution, max_n)

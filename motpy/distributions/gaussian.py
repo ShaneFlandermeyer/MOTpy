@@ -108,6 +108,8 @@ class Gaussian():
       std_normal = std_normal.clip(-max_val, max_val)
     return mu + np.einsum('nij, nmj -> nmi', np.linalg.cholesky(P), std_normal)
 
+# @profile
+
 
 def merge_gaussians(
         means: np.ndarray,
@@ -136,12 +138,12 @@ def merge_gaussians(
   w = weights
 
   w_merged = np.sum(w, axis=-1)
-  w /= w_merged[..., None]
-
+  w /= w_merged[..., None] + 1e-15
   mu_merged = np.einsum('...i, ...ij -> ...j', w, mu)
-  P_merged = np.einsum('...i, ...ijk->...jk', w, P)
-  P_merged += np.einsum('...i,...ij,...ik->...jk', w, mu, mu)
-  P_merged -= np.einsum('...i,...j->...ij', mu_merged, mu_merged)
+  
+  y = mu - mu_merged
+  y_outer = np.einsum('...i, ...j -> ...ij', y, y)
+  P_merged = np.einsum('...i, ...ijk -> ...jk', w, P + y_outer)
   return w_merged, mu_merged, P_merged
 
 
