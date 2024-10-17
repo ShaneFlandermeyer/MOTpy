@@ -1,9 +1,6 @@
 from typing import Optional, Tuple
 import numpy as np
-import numba as nb
 from motpy.distributions.gaussian import Gaussian, merge_gaussians
-# Import matrix inverse from scipy
-import scipy
 
 
 def likelihood(x, mu, P):
@@ -14,26 +11,11 @@ def likelihood(x, mu, P):
   return scale * exp
 
 
-# def merge(w: np.ndarray,
-#           mu: np.ndarray,
-#           P: np.ndarray,
-#           ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-#   w_merged = np.sum(w, axis=-1, keepdims=True)
-#   mu_merged = np.einsum('...i, ...ij -> ...j', w, mu) / w_merged
-
-#   y = mu - mu_merged
-#   y_outer = np.einsum('...i, ...j -> ...ij', y, y)
-#   P_merged = np.einsum('...i, ...ijk -> ...jk', w / w_merged, P + y_outer)
-#   return w_merged, mu_merged, P_merged
-
-
 def runnalls_reduce(distribution: Gaussian,
                     max_n: int,
                     ) -> Gaussian:
   """
   Runnalls mixture reduction algorithm as described in [1].
-
-  Unlike the algorithm in the paper, we use the trace when computing the costs instead of the determinant. This is much faster and gives similar results if the covariance components have similar magnitudes in all dimensions. If they don't, the trace can be scaled by user-specified values.
 
   [1] Crouse2011 - A Look at Gaussian Mixture Reduction Algorithms
 
@@ -73,15 +55,8 @@ def runnalls_reduce(distribution: Gaussian,
     Pij = 1 / wij[..., None, None] * (
         wi[..., None, None] * (Pi + yi[..., :, None] * yi[..., None, :]) +
         wj[..., None, None] * (Pj + yj[..., :, None] * yj[..., None, :]))
-    # TODO: May be even easier to scale the trace automatically by studentizing the covariance matrices or scaling them to the range [0, 1]
-    # Compute the max of Pij for each matrix value
-    trace_ij = np.trace(Pij,
-                        axis1=-1, axis2=-2)
-    trace_i = np.trace(Pi,
-                       axis1=-1, axis2=-2)
-    trace_j = np.trace(Pj,
-                       axis1=-1, axis2=-2)
-    c = (0.5 * wij * trace_ij - (wi * trace_i) - (0.5 * wj * trace_j))
+    c = (0.5 * wij * np.log(np.linalg.det(Pij)) - (wi *
+         np.log(np.linalg.det(Pi))) - (0.5 * wj * np.log(np.linalg.det(Pj))))
 
     # Merge the two components with the smallest cost
     # Set the diagonal to infinity so that we don't merge a component with itself
@@ -104,6 +79,25 @@ def runnalls_reduce(distribution: Gaussian,
 def west_reduce(distribution: Gaussian,
                 max_n: int,
                 gamma: float = np.inf) -> Gaussian:
+  """
+  West's mixture reduction algorithm as described in [1].
+
+  [1] Crouse2011 - A Look at Gaussian Mixture Reduction Algorithms
+
+  Parameters
+  ----------
+  distribution : Gaussian
+      Distribution to reduce
+  max_n : int
+      Maximum number of components in the reduced distribution
+  gamma : float, optional
+      Cost threshold. If the minimum cost exceeds this, the algorithm halts, by default np.inf
+
+  Returns
+  -------
+  Gaussian
+      The reduced distribution
+  """
   mu = distribution.mean.copy()
   P = distribution.covar.copy()
   w = distribution.weight.copy()
@@ -149,11 +143,29 @@ def west_reduce(distribution: Gaussian,
   return Gaussian(weight=w_merged, mean=mu_merged, covar=P_merged)
 
 
-def mean_distance_reduce(distribution: Gaussian, max_n: int):
-    # Merge the Gaussian distribution according to the following rules:
-    # - Find the max_n largest-weight components
-    # - For the rest of the components, find the closest component of the max_n largest
-    # - Merge the components with their assigned groups (more than one component may be assigned to the same larger component)
+def mean_distance_reduce(distribution: Gaussian, max_n: int) -> Gaussian:
+  """
+  A simple non-iterative reduction algorithm I developed with the following steps:
+
+  1. For each component, compute a modified weight wmod_i = w_i / trace(P_i)
+  2. Select the max_n components with the largest modified weights to serve as the "anchor" components
+  3. For all other components, assign them to the anchor component with the smallest Euclidean distance (using the mean)
+  4. Merge each anchor component with its assigned components
+  
+  This algorithm is not terribly accurate from a distribution representation perspective, but is orders of magnitude faster than West or Runnalls.
+
+  Parameters
+  ----------
+  distribution : Gaussian
+      Distribution to reduce
+  max_n : int
+      Desired number of components in the reduced distribution
+
+  Returns
+  -------
+  Gaussian
+      The reduced distribution
+  """
 
   n = distribution.size
   if n <= max_n:
@@ -163,17 +175,17 @@ def mean_distance_reduce(distribution: Gaussian, max_n: int):
   P = distribution.covar.copy()
 
   wmod = w / np.trace(P, axis1=-1, axis2=-2)
-  top_inds = np.argpartition(wmod, -max_n)[-max_n:]
-  bottom_inds = np.setdiff1d(np.arange(n), top_inds)
+  anchor_inds = np.argpartition(wmod, -max_n)[-max_n:]
+  other_inds = np.setdiff1d(np.arange(n), anchor_inds)
 
   # Nearest neighbor assignment
   distances = np.sum(
-      (mu[top_inds, None, :] - mu[None, bottom_inds, :])**2, axis=-1)
+      (mu[anchor_inds, None, :] - mu[None, other_inds, :])**2, axis=-1)
   closest = np.zeros(n, dtype=int)
   closest[:max_n] = np.arange(max_n)
   closest[max_n:] = np.argmin(distances, axis=0)
 
-  # Get group indices for each component to keep
+  # Get group indices for each anchor component
   group_sizes = np.bincount(closest)
   largest_group = group_sizes.max()
   group_inds = np.array([
@@ -194,6 +206,24 @@ def mean_distance_reduce(distribution: Gaussian, max_n: int):
       weights=w_group, means=mu_group, covars=P_group)
 
   return Gaussian(weight=w_merged, mean=mu_merged, covar=P_merged)
+
+
+def static_reduce(distribution: Gaussian) -> Gaussian:
+
+  n = distribution.size
+  state = distribution[:n//2]
+  birth_state = distribution[n//2:]
+  wmix = np.stack((state.weight, birth_state.weight), axis=0)
+  wmix /= np.sum(wmix + 1e-15, axis=0)
+  xmix = np.stack((state.mean, birth_state.mean), axis=0)
+  Pmix = np.stack((state.covar, birth_state.covar), axis=0)
+  merged_state = Gaussian(
+      mean=np.einsum('i..., i...j -> ...j', wmix, xmix),
+      covar=np.einsum('i..., i...jk -> ...jk', wmix, Pmix),
+      weight=state.weight + birth_state.weight,
+  )
+
+  return merged_state
 
 
 if __name__ == '__main__':

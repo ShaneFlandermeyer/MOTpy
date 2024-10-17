@@ -5,6 +5,7 @@ from motpy.distributions.gaussian import Gaussian
 from motpy.kalman import KalmanFilter
 from motpy.models.measurement import LinearMeasurementModel
 from motpy.models.transition import ConstantVelocity
+from motpy.distributions.mixture import static_reduce
 
 
 def make_data(dt, lambda_c, pd, n_steps):
@@ -133,7 +134,7 @@ def test_scenario_merge():
   for k in range(n_steps):
     tracker.mb, tracker.poisson = tracker.predict(
         state_estimator=kf, dt=dt, ps_func=ps)
-    tracker.poisson = tracker.poisson.merge()
+    tracker.poisson.state = static_reduce(tracker.poisson.state)
 
     tracker.mb, tracker.poisson, tracker.metadata = tracker.update(
         measurements=Z[k], pd_func=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
@@ -182,7 +183,7 @@ def test_scenario_gate():
   for k in range(n_steps):
     tracker.mb, tracker.poisson = tracker.predict(
         state_estimator=kf, dt=dt, ps_func=ps)
-    tracker.poisson = tracker.poisson.merge()
+    tracker.poisson.state = static_reduce(tracker.poisson.state)
 
     tracker.mb, tracker.poisson, tracker.metadata = tracker.update(
         measurements=Z[k], pd_func=pd, state_estimator=kf, lambda_fa=lambda_c/volume)

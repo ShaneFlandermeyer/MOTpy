@@ -109,9 +109,10 @@ class Gaussian():
     return mu + np.einsum('nij, nmj -> nmi', np.linalg.cholesky(P), std_normal)
 
 
-def merge_gaussians(means: np.ndarray,
-          covars: np.ndarray,
-          weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def merge_gaussians(
+        means: np.ndarray,
+        covars: np.ndarray,
+        weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
   """
   Compute a Gaussian mixture as a weighted sum of N Gaussian distributions, each with dimension D.
 
