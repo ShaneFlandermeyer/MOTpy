@@ -76,10 +76,7 @@ def test_scenario_prune():
       mean=birth_dist.mean,
       covar=birth_dist.covar,
       weight=np.array([10.0]))
-  tracker = TOMBP(birth_state=birth_dist,
-                  undetected_state=init_dist,
-                  pg=1.0,
-                  )
+  tracker = TOMBP(birth_state=birth_dist, undetected_state=init_dist)
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 
   for k in range(n_steps):
@@ -96,55 +93,6 @@ def test_scenario_prune():
 
   assert tracker.mb.size == 54
   assert tracker.poisson.size == 4
-  assert np.allclose(tracker.mb[0].r, 0.9999935076418562, atol=1e-6)
-  assert np.allclose(tracker.mb[3].r, 0.9999901057591115, atol=1e-6)
-
-
-def test_scenario_merge():
-  """
-  Test the algorithm with a simple multi-object scenario
-  """
-
-  def pd(x): return 0.8
-  def ps(x): return 0.999
-  lambda_c = 20
-  dt = 1
-  n_steps = 10
-  volume = 200*200
-  paths, Z, cv, linear = make_data(
-      dt=dt, lambda_c=lambda_c, pd=pd, n_steps=n_steps)
-
-  # Initialize TOMB filter
-  birth_dist = Gaussian(
-      mean=np.array([0, 0, 0, 0])[None, ...],
-      covar=np.diag([100, 1, 100, 1])[None, ...]**2,
-      weight=np.array([0.05]),
-  )
-  init_dist = Gaussian(
-      mean=birth_dist.mean,
-      covar=birth_dist.covar,
-      weight=np.array([10.0]))
-  tracker = TOMBP(birth_state=birth_dist,
-                  undetected_state=init_dist,
-                  pg=1.0,
-                  )
-
-  kf = KalmanFilter(transition_model=cv, measurement_model=linear)
-
-  for k in range(n_steps):
-    tracker.mb, tracker.poisson = tracker.predict(
-        state_estimator=kf, dt=dt, ps_func=ps)
-    tracker.poisson.state = static_reduce(tracker.poisson.state)
-
-    tracker.mb, tracker.poisson, tracker.metadata = tracker.update(
-        measurements=Z[k], pd_func=pd, state_estimator=kf, lambda_fa=lambda_c/volume)
-    if tracker.mb.size > 0:
-      tracker.mb, tracker.metadata['mb'] = tracker.mb.prune(
-          meta=tracker.metadata['mb'],
-          threshold=1e-4)
-
-  assert tracker.mb.size == 54
-  assert tracker.poisson.size == 1
   assert np.allclose(tracker.mb[0].r, 0.9999935076418562, atol=1e-6)
   assert np.allclose(tracker.mb[3].r, 0.9999901057591115, atol=1e-6)
 

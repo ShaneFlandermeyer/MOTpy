@@ -18,7 +18,7 @@ class TOMBP:
                birth_state: Gaussian,
                undetected_state: Optional[Gaussian] = None,
                pg: Optional[float] = None,
-               poisson_pd_gate_threshold: Optional[float] = None,
+               poisson_pd_threshold: Optional[float] = None,
                ):
     """
     Parameters
@@ -42,11 +42,11 @@ class TOMBP:
         poisson=[dict() for _ in range(self.poisson.size)],
     )
 
-    self.pg = pg
-    if poisson_pd_gate_threshold is None:
-      self.poisson_pd_gate_threshold = 0
+    self.pg = pg if pg is not None else 1.0
+    if poisson_pd_threshold is None:
+      self.poisson_pd_threshold = 0
     else:
-      self.poisson_pd_gate_threshold = poisson_pd_gate_threshold
+      self.poisson_pd_threshold = poisson_pd_threshold
 
   def predict(self,
               state_estimator: KalmanFilter,
@@ -76,18 +76,21 @@ class TOMBP:
     if self.mb is not None and self.mb.size > 0:
       ps_mb = ps_func(self.mb.state)
       predicted_mb, filter_state = self.mb.predict(
-          state_estimator=state_estimator, ps=ps_mb, dt=dt)
+          state_estimator=state_estimator, ps=ps_mb, dt=dt
+      )
     else:
       predicted_mb = self.mb
 
     # Predict Poisson
     ps_poisson = ps_func(self.poisson.state)
     predicted_poisson = self.poisson.predict(
-        state_estimator=state_estimator, ps=ps_poisson, dt=dt)
+        state_estimator=state_estimator, ps=ps_poisson, dt=dt
+    )
 
     # Update metadata
-    meta['poisson'].extend([dict()
-                            for _ in range(self.poisson.birth_state.size)])
+    meta['poisson'].extend(
+        [dict() for _ in range(self.poisson.birth_state.size)]
+    )
 
     return predicted_mb, predicted_poisson
 
@@ -129,7 +132,8 @@ class TOMBP:
         state_estimator=state_estimator,
         measurements=measurements,
         pd_poisson=pd_poisson,
-        lambda_fa=lambda_fa)
+        lambda_fa=lambda_fa
+    )
 
     poisson_post = copy.deepcopy(self.poisson)
     poisson_post.state.weight *= 1 - pd_poisson
@@ -142,7 +146,8 @@ class TOMBP:
     mb_hypos, mb_hypo_mask, w_updated = self.make_mb_hypos(
         state_estimator=state_estimator,
         measurements=measurements,
-        pd_func=pd_func)
+        pd_func=pd_func
+    )
 
     ########################################################
     # Data association and track updates
@@ -158,12 +163,14 @@ class TOMBP:
     else:
       p_updated, p_new = self.spa(w_updated=w_updated, w_new=w_new)
 
-    mb_post, meta = self.tomb(p_updated=p_updated,
-                              p_new=p_new,
-                              mb_hypos=mb_hypos,
-                              mb_hypo_mask=mb_hypo_mask,
-                              new_berns=new_berns,
-                              meta=meta)
+    mb_post, meta = self.tomb(
+        p_updated=p_updated,
+        p_new=p_new,
+        mb_hypos=mb_hypos,
+        mb_hypo_mask=mb_hypo_mask,
+        new_berns=new_berns,
+        meta=meta
+    )
 
     return mb_post, poisson_post, meta
 
@@ -279,11 +286,12 @@ class TOMBP:
       valid = np.zeros((n_u, m), dtype=bool)
       # Valid poisson-measurement pairs
       # Valid = in gate and detectable
-      detectable = pd_poisson > self.poisson_pd_gate_threshold
+      detectable = pd_poisson > self.poisson_pd_threshold
       in_gate = state_estimator.gate(
           measurements=measurements,
           state=self.poisson.state[detectable],
-          pg=self.pg)
+          pg=self.pg
+      )
       valid[detectable] = in_gate
 
       # Compute likelihoods for all valid Poisson-measurement pairs
@@ -292,19 +300,21 @@ class TOMBP:
       valid_poisson = np.argwhere(np.any(valid, axis=1)).ravel()
       l_poisson[np.ix_(valid_poisson, valid_meas)] = state_estimator.likelihood(
           measurement=measurements[valid_meas],
-          state=self.poisson.state[valid_poisson])
+          state=self.poisson.state[valid_poisson]
+      )
 
       # Create a new track hypothesis for each measurement
       for im in range(m):
-        n_valid = np.count_nonzero(valid[:, im])
+        valid_u = valid[:, im]
+        n_valid = np.count_nonzero(valid_u)
         if n_valid == 0:
           continue
 
         mixture, _ = state_estimator.update(
-            state=self.poisson.state[valid[:, im]],
-            measurement=measurements[im])
-        mixture.weight *= l_poisson[valid[:, im],
-                                    im] * pd_poisson[valid[:, im]]
+            state=self.poisson.state[valid_u],
+            measurement=measurements[im]
+        )
+        mixture.weight *= l_poisson[valid_u, im] * pd_poisson[valid_u]
 
         sum_w_mixture = np.sum(mixture.weight)
         w_new[im] = sum_w_mixture + lambda_fa
@@ -317,7 +327,8 @@ class TOMBP:
           _, means[im], covars[im] = merge_gaussians(
               means=mixture.mean,
               covars=mixture.covar,
-              weights=mixture.weight)
+              weights=mixture.weight
+          )
 
       # Create Bernoulli components for each measurement
       new_berns = MultiBernoulli(
@@ -375,7 +386,8 @@ class TOMBP:
         in_gate = state_estimator.gate(
             measurements=measurements,
             state=self.mb.state,
-            pg=self.pg)
+            pg=self.pg
+        )
         mask[:, 1:] = in_gate
 
         l_mb = np.zeros((n, m))
@@ -383,7 +395,8 @@ class TOMBP:
         valid_mb = np.argwhere(np.any(in_gate, axis=1)).ravel()
         l_mb[np.ix_(valid_mb, valid_meas)] = state_estimator.likelihood(
             measurement=measurements[valid_meas],
-            state=self.mb.state[valid_mb])
+            state=self.mb.state[valid_mb]
+        )
 
         # Create hypotheses for each state-measurement pair
         for im in range(m):
@@ -392,7 +405,8 @@ class TOMBP:
           if n_valid > 0:
             state_post, _ = state_estimator.update(
                 state=self.mb.state[valid],
-                measurement=measurements[im])
+                measurement=measurements[im]
+            )
             r_post = np.ones(n_valid)
             hypos.append(MultiBernoulli(r=r_post, state=state_post))
             w_upd[valid, im+1] = self.mb[valid].r * \

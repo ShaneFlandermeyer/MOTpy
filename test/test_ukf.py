@@ -61,7 +61,6 @@ def test_update():
   ground_truth = np.array([0, 1, 0, 1])
   R = np.diag([0.1, np.deg2rad(0.1)])
   range_bearing = RangeBearingModel(covar=R)
-  cv = ConstantVelocity(ndim_state=state_dim, w=0)
   z = range_bearing(ground_truth, noise=False)
   
   pred_sigmas = merwe_scaled_sigma_points(

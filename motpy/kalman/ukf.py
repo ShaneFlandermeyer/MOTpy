@@ -26,6 +26,7 @@ class UnscentedKalmanFilter():
               sigma_points: np.ndarray,
               Wm: np.ndarray,
               Wc: np.ndarray,
+              model_args: Optional[Dict] = dict(),
               ) -> Tuple[Gaussian, Dict]:
     """
     UKF predict step
@@ -54,7 +55,7 @@ class UnscentedKalmanFilter():
             - Wc: Covariance weights for the unscented transform
     """
     # Transform sigma points to the prediction space
-    predicted_sigmas = self.transition_model(sigma_points, dt=dt)
+    predicted_sigmas = self.transition_model(sigma_points, dt=dt, **model_args)
 
     predicted_mean, predicted_covar = unscented_transform(
         sigmas=predicted_sigmas,
@@ -77,6 +78,7 @@ class UnscentedKalmanFilter():
              predicted_sigmas: np.ndarray,
              Wm: np.ndarray,
              Wc: np.ndarray,
+             model_args: Optional[Dict] = dict(),
              ) -> Tuple[Gaussian, Dict]:
     """
     UKF update step
@@ -103,7 +105,7 @@ class UnscentedKalmanFilter():
     """
 
     # Unscented transform in measurement space
-    measured_sigmas = self.measurement_model(predicted_sigmas)
+    measured_sigmas = self.measurement_model(predicted_sigmas, **model_args)
     z_pred, S = unscented_transform(
         sigmas=measured_sigmas,
         Wm=Wm,
