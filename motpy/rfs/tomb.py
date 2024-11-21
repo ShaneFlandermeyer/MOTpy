@@ -229,7 +229,7 @@ class TOMBP:
           x, P = x[None, ...], P[None, ...]
         mb = mb.append(r=r, state=Gaussian(mean=x, covar=P))
         meta['mb'][imb].update(
-            {'p_updated': p_updated[imb], 'p_new': 0, 'in_gate': valid})
+            {'p_updated': p_updated[imb], 'in_gate': valid})
 
     # Form new tracks
     n_new = new_berns.size
