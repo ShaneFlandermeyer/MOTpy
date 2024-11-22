@@ -144,5 +144,38 @@ def test_likelihood():
   assert np.allclose(l, l_expected)
 
 
+def test_gate():
+  state_dim = 2
+  linear = LinearMeasurementModel(
+      ndim_state=state_dim, covar=np.eye(state_dim)
+  )
+  ukf = UnscentedKalmanFilter(transition_model=None, measurement_model=linear)
+
+  Wm, Wc = merwe_sigma_weights(
+      ndim_state=state_dim, alpha=0.1, beta=2, kappa=0
+  )
+  distribution = Gaussian(mean=np.zeros(state_dim), covar=np.eye(state_dim))
+  sigma_points = merwe_scaled_sigma_points(
+      x=distribution.mean, P=distribution.covar, alpha=0.1, beta=2, kappa=0
+  )
+  state = UKFState(
+      distribution=distribution,
+      sigma_points=sigma_points,
+      Wm=Wm,
+      Wc=Wc
+  )
+
+  z = np.array([1, 1])
+  gate_mask = ukf.gate(measurements=z, state=state, pg=1)
+  expected = np.ones(1)
+  assert np.all(gate_mask == expected)
+  
+  z = np.array([5, 5])
+  gate_mask = ukf.gate(measurements=z, state=state, pg=0.999)
+  expected = np.zeros(1)
+  assert np.all(gate_mask == expected)
+  
+
+
 if __name__ == '__main__':
   pytest.main([__file__])

@@ -98,7 +98,7 @@ class KalmanFilter():
   def gate(self,
            measurements: np.ndarray,
            state: Gaussian,
-           pg: float = 0.999,
+           pg: float,
            **kwargs,
            ) -> np.ndarray:
     """
@@ -111,7 +111,7 @@ class KalmanFilter():
     state : Union[GaussianState, GaussianMixture]
         Predicted state distribution.
     pg : float, optional
-        Gate probability, by default 0.999
+        Gate probability
 
     Returns
     -------
@@ -124,7 +124,7 @@ class KalmanFilter():
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
     S = H @ P @ H.T + R
-    gate = EllipsoidalGate(pg=pg, ndim=measurements[0].size)
+    gate = EllipsoidalGate(pg=pg, ndim=measurements.shape[-1])
     gate_mask, _ = gate(
         x=measurements,
         mean=self.measurement_model(x, **kwargs),

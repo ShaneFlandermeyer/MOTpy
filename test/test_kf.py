@@ -84,12 +84,12 @@ def test_gate():
   z = np.array([1, 1])
   gate_mask = kf.gate(measurements=z, state=state, pg=1)
   expected = np.ones((1, 1))
-  assert np.allclose(gate_mask, expected)
+  assert np.all(gate_mask == expected)
   
   z = np.array([5, 5])
   gate_mask = kf.gate(measurements=z, state=state, pg=0.999)
   expected = np.zeros((1, 1))
-  assert np.allclose(gate_mask, expected)
+  assert np.all(gate_mask == expected)
 
 
 if __name__ == '__main__':

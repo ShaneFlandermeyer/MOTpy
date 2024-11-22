@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
+from motpy.gate import EllipsoidalGate
 from motpy.kalman.kf import KalmanFilter
 from motpy.kalman.sigma_points import merwe_scaled_sigma_points, merwe_sigma_weights
 from motpy.models.measurement import MeasurementModel
@@ -130,9 +131,7 @@ class UnscentedKalmanFilter():
     np.ndarray
         A matrix of likelihoods. Shape: (..., n, m)
     """
-    measured_sigmas = self.measurement_model(
-        state.sigma_points, **kwargs
-    )
+    measured_sigmas = self.measurement_model(state.sigma_points, **kwargs)
     z_pred, S = unscented_transform(
         sigmas=measured_sigmas,
         Wm=state.Wm,
@@ -145,6 +144,31 @@ class UnscentedKalmanFilter():
         mean=z_pred,
         covar=S
     )
+
+  def gate(self,
+           measurements: np.ndarray,
+           state: UKFState,
+           pg: float,
+           **kwargs,
+           ) -> np.ndarray:
+    assert self.measurement_model is not None
+
+    measured_sigmas = self.measurement_model(state.sigma_points, **kwargs)
+    z_pred, S = unscented_transform(
+        sigmas=measured_sigmas,
+        Wm=state.Wm,
+        Wc=state.Wc,
+        noise_covar=self.measurement_model.covar(),
+        residual_fn=self.measurement_residual_fn,
+    )
+    gate = EllipsoidalGate(pg=pg, ndim=measurements.shape[-1])
+    gate_mask, _ = gate(
+        x=measurements,
+        mean=z_pred,
+        covar=S
+    )
+
+    return gate_mask
 
 
 def unscented_transform(sigmas: np.ndarray,
