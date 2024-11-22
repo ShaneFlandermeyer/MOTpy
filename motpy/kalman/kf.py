@@ -62,26 +62,26 @@ class KalmanFilter():
     post_state = Gaussian(mean=x_post, covar=P_post, weight=state.weight)
 
     return post_state
-  
+
   def likelihood(
       self,
       measurement: np.ndarray,
       state: Gaussian,
-  ) -> float:
+  ) -> np.ndarray:
     """
-    Compute the likelihood of a measurement given the predicted state
+    Likelihood of measurement(s) conditioned on state estimate(s).
 
     Parameters
     ----------
     measurement : np.ndarray
-        Measurement
+        Array of measurements. Shape: (..., m, dz)
     predicted_state : GaussianState
-        Predicted state
+        Predicted state distribution. Shape: (..., n, dx)
 
     Returns
     -------
-    float
-        Likelihood
+    np.ndarray
+        A matrix of likelihoods. Shape: (..., n, m)
     """
 
     x, P = state.mean, state.covar
@@ -95,11 +95,11 @@ class KalmanFilter():
         x=measurement,
     )
 
-  # TODO: Remove this function from the class
   def gate(self,
-           state: Gaussian,
            measurements: np.ndarray,
+           state: Gaussian,
            pg: float = 0.999,
+           **kwargs,
            ) -> np.ndarray:
     """
     Gate a set of measurements with respect to one or more Gaussian components using the squared mahalanobis distance.
@@ -119,16 +119,16 @@ class KalmanFilter():
     """
     assert self.measurement_model is not None
 
-    if pg == 1.0:
-      return np.ones((*state.shape, len(measurements)), dtype=bool)
-
     x, P = state.mean, state.covar
 
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
-    z_pred = x @ H.T
     S = H @ P @ H.T + R
     gate = EllipsoidalGate(pg=pg, ndim=measurements[0].size)
-    return gate(measurements=measurements,
-                predicted_measurement=z_pred,
-                innovation_covar=S)[0]
+    gate_mask, _ = gate(
+        x=measurements,
+        mean=self.measurement_model(x, **kwargs),
+        covar=S
+    )
+
+    return gate_mask

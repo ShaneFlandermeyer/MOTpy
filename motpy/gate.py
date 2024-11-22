@@ -4,7 +4,7 @@ from typing import List, Tuple
 from scipy.stats import norm, chi2
 import math
 
-from motpy.measures import mahalanobis
+from motpy.distributions.gaussian import mahalanobis
 
 
 class EllipsoidalGate:
@@ -13,37 +13,18 @@ class EllipsoidalGate:
     self.ndim = ndim
 
   def __call__(self,
-               measurements: np.ndarray,
-               predicted_measurement: np.ndarray,
-               innovation_covar: np.ndarray
+               x: np.ndarray,
+               mean: np.ndarray,
+               covar: np.ndarray,
                ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Gate a set of measurements with respect to one or more predicted measurements.
-
-    Parameters
-    ----------
-    measurements : np.ndarray
-        Measurements to gate. Shape: (M, nz)
-    predicted_measurement : np.ndarray
-        Predicted measurements (mahalanobis mean) to be gated. Shape: (N, nz)
-        TODO: Rename this param to predicted_measurementS
-    innovation_covar : np.ndarray
-        Innovation covariance matrix for predicted states. Shape: (N, nz, nz)
-
-    Returns
-    -------
-    Tuple[np.ndarray, np.ndarray]
-        - in_gate: Boolean array indicating whether each measurement is within the gate.
-        - dist: Squared Mahalanobis distance for each measurement.
-    """
-    z = measurements
-    z_pred = predicted_measurement
-    S = innovation_covar
-
-    # Thresholding for all prediction/measurement pairs
-    dist = mahalanobis(mean=z_pred, covar=S, points=z)**2
+    # Thresholding for all pairs
+    dist = mahalanobis(
+        x=x,
+        mean=mean,
+        covar=covar
+    )
     t = self.threshold(pg=self.pg, ndim=self.ndim)
-    in_gate = dist < t
+    in_gate = dist**2 < t
     return in_gate, dist
 
   @staticmethod
@@ -51,12 +32,11 @@ class EllipsoidalGate:
   def threshold(pg: int, ndim: int) -> float:
     return chi2.ppf(pg, ndim)
 
-  def volume(self, innovation_covar: np.ndarray):
+  def volume(self, covar: np.ndarray):
     gamma = self.threshold(pg=self.pg, ndim=self.ndim)
-    S = innovation_covar
 
     c = np.pi**(self.ndim/2) / math.gamma(self.ndim/2+1)
-    return c*gamma**(self.ndim/2) * np.sqrt(np.linalg.det(S))
+    return c*gamma**(self.ndim/2) * np.sqrt(np.linalg.det(covar))
 
 
 def gate_probability(threshold: float, ndim: int) -> float:
@@ -103,4 +83,4 @@ if __name__ == '__main__':
 
   print(gate(measurements=measurements,
         predicted_measurement=z_pred, innovation_covar=S))
-  print(gate.volume(innovation_covar=S))
+  print(gate.volume(covar=S))

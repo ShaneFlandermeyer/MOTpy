@@ -8,6 +8,7 @@ from motpy.kalman.sigma_points import merwe_scaled_sigma_points, merwe_sigma_wei
 from motpy.models.measurement import MeasurementModel
 from motpy.models.transition import TransitionModel
 from motpy.distributions.gaussian import Gaussian
+import motpy.distributions.gaussian as gaussian
 
 
 @dataclass
@@ -64,12 +65,13 @@ class UnscentedKalmanFilter():
   def update(self,
              predicted_state: UKFState,
              measurement: np.ndarray,
-             model_args: Optional[Dict] = dict(),
+             **kwargs
              ) -> Tuple[Gaussian, Dict]:
 
     # Unscented transform in measurement space
     measured_sigmas = self.measurement_model(
-        predicted_state.sigma_points, **model_args)
+        predicted_state.sigma_points, **kwargs
+    )
     z_pred, S = unscented_transform(
         sigmas=measured_sigmas,
         Wm=predicted_state.Wm,
@@ -93,7 +95,7 @@ class UnscentedKalmanFilter():
     x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, y)
     P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
     P_post = 0.5*(P_post + P_post.swapaxes(-1, -2))
-    
+
     post_state = UKFState(
         distribution=Gaussian(
             mean=x_post,
@@ -106,6 +108,43 @@ class UnscentedKalmanFilter():
     )
 
     return post_state
+
+  def likelihood(
+      self,
+      measurement: np.ndarray,
+      state: UKFState,
+      **kwargs
+  ) -> np.ndarray:
+    """
+    Likelihood of measurement(s) conditioned on state estimate(s).
+
+    Parameters
+    ----------
+    measurement : np.ndarray
+        Array of measurements. Shape: (..., m, dz)
+    predicted_state : UKFState
+        Predicted state distribution. Shape: (..., n, dx)
+
+    Returns
+    -------
+    np.ndarray
+        A matrix of likelihoods. Shape: (..., n, m)
+    """
+    measured_sigmas = self.measurement_model(
+        state.sigma_points, **kwargs
+    )
+    z_pred, S = unscented_transform(
+        sigmas=measured_sigmas,
+        Wm=state.Wm,
+        Wc=state.Wc,
+        noise_covar=self.measurement_model.covar(),
+        residual_fn=self.measurement_residual_fn,
+    )
+    return gaussian.likelihood(
+        x=measurement,
+        mean=z_pred,
+        covar=S
+    )
 
 
 def unscented_transform(sigmas: np.ndarray,

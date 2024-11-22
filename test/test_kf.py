@@ -10,6 +10,7 @@ from motpy.distributions import Gaussian
 from motpy.kalman import KalmanFilter
 from motpy.models.transition import ConstantVelocity
 from motpy.models.measurement import LinearMeasurementModel
+import scipy.stats
 
 
 def test_predict():
@@ -60,5 +61,37 @@ def test_update():
   assert np.allclose(state_post.covar, P_expected)
 
 
+def test_likelihood():
+  linear = LinearMeasurementModel(ndim_state=2, covar=np.eye(2))
+  kf = KalmanFilter(transition_model=None, measurement_model=linear)
+
+  state = Gaussian(mean=np.array([0, 0]), covar=np.eye(2))
+  z = np.array([1, 1])
+  l = kf.likelihood(z, state)
+
+  l_expected = scipy.stats.multivariate_normal.pdf(
+      z, state.mean, state.covar+linear.covar()
+  )
+
+  assert np.allclose(l, l_expected)
+
+
+def test_gate():
+  linear = LinearMeasurementModel(ndim_state=2, covar=np.eye(2))
+  kf = KalmanFilter(transition_model=None, measurement_model=linear)
+
+  state = Gaussian(mean=np.array([0, 0]), covar=np.eye(2))
+  z = np.array([1, 1])
+  gate_mask = kf.gate(measurements=z, state=state, pg=1)
+  expected = np.ones((1, 1))
+  assert np.allclose(gate_mask, expected)
+  
+  z = np.array([5, 5])
+  gate_mask = kf.gate(measurements=z, state=state, pg=0.999)
+  expected = np.zeros((1, 1))
+  assert np.allclose(gate_mask, expected)
+
+
 if __name__ == '__main__':
+  test_gate()
   pytest.main([__file__])

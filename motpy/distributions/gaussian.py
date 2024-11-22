@@ -108,8 +108,6 @@ class Gaussian():
       std_normal = std_normal.clip(-max_val, max_val)
     return mu + np.einsum('nij, nmj -> nmi', np.linalg.cholesky(P), std_normal)
 
-# @profile
-
 
 def merge_gaussians(
         means: np.ndarray,
@@ -140,44 +138,59 @@ def merge_gaussians(
   w_merged = np.sum(w, axis=-1)
   w /= w_merged[..., None] + 1e-15
   mu_merged = np.einsum('...i, ...ij -> ...j', w, mu)
-  
+
   y = mu - mu_merged
   y_outer = np.einsum('...i, ...j -> ...ij', y, y)
   P_merged = np.einsum('...i, ...ijk -> ...jk', w, P + y_outer)
   return w_merged, mu_merged, P_merged
 
 
-def likelihood(z: np.ndarray,
-               z_pred: np.ndarray,
-               S: np.ndarray
-               ) -> np.ndarray:
-  """
-  Compute the likelihood for a set of measurement/state pairs.
+def likelihood(
+        x: np.ndarray,
+        mean: np.ndarray,
+        covar: np.ndarray,
+) -> np.ndarray:
+  x = np.atleast_2d(x)
+  y = x[..., None, :] - mean[..., None, :]
 
-  Parameters>
+  Pi = np.linalg.inv(covar)
+  det_P = np.linalg.det(covar)
+
+  num = np.exp(-0.5 * np.einsum('...mi, ...ii, ...im -> ...m',
+                                y, Pi, y.swapaxes(-1, -2))
+               )
+  den = np.sqrt((2 * np.pi) ** x.shape[-1] * det_P)
+  likelihood = num / den[..., None]
+
+  return likelihood
+
+
+def mahalanobis(x: np.ndarray,
+                mean: np.ndarray,
+                covar: np.ndarray,
+                ) -> np.ndarray:
+  """
+  Batched mahalanobis distance.
+
+  Parameters
   ----------
-  z : np.ndarray
-      Array of measurements. Shape: (M, nz)
-  z_pred : np.ndarray
-      Array of predicted measurements. Shape: (N, nz)
-  S : np.ndarray
-      Innovation covariance. Shape: (N, nz, nz)
+  mean : np.ndarray
+      Means of the reference Gaussian distributions. Shape (N, D).
+  covar : np.ndarray
+      Covars of the reference Gaussian distributions. Shape (N, D, D).
+  points : np.ndarray
+      Query points. Shape (M, D).
 
   Returns
   -------
   np.ndarray
-      Likelihood for each measurement/state pair. Shape: (M, N)
+      Mahalanobis distance for each reference/query pair. Shape (N, M).
   """
-  nz = z.shape[-1]
+  x = np.atleast_2d(x)
+  y = x[..., None, :] - mean[..., None, :]
 
-  z = z[np.newaxis, ...]
-  z_pred = z_pred[..., np.newaxis, :]
-  y = z - z_pred  # (N, M, nz)
-
-  Si = np.linalg.inv(S)
-  det_S = np.linalg.det(S)[:, np.newaxis]
-
-  exponent = -0.5 * np.einsum('nmi, nii, nim -> nm', y, Si, y.swapaxes(-1, -2))
-  likelihoods = np.exp(exponent) / np.sqrt((2 * np.pi) ** nz * det_S)
-
-  return likelihoods
+  dist = np.sqrt(
+      np.einsum('...nmi, ...nim ->...nm',
+                y, np.linalg.inv(covar) @ y.swapaxes(-1, -2))
+  )
+  return dist
