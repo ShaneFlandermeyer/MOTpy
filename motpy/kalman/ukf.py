@@ -1,11 +1,21 @@
+from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
+from motpy.kalman.kf import KalmanFilter
 from motpy.kalman.sigma_points import merwe_scaled_sigma_points, merwe_sigma_weights
 from motpy.models.measurement import MeasurementModel
 from motpy.models.transition import TransitionModel
 from motpy.distributions.gaussian import Gaussian
+
+
+@dataclass
+class UKFState:
+  distribution: Optional[Gaussian] = None
+  sigma_points: Optional[np.ndarray] = None
+  Wm: Optional[np.ndarray] = None
+  Wc: Optional[np.ndarray] = None
 
 
 class UnscentedKalmanFilter():
@@ -21,119 +31,81 @@ class UnscentedKalmanFilter():
     self.measurement_residual_fn = measurement_residual_fn
 
   def predict(self,
-              state: Gaussian,
+              state: UKFState,
               dt: float,
-              sigma_points: np.ndarray,
-              Wm: np.ndarray,
-              Wc: np.ndarray,
               model_args: Optional[Dict] = dict(),
-              ) -> Tuple[Gaussian, Dict]:
-    """
-    UKF predict step
+              ) -> UKFState:
+    # Transform sigma points to prediction space
+    predicted_sigmas = self.transition_model(
+        state.sigma_points, dt=dt, **model_args
+    )
 
-    Parameters
-    ----------
-    state : Gaussian
-        Object states
-    dt : float
-        Prediction time step
-    sigma_points : np.ndarray
-        2n + 1 x n matrix of sigma points
-    Wm : np.ndarray
-        Mean weights for the unscented transform
-    Wc : np.ndarray
-        Covariance weights for the unscented transform
-
-    Returns
-    -------
-    Tuple[Gaussian, Dict]
-        A tuple containing the:
-        - Predicted state object
-        - Filter state dict with the following updated keys:
-            - predicted_sigmas: Predicted sigma points
-            - Wm: Mean weights for the unscented transform
-            - Wc: Covariance weights for the unscented transform
-    """
-    # Transform sigma points to the prediction space
-    predicted_sigmas = self.transition_model(sigma_points, dt=dt, **model_args)
-
-    predicted_mean, predicted_covar = unscented_transform(
+    x_pred, P_pred = unscented_transform(
         sigmas=predicted_sigmas,
-        Wm=Wm,
-        Wc=Wc,
+        Wm=state.Wm,
+        Wc=state.Wc,
         noise_covar=self.transition_model.covar(dt=dt),
         residual_fn=self.state_residual_fn,
     )
-    predicted_state = Gaussian(
-        mean=predicted_mean, covar=predicted_covar, weight=state.weight)
 
-    filter_state = dict(
-        predicted_sigmas=predicted_sigmas
+    predicted_state = UKFState(
+        distribution=Gaussian(
+            mean=x_pred,
+            covar=P_pred,
+            weight=state.distribution.weight
+        ),
+        sigma_points=predicted_sigmas,
+        Wm=state.Wm,
+        Wc=state.Wc
     )
-    return predicted_state, filter_state
+
+    return predicted_state
 
   def update(self,
-             predicted_state: Gaussian,
+             predicted_state: UKFState,
              measurement: np.ndarray,
-             predicted_sigmas: np.ndarray,
-             Wm: np.ndarray,
-             Wc: np.ndarray,
              model_args: Optional[Dict] = dict(),
              ) -> Tuple[Gaussian, Dict]:
-    """
-    UKF update step
-
-    Parameters
-    ----------
-    predicted_state : GaussianState
-        Predicted state
-    measurement : np.ndarray
-        Measurement vectors
-    predicted_sigmas : np.ndarray 
-        2n + 1 x n matrix of sigma points in prediction space
-    Wm : np.ndarray
-        Mean weights for the unscented transform
-    Wc : np.ndarray
-        Covariance weights for the unscented transform
-
-    Returns
-    -------
-    Tuple[GaussianState, Dict]
-        A tuple containing the:
-        - Predicted state
-        - Filter state dict with sigma points in measurement space
-    """
 
     # Unscented transform in measurement space
-    measured_sigmas = self.measurement_model(predicted_sigmas, **model_args)
+    measured_sigmas = self.measurement_model(
+        predicted_state.sigma_points, **model_args)
     z_pred, S = unscented_transform(
         sigmas=measured_sigmas,
-        Wm=Wm,
-        Wc=Wc,
+        Wm=predicted_state.Wm,
+        Wc=predicted_state.Wc,
         noise_covar=self.measurement_model.covar(),
         residual_fn=self.measurement_residual_fn,
     )
 
     # Standard kalman update
-    x_pred, P_pred = predicted_state.mean, predicted_state.covar
+    x_pred = predicted_state.distribution.mean
+    P_pred = predicted_state.distribution.covar
     z = measurement
-    Pxz = np.einsum('...n, ...ni, ...nj -> ...ij',
-                    Wc,
-                    self.state_residual_fn(predicted_sigmas, x_pred),
-                    self.measurement_residual_fn(measured_sigmas, z_pred))
+    Pxz = np.einsum(
+        '...n, ...ni, ...nj -> ...ij',
+        predicted_state.Wc,
+        self.state_residual_fn(predicted_state.sigma_points, x_pred),
+        self.measurement_residual_fn(measured_sigmas, z_pred)
+    )
     y = self.measurement_residual_fn(z, z_pred)
     K = Pxz @ np.linalg.inv(S)
     x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, y)
     P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
     P_post = 0.5*(P_post + P_post.swapaxes(-1, -2))
-    post_state = Gaussian(
-        mean=x_post, covar=P_post, weight=predicted_state.weight
+    
+    post_state = UKFState(
+        distribution=Gaussian(
+            mean=x_post,
+            covar=P_post,
+            weight=predicted_state.distribution.weight
+        ),
+        sigma_points=measured_sigmas,
+        Wm=predicted_state.Wm,
+        Wc=predicted_state.Wc
     )
 
-    filter_state = dict(
-        measured_sigmas=measured_sigmas,
-    )
-    return post_state, filter_state
+    return post_state
 
 
 def unscented_transform(sigmas: np.ndarray,

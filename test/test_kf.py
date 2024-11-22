@@ -27,7 +27,7 @@ def test_predict():
   kf = KalmanFilter(
       transition_model=cv,
       measurement_model=None)
-  pred_state, _ = kf.predict(state=state, dt=dt)
+  pred_state = kf.predict(state=state, dt=dt)
   x_expected, P_expected = predict(
       x=state.mean, P=state.covar, F=F, Q=Q)
   assert np.allclose(pred_state.mean, x_expected)
@@ -53,7 +53,7 @@ def test_update():
       measurement_model=lin,
   )
 
-  state_post, _ = kf.update(measurement=z, state=state)
+  state_post = kf.update(measurement=z, state=state)
   x_expected, P_expected = update(
       x=state.mean, P=state.covar, z=z, R=R, H=H)
   assert np.allclose(state_post.mean, x_expected)

@@ -19,9 +19,8 @@ class KalmanFilter():
   def predict(self,
               state: Gaussian,
               dt: float,
-              filter_state: Optional[Dict] = None,
               model_args: Optional[Dict] = dict(),
-              ) -> Tuple[Gaussian, Dict]:
+              ) -> Gaussian:
     assert self.transition_model is not None
 
     x, P = state.mean, state.covar
@@ -32,16 +31,13 @@ class KalmanFilter():
     x_pred = self.transition_model(x, dt=dt, **model_args)
     P_pred = F @ P @ F.T + Q
 
-    predicted_state = Gaussian(mean=x_pred,
-                                    covar=P_pred,
-                                    weight=state.weight)
+    predicted_state = Gaussian(mean=x_pred, covar=P_pred, weight=state.weight)
 
-    return predicted_state, filter_state
+    return predicted_state
 
   def update(self,
              state: Gaussian,
              measurement: Optional[np.ndarray] = None,
-             filter_state: Optional[Dict] = None,
              model_args: Optional[Dict] = dict(),
              ) -> Tuple[Gaussian, Dict]:
     assert self.measurement_model is not None
@@ -63,12 +59,43 @@ class KalmanFilter():
       z_pred = self.measurement_model(x_pred, **model_args)
       x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, z - z_pred)
 
-    post_state = Gaussian(mean=x_post,
-                               covar=P_post,
-                               weight=state.weight)
+    post_state = Gaussian(mean=x_post, covar=P_post, weight=state.weight)
 
-    return post_state, filter_state
+    return post_state
+  
+  def likelihood(
+      self,
+      measurement: np.ndarray,
+      state: Gaussian,
+  ) -> float:
+    """
+    Compute the likelihood of a measurement given the predicted state
 
+    Parameters
+    ----------
+    measurement : np.ndarray
+        Measurement
+    predicted_state : GaussianState
+        Predicted state
+
+    Returns
+    -------
+    float
+        Likelihood
+    """
+
+    x, P = state.mean, state.covar
+
+    H = self.measurement_model.matrix()
+    R = self.measurement_model.covar()
+    S = H @ P @ H.swapaxes(-1, -2) + R
+    return gaussian.likelihood(
+        mean=self.measurement_model(x),
+        covar=S,
+        x=measurement,
+    )
+
+  # TODO: Remove this function from the class
   def gate(self,
            state: Gaussian,
            measurements: np.ndarray,
@@ -105,35 +132,3 @@ class KalmanFilter():
     return gate(measurements=measurements,
                 predicted_measurement=z_pred,
                 innovation_covar=S)[0]
-
-  def likelihood(
-      self,
-      measurement: np.ndarray,
-      state: Gaussian,
-  ) -> float:
-    """
-    Compute the likelihood of a measurement given the predicted state
-
-    Parameters
-    ----------
-    measurement : np.ndarray
-        Measurement
-    predicted_state : GaussianState
-        Predicted state
-
-    Returns
-    -------
-    float
-        Likelihood
-    """
-
-    x, P = state.mean, state.covar
-
-    H = self.measurement_model.matrix()
-    R = self.measurement_model.covar()
-    S = H @ P @ H.swapaxes(-1, -2) + R
-    return gaussian.likelihood(
-        z=measurement,
-        z_pred=x @ H.T,
-        S=S
-    )
