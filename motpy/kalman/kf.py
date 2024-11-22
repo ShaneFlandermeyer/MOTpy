@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 
@@ -6,6 +7,11 @@ from motpy.models.transition.base import TransitionModel
 from motpy.distributions.gaussian import Gaussian
 import motpy.distributions.gaussian as gaussian
 from motpy.gate import EllipsoidalGate
+
+
+@dataclass
+class KFState():
+  distribution: Optional[Gaussian] = None
 
 
 class KalmanFilter():
@@ -17,13 +23,13 @@ class KalmanFilter():
     self.measurement_model = measurement_model
 
   def predict(self,
-              state: Gaussian,
+              state: KFState,
               dt: float,
               model_args: Optional[Dict] = dict(),
-              ) -> Gaussian:
+              ) -> KFState:
     assert self.transition_model is not None
 
-    x, P = state.mean, state.covar
+    x, P = state.distribution.mean, state.distribution.covar
 
     F = self.transition_model.matrix(dt=dt)
     Q = self.transition_model.covar(dt=dt)
@@ -31,18 +37,22 @@ class KalmanFilter():
     x_pred = self.transition_model(x, dt=dt, **model_args)
     P_pred = F @ P @ F.T + Q
 
-    predicted_state = Gaussian(mean=x_pred, covar=P_pred, weight=state.weight)
+    predicted_state = KFState(
+        distribution=Gaussian(
+            mean=x_pred, covar=P_pred, weight=state.distribution.weight
+        )
+    )
 
     return predicted_state
 
   def update(self,
-             state: Gaussian,
+             state: KFState,
              measurement: Optional[np.ndarray] = None,
              model_args: Optional[Dict] = dict(),
-             ) -> Tuple[Gaussian, Dict]:
+             ) -> KFState:
     assert self.measurement_model is not None
 
-    x_pred, P_pred = state.mean, state.covar
+    x_pred, P_pred = state.distribution.mean, state.distribution.covar
 
     z = measurement
     H = self.measurement_model.matrix()
@@ -59,7 +69,11 @@ class KalmanFilter():
       z_pred = self.measurement_model(x_pred, **model_args)
       x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, z - z_pred)
 
-    post_state = Gaussian(mean=x_post, covar=P_post, weight=state.weight)
+    post_state = KFState(
+        distribution=Gaussian(
+            mean=x_post, covar=P_post, weight=state.distribution.weight
+        )
+    )
 
     return post_state
 

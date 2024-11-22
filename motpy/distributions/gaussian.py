@@ -151,7 +151,7 @@ def likelihood(
         covar: np.ndarray,
 ) -> np.ndarray:
   x = np.atleast_2d(x)
-  y = x[..., None, :] - mean[..., None, :]
+  y = x[..., None, :, :] - mean[..., None, :]
 
   Pi = np.linalg.inv(covar)
   det_P = np.linalg.det(covar)
@@ -187,7 +187,7 @@ def mahalanobis(x: np.ndarray,
       Mahalanobis distance for each reference/query pair. Shape (N, M).
   """
   x = np.atleast_2d(x)
-  y = x[..., None, :] - mean[..., None, :]
+  y = x[..., None, :, :] - mean[..., None, :]
 
   dist = np.sqrt(
       np.einsum('...nmi, ...nim ->...nm',
