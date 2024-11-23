@@ -4,8 +4,8 @@ import pytest
 from filterpy.kalman import UnscentedKalmanFilter as UKF
 from filterpy.kalman.sigma_points import MerweScaledSigmaPoints
 
-from motpy.distributions.gaussian import Gaussian
-from motpy.kalman import UnscentedKalmanFilter, UKFState
+from motpy.distributions.gaussian import Gaussian, SigmaPointGaussian
+from motpy.kalman import UnscentedKalmanFilter
 from motpy.kalman.sigma_points import (merwe_scaled_sigma_points,
                                        merwe_sigma_weights)
 from motpy.models.measurement.linear import LinearMeasurementModel
@@ -26,7 +26,7 @@ def test_predict():
       mean=np.array([0, 1, 0, 1]),
       covar=np.diag([1., 0.5, 1., 0.5])
   )
-  state_dim = distribution.state_dim
+  state_dim = distribution.ndim
 
   # Motpy UKF
   cv = ConstantVelocity(ndim_state=state_dim, w=w, seed=seed)
@@ -41,7 +41,7 @@ def test_predict():
   Wm, Wc = merwe_sigma_weights(
       ndim_state=state_dim, alpha=alpha, beta=beta, kappa=kappa
   )
-  state = UKFState(
+  state = SigmaPointGaussian(
       distribution=distribution,
       sigma_points=sigmas,
       Wm=Wm,
@@ -51,7 +51,14 @@ def test_predict():
 
   # Filterpy UKF
   sigmas = MerweScaledSigmaPoints(n=4, alpha=0.1, beta=2, kappa=0)
-  expected = UKF(dim_x=4, dim_z=0, dt=dt, hx=None, fx=cv, points=sigmas)
+  expected = UKF(
+      dim_x=4,
+      dim_z=0,
+      dt=dt,
+      hx=None,
+      fx=cv,
+      points=sigmas
+  )
   expected.x = distribution.mean
   expected.P = distribution.covar
   expected.Q = cv.covar(dt=dt)
@@ -73,7 +80,7 @@ def test_update():
   R = np.diag([0.1, np.deg2rad(0.1)])
   range_bearing = RangeBearingModel(covar=R)
 
-  state_dim = distribution.state_dim
+  state_dim = distribution.ndim
   ground_truth = np.array([0, 1, 0, 1])
   z = range_bearing(ground_truth, noise=False)
 
@@ -85,7 +92,7 @@ def test_update():
   )
 
   # Motpy UKF
-  state = UKFState(
+  state = SigmaPointGaussian(
       distribution=distribution,
       sigma_points=sigmas,
       Wm=Wm,
@@ -100,9 +107,16 @@ def test_update():
 
   # Filterpy UKF
   points = MerweScaledSigmaPoints(
-      n=state_dim, alpha=alpha, beta=beta, kappa=kappa)
-  expected = UKF(dim_x=4, dim_z=2, dt=0, fx=None,
-                 hx=range_bearing, points=points)
+      n=state_dim, alpha=alpha, beta=beta, kappa=kappa
+  )
+  expected = UKF(
+      dim_x=4,
+      dim_z=2,
+      dt=0,
+      fx=None,
+      hx=range_bearing,
+      points=points
+  )
   expected.x = distribution.mean
   expected.P = distribution.covar
   expected.R = R
@@ -127,7 +141,7 @@ def test_likelihood():
   sigma_points = merwe_scaled_sigma_points(
       x=distribution.mean, P=distribution.covar, alpha=0.1, beta=2, kappa=0
   )
-  state = UKFState(
+  state = SigmaPointGaussian(
       distribution=distribution,
       sigma_points=sigma_points,
       Wm=Wm,
@@ -158,7 +172,7 @@ def test_gate():
   sigma_points = merwe_scaled_sigma_points(
       x=distribution.mean, P=distribution.covar, alpha=0.1, beta=2, kappa=0
   )
-  state = UKFState(
+  state = SigmaPointGaussian(
       distribution=distribution,
       sigma_points=sigma_points,
       Wm=Wm,
@@ -169,12 +183,11 @@ def test_gate():
   gate_mask = ukf.gate(measurements=z, state=state, pg=1)
   expected = np.ones(1)
   assert np.all(gate_mask == expected)
-  
+
   z = np.array([5, 5])
   gate_mask = ukf.gate(measurements=z, state=state, pg=0.999)
   expected = np.zeros(1)
   assert np.all(gate_mask == expected)
-  
 
 
 if __name__ == '__main__':

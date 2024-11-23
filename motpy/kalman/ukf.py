@@ -1,23 +1,13 @@
-from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from __future__ import annotations
+from typing import Dict, Tuple, Any
 
 import numpy as np
 
 from motpy.gate import EllipsoidalGate
-from motpy.kalman.kf import KalmanFilter
-from motpy.kalman.sigma_points import merwe_scaled_sigma_points, merwe_sigma_weights
 from motpy.models.measurement import MeasurementModel
 from motpy.models.transition import TransitionModel
-from motpy.distributions.gaussian import Gaussian
+from motpy.distributions.gaussian import Gaussian, SigmaPointGaussian
 import motpy.distributions.gaussian as gaussian
-
-
-@dataclass
-class UKFState:
-  distribution: Optional[Gaussian] = None
-  sigma_points: Optional[np.ndarray] = None
-  Wm: Optional[np.ndarray] = None
-  Wc: Optional[np.ndarray] = None
 
 
 class UnscentedKalmanFilter():
@@ -33,13 +23,13 @@ class UnscentedKalmanFilter():
     self.measurement_residual_fn = measurement_residual_fn
 
   def predict(self,
-              state: UKFState,
+              state: SigmaPointGaussian,
               dt: float,
-              model_args: Optional[Dict] = dict(),
-              ) -> UKFState:
+              **kwargs,
+              ) -> SigmaPointGaussian:
     # Transform sigma points to prediction space
     predicted_sigmas = self.transition_model(
-        state.sigma_points, dt=dt, **model_args
+        state.sigma_points, dt=dt, **kwargs
     )
 
     x_pred, P_pred = unscented_transform(
@@ -50,7 +40,7 @@ class UnscentedKalmanFilter():
         residual_fn=self.state_residual_fn,
     )
 
-    predicted_state = UKFState(
+    predicted_state = SigmaPointGaussian(
         distribution=Gaussian(
             mean=x_pred,
             covar=P_pred,
@@ -64,10 +54,10 @@ class UnscentedKalmanFilter():
     return predicted_state
 
   def update(self,
-             predicted_state: UKFState,
+             predicted_state: SigmaPointGaussian,
              measurement: np.ndarray,
              **kwargs
-             ) -> Tuple[Gaussian, Dict]:
+             ) -> Tuple[Gaussian, Dict[str, Any]]:
 
     # Unscented transform in measurement space
     measured_sigmas = self.measurement_model(
@@ -97,7 +87,7 @@ class UnscentedKalmanFilter():
     P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
     P_post = 0.5*(P_post + P_post.swapaxes(-1, -2))
 
-    post_state = UKFState(
+    post_state = SigmaPointGaussian(
         distribution=Gaussian(
             mean=x_post,
             covar=P_post,
@@ -113,7 +103,7 @@ class UnscentedKalmanFilter():
   def likelihood(
       self,
       measurement: np.ndarray,
-      state: UKFState,
+      state: SigmaPointGaussian,
       **kwargs
   ) -> np.ndarray:
     """
@@ -123,7 +113,7 @@ class UnscentedKalmanFilter():
     ----------
     measurement : np.ndarray
         Array of measurements. Shape: (..., m, dz)
-    predicted_state : UKFState
+    predicted_state : SigmaPointGaussian
         Predicted state distribution. Shape: (..., n, dx)
 
     Returns
@@ -147,7 +137,7 @@ class UnscentedKalmanFilter():
 
   def gate(self,
            measurements: np.ndarray,
-           state: UKFState,
+           state: SigmaPointGaussian,
            pg: float,
            **kwargs,
            ) -> np.ndarray:

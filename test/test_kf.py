@@ -7,7 +7,7 @@ from motpy.kalman import KalmanFilter
 import numpy as np
 
 from motpy.distributions import Gaussian
-from motpy.kalman import KalmanFilter, KFState
+from motpy.kalman import KalmanFilter
 from motpy.models.transition import ConstantVelocity
 from motpy.models.measurement import LinearMeasurementModel
 import scipy.stats
@@ -17,11 +17,9 @@ def test_predict():
   """
   Test kalman predict step. Example data from kalman filter ebook.
   """
-  state = KFState(
-      distribution=Gaussian(
-          mean=np.array([11.35, 4.5]),
-          covar=np.array([[545, 150], [150, 500]])
-      )
+  state = Gaussian(
+      mean=np.array([11.35, 4.5]),
+      covar=np.array([[545, 150], [150, 500]])
   )
   dt = 0.3
   cv = ConstantVelocity(ndim_state=2, w=0.01, seed=0)
@@ -34,9 +32,10 @@ def test_predict():
   )
   pred_state = kf.predict(state=state, dt=dt)
   x_expected, P_expected = predict(
-      x=state.distribution.mean, P=state.distribution.covar, F=F, Q=Q)
-  assert np.allclose(pred_state.distribution.mean, x_expected)
-  assert np.allclose(pred_state.distribution.covar, P_expected)
+      x=state.mean, P=state.covar, F=F, Q=Q
+  )
+  assert np.allclose(pred_state.mean, x_expected)
+  assert np.allclose(pred_state.covar, P_expected)
 
 
 def test_update():
@@ -49,22 +48,18 @@ def test_update():
   H = lin.matrix()
   R = lin.covar()
   z = 1
-  state = KFState(
-      distribution=Gaussian(
-          mean=np.array([12.7, 4.5]),
-          covar=np.array([[545, 150], [150, 500]])
-      )
+  state = Gaussian(
+      mean=np.array([12.7, 4.5]),
+      covar=np.array([[545, 150], [150, 500]])
   )
-  kf = KalmanFilter(
-      transition_model=cv,
-      measurement_model=lin,
-  )
+  kf = KalmanFilter(transition_model=cv, measurement_model=lin)
 
   post_state = kf.update(measurement=z, state=state)
   x_expected, P_expected = update(
-      x=state.distribution.mean, P=state.distribution.covar, z=z, R=R, H=H)
-  assert np.allclose(post_state.distribution.mean, x_expected)
-  assert np.allclose(post_state.distribution.covar, P_expected)
+      x=state.mean, P=state.covar, z=z, R=R, H=H
+  )
+  assert np.allclose(post_state.mean, x_expected)
+  assert np.allclose(post_state.covar, P_expected)
 
 
 def test_likelihood():
@@ -99,5 +94,4 @@ def test_gate():
 
 
 if __name__ == '__main__':
-  test_gate()
   pytest.main([__file__])

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime
 from typing import *
 
 import numpy as np
@@ -19,20 +18,20 @@ class Gaussian():
       covar: Optional[np.ndarray],
       weight: Optional[np.ndarray] = None,
   ):
-    shape, state_dim = mean.shape[:-1], mean.shape[-1]
+    shape, ndim = mean.shape[:-1], mean.shape[-1]
 
-    self.mean = np.reshape(mean, shape + (state_dim,))
-    self.covar = np.reshape(covar, shape + (state_dim, state_dim))
+    self.mean = np.reshape(mean, shape + (ndim,))
+    self.covar = np.reshape(covar, shape + (ndim, ndim))
     if weight is not None:
       self.weight = np.reshape(weight, shape)
     else:
       self.weight = None
-    self.state_dim = state_dim
+    self.ndim = ndim
 
   def __repr__(self):
     return f"""GaussianMixture(
       shape={self.shape},
-      state_dim={self.state_dim},
+      ndim={self.ndim},
       means={self.mean}
       covars=\n{self.covar})
       weights={self.weight}
@@ -53,35 +52,17 @@ class Gaussian():
         weight=self.weight[idx] if self.weight is not None else None
     )
 
-  def __setitem__(self, idx, value: Gaussian) -> None:
+  def __setitem__(self, idx: int, value: Gaussian) -> None:
     self.mean[idx] = value.mean
     self.covar[idx] = value.covar
     if self.weight is not None:
       self.weight[idx] = value.weight
 
-  def append(self, state: Gaussian, axis: int = 0) -> None:
+  def append(self, state: Gaussian, axis: int = 0) -> Gaussian:
     means = np.append(self.mean, state.mean, axis=axis)
     covars = np.append(self.covar, state.covar, axis=axis)
     if self.weight is not None:
       weights = np.append(self.weight, state.weight, axis=axis)
-    else:
-      weights = None
-    return Gaussian(mean=means, covar=covars, weight=weights)
-
-  def stack(self, state: Gaussian, axis: int = 0) -> None:
-    means = np.stack([self.mean, state.mean], axis=axis)
-    covars = np.stack([self.covar, state.covar], axis=axis)
-    if self.weight is not None:
-      weights = np.stack([self.weight, state.weight], axis=axis)
-    else:
-      weights = None
-    return Gaussian(mean=means, covar=covars, weight=weights)
-
-  def concatenate(self, state: Gaussian, axis: int = 0) -> None:
-    means = np.concatenate([self.mean, state.mean], axis=axis)
-    covars = np.concatenate([self.covar, state.covar], axis=axis)
-    if self.weight is not None:
-      weights = np.concatenate([self.weight, state.weight], axis=axis)
     else:
       weights = None
     return Gaussian(mean=means, covar=covars, weight=weights)
@@ -96,7 +77,7 @@ class Gaussian():
     Sample points from each Gaussian component at the specified dimensions.
     """
     if dims is None:
-      dims = np.arange(self.state_dim)
+      dims = np.arange(self.ndim)
 
     covar_inds = np.ix_(dims, dims)
     P = self.covar[..., covar_inds[0], covar_inds[1]]
@@ -107,6 +88,78 @@ class Gaussian():
       max_val = max_distance / np.sqrt(len(dims))
       std_normal = std_normal.clip(-max_val, max_val)
     return mu + np.einsum('nij, nmj -> nmi', np.linalg.cholesky(P), std_normal)
+
+
+class SigmaPointGaussian():
+  def __init__(self,
+               distribution: Gaussian,
+               sigma_points: np.ndarray,
+               Wm: np.ndarray,
+               Wc: np.ndarray,
+               ):
+    """
+    Container class for Gaussian distributions and their sigma points
+
+    # NOTE: Assuming the weights are the same for all sigma points
+
+    Parameters
+    ----------
+    distribution : Gaussian
+    sigma_points : np.ndarray
+    Wm : np.ndarray
+    Wc : np.ndarray
+    """
+    self.distribution = distribution
+    self.sigma_points = sigma_points
+    self.Wm = Wm
+    self.Wc = Wc
+
+  @property
+  def shape(self) -> Tuple[int]:
+    return self.distribution.shape
+
+  @property
+  def size(self) -> int:
+    return self.distribution.size
+
+  @property
+  def mean(self) -> np.ndarray:
+    return self.distribution.mean
+
+  @property
+  def covar(self) -> np.ndarray:
+    return self.distribution.covar
+
+  @property
+  def weight(self) -> np.ndarray:
+    return self.distribution.weight
+
+  def __getitem__(self, idx: int) -> SigmaPointGaussian:
+    return SigmaPointGaussian(
+        distribution=self.distribution[idx],
+        sigma_points=self.sigma_points[idx],
+        Wm=self.Wm,
+        Wc=self.Wc
+    )
+
+  def __setitem__(self, idx: int, value: SigmaPointGaussian) -> None:
+    self.distribution[idx] = value.distribution
+    self.sigma_points[idx] = value.sigma_points
+    self.Wm = value.Wm
+    self.Wc = value.Wc
+
+  def append(self,
+             value: SigmaPointGaussian,
+             axis: int = 0
+             ) -> SigmaPointGaussian:
+    return SigmaPointGaussian(
+        distribution=self.distribution.append(value.distribution),
+        sigma_points=np.append(
+            self.sigma_points, value.sigma_points, axis=axis
+        ),
+        Wm=self.Wm,
+        Wc=self.Wc
+    )
 
 
 def merge_gaussians(
