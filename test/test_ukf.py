@@ -4,8 +4,8 @@ import pytest
 from filterpy.kalman import UnscentedKalmanFilter as UKF
 from filterpy.kalman.sigma_points import MerweScaledSigmaPoints
 
-from motpy.distributions.gaussian import Gaussian, SigmaPointDistribution
-from motpy.kalman import UnscentedKalmanFilter
+from motpy.distributions.gaussian import Gaussian
+from motpy.kalman import UnscentedKalmanFilter, SigmaPointDistribution
 from motpy.kalman.sigma_points import (merwe_scaled_sigma_points,
                                        merwe_sigma_weights)
 from motpy.models.measurement.linear import LinearMeasurementModel
@@ -125,7 +125,6 @@ def test_update():
 
   assert np.allclose(post_state.distribution.mean, expected.x)
   assert np.allclose(post_state.distribution.covar, expected.P)
-  
 
 
 def test_likelihood():

@@ -91,59 +91,6 @@ class Gaussian:
     return mu + np.einsum('nij, nmj -> nmi', np.linalg.cholesky(P), std_normal)
 
 
-@dataclasses.dataclass
-class SigmaPointDistribution:
-  """
-  Data class containing a distribution object and its sigma points
-  
-  NOTE: We assume Wm and Wc are the same for all elements
-  """
-  distribution: Optional[Gaussian] = None
-  sigma_points: Optional[np.ndarray] = None
-  Wm: Optional[np.ndarray] = None
-  Wc: Optional[np.ndarray] = None
-
-  # Give the distribution attributes to this class
-  def __getattr__(self, name):
-    if self.distribution is not None and hasattr(self.distribution, name):
-      return getattr(self.distribution, name)
-    raise AttributeError(
-        f"'{type(self).__name__}' object has no attribute '{name}'")
-
-  def __setattr__(self, name, value):
-    if self.distribution is not None and hasattr(self.distribution, name):
-      setattr(self.distribution, name, value)
-    else:
-      super().__setattr__(name, value)
-      
-  def __getitem__(self, idx: int) -> SigmaPointDistribution:
-    return SigmaPointDistribution(
-        distribution=self.distribution[idx],
-        sigma_points=self.sigma_points[idx],
-        Wm=self.Wm,
-        Wc=self.Wc
-    )
-
-  def __setitem__(self, idx: int, value: SigmaPointDistribution) -> None:
-    self.distribution[idx] = value.distribution
-    self.sigma_points[idx] = value.sigma_points
-    self.Wm = value.Wm
-    self.Wc = value.Wc
-
-  def append(self,
-             value: SigmaPointDistribution,
-             axis: int = 0
-             ) -> SigmaPointDistribution:
-    return SigmaPointDistribution(
-        distribution=self.distribution.append(value.distribution),
-        sigma_points=np.append(
-            self.sigma_points, value.sigma_points, axis=axis
-        ) if self.sigma_points is not None else None,
-        Wm=self.Wm,
-        Wc=self.Wc
-    )
-
-
 def merge_gaussians(
         means: np.ndarray,
         covars: np.ndarray,

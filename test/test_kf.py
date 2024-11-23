@@ -1,16 +1,12 @@
 import numpy as np
 import pytest
+import scipy.stats
 from filterpy.kalman import predict, update
 
 from motpy.distributions.gaussian import Gaussian
 from motpy.kalman import KalmanFilter
-import numpy as np
-
-from motpy.distributions import Gaussian
-from motpy.kalman import KalmanFilter
-from motpy.models.transition import ConstantVelocity
 from motpy.models.measurement import LinearMeasurementModel
-import scipy.stats
+from motpy.models.transition import ConstantVelocity
 
 
 def test_predict():
