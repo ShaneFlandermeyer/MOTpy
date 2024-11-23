@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import dataclasses
 from typing import *
 
 import numpy as np
 
 
-class Gaussian():
+class Gaussian:
   """
   A general class to represent both Gaussian state and Gaussian mixture distributions.
 
@@ -89,32 +90,13 @@ class Gaussian():
       std_normal = std_normal.clip(-max_val, max_val)
     return mu + np.einsum('nij, nmj -> nmi', np.linalg.cholesky(P), std_normal)
 
-
-class SigmaPointGaussian():
-  def __init__(self,
-               distribution: Gaussian,
-               sigma_points: np.ndarray,
-               Wm: np.ndarray,
-               Wc: np.ndarray,
-               ):
-    """
-    Container class for Gaussian distributions and their sigma points
-
-    # NOTE: Assuming the weights are the same for all sigma points
-
-    Parameters
-    ----------
-    distribution : Gaussian
-    sigma_points : np.ndarray
-    Wm : np.ndarray
-    Wc : np.ndarray
-    """
-    self.distribution = distribution
-    self.sigma_points = sigma_points
-    self.Wm = Wm
-    self.Wc = Wc
-
-  @property
+@dataclasses.dataclass
+class SigmaPointGaussian:
+  distribution: Optional[Gaussian] = None
+  sigma_points: Optional[np.ndarray] = None
+  Wm: Optional[np.ndarray] = None
+  Wc: Optional[np.ndarray] = None
+  
   def shape(self) -> Tuple[int]:
     return self.distribution.shape
 
