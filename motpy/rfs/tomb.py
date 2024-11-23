@@ -33,10 +33,10 @@ class TOMBP:
         Detection probability threshold which determines if a Poisson component is detectable. This gate is applied before standard gating to reduce the number of matrix inverses required. If none, all Poisson components are considered detectable, by default None
     """""
     self.poisson = Poisson(
-        birth_state=birth_state,
+        birth_distribution=birth_state,
         state=undetected_state,
     )
-    self.mb = None
+    self.mb = MultiBernoulli()
     self.metadata = dict(
         mb=[],
         poisson=[dict() for _ in range(self.poisson.size)],
@@ -51,7 +51,9 @@ class TOMBP:
   def predict(self,
               state_estimator: KalmanFilter,
               dt: float,
-              ps_func: float) -> Tuple[MultiBernoulli, Poisson]:
+              ps_func: float,
+              **kwargs
+              ) -> Tuple[MultiBernoulli, Poisson]:
     """
     Propagate the multi-object state forward in time.
 
@@ -73,10 +75,10 @@ class TOMBP:
     meta = copy.deepcopy(self.metadata)
 
     # Predict MB
-    if self.mb is not None and self.mb.size > 0:
+    if self.mb.size > 0:
       ps_mb = ps_func(self.mb.state)
-      predicted_mb, filter_state = self.mb.predict(
-          state_estimator=state_estimator, ps=ps_mb, dt=dt
+      predicted_mb = self.mb.predict(
+          state_estimator=state_estimator, ps=ps_mb, dt=dt, **kwargs
       )
     else:
       predicted_mb = self.mb
@@ -84,15 +86,18 @@ class TOMBP:
     # Predict Poisson
     ps_poisson = ps_func(self.poisson.state)
     predicted_poisson = self.poisson.predict(
-        state_estimator=state_estimator, ps=ps_poisson, dt=dt
+        state_estimator=state_estimator,
+        ps=ps_poisson,
+        dt=dt,
+        **kwargs
     )
 
     # Update metadata
     meta['poisson'].extend(
-        [dict() for _ in range(self.poisson.birth_state.size)]
+        [dict() for _ in range(self.poisson.birth_distribution.size)]
     )
 
-    return predicted_mb, predicted_poisson
+    return predicted_mb, predicted_poisson, meta
 
   def update(self,
              measurements: np.ndarray,
@@ -152,7 +157,7 @@ class TOMBP:
     ########################################################
     # Data association and track updates
     ########################################################
-    n = self.mb.size if self.mb is not None else 0
+    n = self.mb.size
     m = len(measurements) if measurements is not None else 0
     if n == 0:
       p_updated = np.zeros_like(w_updated)
@@ -210,7 +215,7 @@ class TOMBP:
 
     mb = MultiBernoulli()
     if len(mb_hypos) > 0:
-      state_dim = mb_hypos[0].state.state_dim
+      state_dim = mb_hypos[0].state.ndim
       rs = np.zeros((n_mb, m+1))
       xs = np.zeros((n_mb, m+1, state_dim))
       Ps = np.zeros((n_mb, m+1, state_dim, state_dim))
@@ -278,7 +283,7 @@ class TOMBP:
     n_u = self.poisson.size
     w_new = np.zeros(m)
 
-    state_dim = self.poisson.state.state_dim
+    state_dim = self.poisson.state.ndim
     r = np.zeros(m)
     means = np.zeros((m, state_dim))
     covars = np.zeros((m, state_dim, state_dim))
@@ -310,9 +315,9 @@ class TOMBP:
         if n_valid == 0:
           continue
 
-        mixture, _ = state_estimator.update(
+        mixture = state_estimator.update(
             state=self.poisson.state[valid_u],
-            measurement=measurements[im]
+            measurement=measurements[im],
         )
         mixture.weight *= l_poisson[valid_u, im] * pd_poisson[valid_u]
 
@@ -403,9 +408,9 @@ class TOMBP:
           valid = in_gate[:, im]
           n_valid = np.count_nonzero(valid)
           if n_valid > 0:
-            state_post, _ = state_estimator.update(
+            state_post = state_estimator.update(
                 state=self.mb.state[valid],
-                measurement=measurements[im]
+                measurement=measurements[im],
             )
             r_post = np.ones(n_valid)
             hypos.append(MultiBernoulli(r=r_post, state=state_post))

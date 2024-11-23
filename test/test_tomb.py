@@ -1,11 +1,14 @@
+from motpy.kalman.ukf import UnscentedKalmanFilter
 from motpy.rfs.tomb import TOMBP
 import pytest
 import numpy as np
-from motpy.distributions.gaussian import Gaussian
+from motpy.distributions.gaussian import Gaussian, SigmaPointDistribution
 from motpy.kalman import KalmanFilter
 from motpy.models.measurement import LinearMeasurementModel
 from motpy.models.transition import ConstantVelocity
 from motpy.distributions.mixture import static_reduce
+from motpy.kalman.sigma_points import (merwe_scaled_sigma_points,
+                                       merwe_sigma_weights)
 
 
 def make_data(dt, lambda_c, pd, n_steps):
@@ -75,12 +78,13 @@ def test_scenario_prune():
   init_dist = Gaussian(
       mean=birth_dist.mean,
       covar=birth_dist.covar,
-      weight=np.array([10.0]))
+      weight=np.array([10.0])
+  )
   tracker = TOMBP(birth_state=birth_dist, undetected_state=init_dist)
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 
   for k in range(n_steps):
-    tracker.mb, tracker.poisson = tracker.predict(
+    tracker.mb, tracker.poisson, tracker.meta = tracker.predict(
         state_estimator=kf, dt=dt, ps_func=ps)
     tracker.poisson, _ = tracker.poisson.prune(threshold=1e-4)
 
@@ -129,7 +133,7 @@ def test_scenario_gate():
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 
   for k in range(n_steps):
-    tracker.mb, tracker.poisson = tracker.predict(
+    tracker.mb, tracker.poisson, tracker.meta = tracker.predict(
         state_estimator=kf, dt=dt, ps_func=ps)
     tracker.poisson.state = static_reduce(tracker.poisson.state)
 
@@ -146,6 +150,96 @@ def test_scenario_gate():
   assert np.allclose(tracker.mb[3].r, 0.9999901057591115, atol=1e-6)
 
 
+def test_ukf_tomb():
+  """
+  Test the algorithm using a UKF for state estimation
+  """
+
+  def pd(x): return 0.8
+  def ps(x): return 0.999
+  lambda_c = 20
+  dt = 1
+  n_steps = 10
+  volume = 200*200
+  paths, Z, cv, linear = make_data(
+      dt=dt, lambda_c=lambda_c, pd=pd, n_steps=n_steps)
+  sigma_params = dict(alpha=0.1, beta=2, kappa=0)
+  Wm, Wc = merwe_sigma_weights(ndim_state=4, **sigma_params)
+
+  # Initialize TOMB filter
+  birth_dist = Gaussian(
+      mean=np.array([0, 0, 0, 0])[None, :],
+      covar=np.diag([100, 1, 100, 1])[None, :]**2,
+      weight=np.array([0.05])
+  )
+  birth_state = SigmaPointDistribution(
+      distribution=birth_dist,
+      sigma_points=merwe_scaled_sigma_points(
+          x=birth_dist.mean, P=birth_dist.covar, **sigma_params
+      ),
+      Wm=Wm,
+      Wc=Wc
+  )
+
+  undetected_dist = Gaussian(
+      mean=birth_dist.mean,
+      covar=birth_dist.covar,
+      weight=np.array([10.0])
+  )
+  undetected_state = SigmaPointDistribution(
+      distribution=undetected_dist,
+      sigma_points=merwe_scaled_sigma_points(
+          x=undetected_dist.mean, P=undetected_dist.covar, **sigma_params
+      ),
+      Wm=Wm,
+      Wc=Wc
+  )
+
+  ukf = UnscentedKalmanFilter(transition_model=cv, measurement_model=linear)
+  tracker = TOMBP(birth_state=birth_state, undetected_state=undetected_state)
+
+  for k in range(n_steps):
+    tracker.mb, tracker.poisson, tracker.metadata = tracker.predict(
+        state_estimator=ukf,
+        dt=dt,
+        ps_func=ps,
+    )
+    tracker.poisson, _ = tracker.poisson.prune(threshold=1e-4)
+
+    tracker.mb, tracker.poisson, tracker.metadata = tracker.update(
+        measurements=Z[k],
+        pd_func=pd,
+        state_estimator=ukf,
+        lambda_fa=lambda_c / volume
+    )
+    if tracker.mb.size > 0:
+      tracker.mb, tracker.metadata['mb'] = tracker.mb.prune(
+          meta=tracker.metadata['mb'],
+          threshold=1e-4)
+      # TOMB recursion adds components as Gaussians, so we need to convert them to SigmaPointDistributions
+      mb_distribution = Gaussian(
+          mean=tracker.mb.state.mean,
+          covar=tracker.mb.state.covar,
+          weight=tracker.mb.state.weight
+      )
+      tracker.mb.state = SigmaPointDistribution(
+          distribution=mb_distribution,
+          sigma_points=merwe_scaled_sigma_points(
+              x=mb_distribution.mean,
+              P=mb_distribution.covar,
+              **sigma_params
+          ),
+          Wm=Wm,
+          Wc=Wc
+      )
+
+  assert tracker.mb.size == 54
+  assert tracker.poisson.size == 4
+  assert np.allclose(tracker.mb[0].r, 0.9999935076418562, atol=1e-6)
+  assert np.allclose(tracker.mb[3].r, 0.9999901057591115, atol=1e-6)
+
+
 if __name__ == '__main__':
-  test_scenario_prune()
+  test_ukf_tomb()
+  # test_scenario_prune()
   pytest.main([__file__])

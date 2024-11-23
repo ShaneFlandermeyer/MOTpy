@@ -14,14 +14,14 @@ class Poisson:
 
   def __init__(
       self,
-      birth_state: Gaussian,
+      birth_distribution: Gaussian,
       state: Optional[Gaussian] = None,
   ):
-    self.birth_state = birth_state
+    self.birth_distribution = birth_distribution
     self.state = state
 
   def __repr__(self):
-    return f"""Poisson(birth_distribution={self.birth_state},
+    return f"""Poisson(birth_distribution={self.birth_distribution},
   distribution={self.state})"""
 
   @property
@@ -35,15 +35,20 @@ class Poisson:
   def predict(self,
               state_estimator: KalmanFilter,
               ps: float,
-              dt: float) -> Poisson:
-    predicted = copy.deepcopy(self)
-    predicted.state.weight *= ps
+              dt: float,
+              **kwargs
+              ) -> Tuple[Poisson, Dict[str, Any]]:
+    pred_state = state_estimator.predict(
+        state=self.state, dt=dt, **kwargs
+    )
+    pred_state.weight = ps * self.state.weight
+    pred_state = pred_state.append(self.birth_distribution)
+    pred_poisson = Poisson(
+        birth_distribution=self.birth_distribution,
+        state=pred_state
+    )
 
-    predicted.state, filter_state = state_estimator.predict(
-          state=predicted.state, dt=dt)
-    predicted.state = predicted.state.append(self.birth_state)
-
-    return predicted
+    return pred_poisson
 
   def prune(
           self,
@@ -58,8 +63,8 @@ class Poisson:
     pruned.state = pruned.state[valid]
 
     if meta is None:
-      new_meta = None
+      pruned_meta = None
     else:
-      new_meta = [meta[i] for i in range(len(meta)) if valid[i]]
+      pruned_meta = [meta[i] for i in range(len(meta)) if valid[i]]
 
-    return pruned, new_meta
+    return pruned, pruned_meta

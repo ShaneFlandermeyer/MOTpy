@@ -78,14 +78,14 @@ class UnscentedKalmanFilter():
     Pxz = np.einsum(
         '...n, ...ni, ...nj -> ...ij',
         state.Wc,
-        self.state_residual_fn(state.sigma_points, x_pred),
-        self.measurement_residual_fn(measured_sigmas, z_pred)
+        self.state_residual_fn(state.sigma_points, x_pred[..., None, :]),
+        self.measurement_residual_fn(measured_sigmas, z_pred[..., None, :])
     )
     y = self.measurement_residual_fn(z, z_pred)
     K = Pxz @ np.linalg.inv(S)
     x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, y)
     P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
-    P_post = 0.5*(P_post + P_post.swapaxes(-1, -2))
+    P_post = 0.5 * (P_post + P_post.swapaxes(-1, -2))
 
     post_state = SigmaPointDistribution(
         distribution=Gaussian(

@@ -47,12 +47,14 @@ class MultiBernoulli():
               state_estimator: KalmanFilter,
               dt: float,
               ps: float,
-              filter_state: Optional[Dict] = None) -> MultiBernoulli:
-    predicted_state, filter_state = state_estimator.predict(
-        state=self.state, dt=dt, filter_state=filter_state)
+              **kwargs
+              ) -> MultiBernoulli:
+    predicted_state = state_estimator.predict(
+        state=self.state, dt=dt, **kwargs
+    )
 
     predicted_mb = MultiBernoulli(r=self.r * ps, state=predicted_state)
-    return predicted_mb, filter_state
+    return predicted_mb
 
   def prune(self: MultiBernoulli,
             threshold: float = 1e-4,

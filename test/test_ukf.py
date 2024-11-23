@@ -125,6 +125,7 @@ def test_update():
 
   assert np.allclose(post_state.distribution.mean, expected.x)
   assert np.allclose(post_state.distribution.covar, expected.P)
+  
 
 
 def test_likelihood():
