@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import datetime
+import dataclasses
 from typing import *
 
 import numpy as np
+from motpy.distributions.base import Distribution
 
 
-class Gaussian():
+class Gaussian(Distribution):
   """
   A general class to represent both Gaussian state and Gaussian mixture distributions.
 
@@ -19,20 +20,20 @@ class Gaussian():
       covar: Optional[np.ndarray],
       weight: Optional[np.ndarray] = None,
   ):
-    shape, state_dim = mean.shape[:-1], mean.shape[-1]
+    shape, ndim = mean.shape[:-1], mean.shape[-1]
 
-    self.mean = np.reshape(mean, shape + (state_dim,))
-    self.covar = np.reshape(covar, shape + (state_dim, state_dim))
+    self.mean = np.reshape(mean, shape + (ndim,))
+    self.covar = np.reshape(covar, shape + (ndim, ndim))
     if weight is not None:
       self.weight = np.reshape(weight, shape)
     else:
       self.weight = None
-    self.state_dim = state_dim
+    self.ndim = ndim
 
   def __repr__(self):
-    return f"""GaussianMixture(
+    return f"""Gaussian(
       shape={self.shape},
-      state_dim={self.state_dim},
+      ndim={self.ndim},
       means={self.mean}
       covars=\n{self.covar})
       weights={self.weight}
@@ -53,35 +54,17 @@ class Gaussian():
         weight=self.weight[idx] if self.weight is not None else None
     )
 
-  def __setitem__(self, idx, value: Gaussian) -> None:
+  def __setitem__(self, idx: int, value: Gaussian) -> None:
     self.mean[idx] = value.mean
     self.covar[idx] = value.covar
     if self.weight is not None:
       self.weight[idx] = value.weight
 
-  def append(self, state: Gaussian, axis: int = 0) -> None:
+  def append(self, state: Gaussian, axis: int = 0) -> Gaussian:
     means = np.append(self.mean, state.mean, axis=axis)
     covars = np.append(self.covar, state.covar, axis=axis)
     if self.weight is not None:
       weights = np.append(self.weight, state.weight, axis=axis)
-    else:
-      weights = None
-    return Gaussian(mean=means, covar=covars, weight=weights)
-
-  def stack(self, state: Gaussian, axis: int = 0) -> None:
-    means = np.stack([self.mean, state.mean], axis=axis)
-    covars = np.stack([self.covar, state.covar], axis=axis)
-    if self.weight is not None:
-      weights = np.stack([self.weight, state.weight], axis=axis)
-    else:
-      weights = None
-    return Gaussian(mean=means, covar=covars, weight=weights)
-
-  def concatenate(self, state: Gaussian, axis: int = 0) -> None:
-    means = np.concatenate([self.mean, state.mean], axis=axis)
-    covars = np.concatenate([self.covar, state.covar], axis=axis)
-    if self.weight is not None:
-      weights = np.concatenate([self.weight, state.weight], axis=axis)
     else:
       weights = None
     return Gaussian(mean=means, covar=covars, weight=weights)
@@ -96,7 +79,7 @@ class Gaussian():
     Sample points from each Gaussian component at the specified dimensions.
     """
     if dims is None:
-      dims = np.arange(self.state_dim)
+      dims = np.arange(self.ndim)
 
     covar_inds = np.ix_(dims, dims)
     P = self.covar[..., covar_inds[0], covar_inds[1]]
@@ -107,8 +90,6 @@ class Gaussian():
       max_val = max_distance / np.sqrt(len(dims))
       std_normal = std_normal.clip(-max_val, max_val)
     return mu + np.einsum('nij, nmj -> nmi', np.linalg.cholesky(P), std_normal)
-
-# @profile
 
 
 def merge_gaussians(
@@ -140,44 +121,59 @@ def merge_gaussians(
   w_merged = np.sum(w, axis=-1)
   w /= w_merged[..., None] + 1e-15
   mu_merged = np.einsum('...i, ...ij -> ...j', w, mu)
-  
+
   y = mu - mu_merged
   y_outer = np.einsum('...i, ...j -> ...ij', y, y)
   P_merged = np.einsum('...i, ...ijk -> ...jk', w, P + y_outer)
   return w_merged, mu_merged, P_merged
 
 
-def likelihood(z: np.ndarray,
-               z_pred: np.ndarray,
-               S: np.ndarray
-               ) -> np.ndarray:
-  """
-  Compute the likelihood for a set of measurement/state pairs.
+def likelihood(
+        x: np.ndarray,
+        mean: np.ndarray,
+        covar: np.ndarray,
+) -> np.ndarray:
+  x = np.atleast_2d(x)
+  y = x[..., None, :, :] - mean[..., None, :]
 
-  Parameters>
+  Pi = np.linalg.inv(covar)
+  det_P = np.linalg.det(covar)
+
+  num = np.exp(-0.5 * np.einsum('...mi, ...ii, ...im -> ...m',
+                                y, Pi, y.swapaxes(-1, -2))
+               )
+  den = np.sqrt((2 * np.pi) ** x.shape[-1] * det_P)
+  likelihood = num / den[..., None]
+
+  return likelihood
+
+
+def mahalanobis(x: np.ndarray,
+                mean: np.ndarray,
+                covar: np.ndarray,
+                ) -> np.ndarray:
+  """
+  Batched mahalanobis distance.
+
+  Parameters
   ----------
-  z : np.ndarray
-      Array of measurements. Shape: (M, nz)
-  z_pred : np.ndarray
-      Array of predicted measurements. Shape: (N, nz)
-  S : np.ndarray
-      Innovation covariance. Shape: (N, nz, nz)
+  mean : np.ndarray
+      Means of the reference Gaussian distributions. Shape (N, D).
+  covar : np.ndarray
+      Covars of the reference Gaussian distributions. Shape (N, D, D).
+  points : np.ndarray
+      Query points. Shape (M, D).
 
   Returns
   -------
   np.ndarray
-      Likelihood for each measurement/state pair. Shape: (M, N)
+      Mahalanobis distance for each reference/query pair. Shape (N, M).
   """
-  nz = z.shape[-1]
+  x = np.atleast_2d(x)
+  y = x[..., None, :, :] - mean[..., None, :]
 
-  z = z[np.newaxis, ...]
-  z_pred = z_pred[..., np.newaxis, :]
-  y = z - z_pred  # (N, M, nz)
-
-  Si = np.linalg.inv(S)
-  det_S = np.linalg.det(S)[:, np.newaxis]
-
-  exponent = -0.5 * np.einsum('nmi, nii, nim -> nm', y, Si, y.swapaxes(-1, -2))
-  likelihoods = np.exp(exponent) / np.sqrt((2 * np.pi) ** nz * det_S)
-
-  return likelihoods
+  dist = np.sqrt(
+      np.einsum('...nmi, ...nim ->...nm',
+                y, np.linalg.inv(covar) @ y.swapaxes(-1, -2))
+  )
+  return dist

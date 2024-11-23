@@ -1,14 +1,17 @@
 from __future__ import annotations
+
 import copy
+from typing import Any, Dict, Optional, Tuple
+
 import numpy as np
-from motpy.kalman import KalmanFilter
-from motpy.distributions.gaussian import Gaussian
-from typing import Dict, Tuple, Optional, List, Union, Any
+
+from motpy.distributions import Distribution
+from motpy.estimators import StateEstimator
 
 
 class MultiBernoulli():
   def __init__(self,
-               state: Optional[Gaussian] = None,
+               state: Optional[Distribution] = None,
                r: Optional[np.ndarray] = None
                ) -> None:
     self.state = state
@@ -34,7 +37,7 @@ class MultiBernoulli():
     self.r[idx] = value.r
     self.state[idx] = value.state
 
-  def append(self, state: Gaussian, r: np.ndarray) -> MultiBernoulli:
+  def append(self, state: Distribution, r: np.ndarray) -> MultiBernoulli:
     if self.state is not None:
       state = self.state.append(state)
 
@@ -44,15 +47,17 @@ class MultiBernoulli():
     return MultiBernoulli(state=state, r=r)
 
   def predict(self,
-              state_estimator: KalmanFilter,
+              state_estimator: StateEstimator,
               dt: float,
               ps: float,
-              filter_state: Optional[Dict] = None) -> MultiBernoulli:
-    predicted_state, filter_state = state_estimator.predict(
-        state=self.state, dt=dt, filter_state=filter_state)
+              **kwargs
+              ) -> MultiBernoulli:
+    predicted_state = state_estimator.predict(
+        state=self.state, dt=dt, **kwargs
+    )
 
     predicted_mb = MultiBernoulli(r=self.r * ps, state=predicted_state)
-    return predicted_mb, filter_state
+    return predicted_mb
 
   def prune(self: MultiBernoulli,
             threshold: float = 1e-4,
