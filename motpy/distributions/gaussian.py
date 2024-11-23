@@ -30,7 +30,7 @@ class Gaussian:
     self.ndim = ndim
 
   def __repr__(self):
-    return f"""GaussianMixture(
+    return f"""Gaussian(
       shape={self.shape},
       ndim={self.ndim},
       means={self.mean}
@@ -90,55 +90,55 @@ class Gaussian:
       std_normal = std_normal.clip(-max_val, max_val)
     return mu + np.einsum('nij, nmj -> nmi', np.linalg.cholesky(P), std_normal)
 
+
 @dataclasses.dataclass
-class SigmaPointGaussian:
+class SigmaPointDistribution:
+  """
+  Data class containing a distribution object and its sigma points
+  
+  NOTE: We assume Wm and Wc are the same for all elements
+  """
   distribution: Optional[Gaussian] = None
   sigma_points: Optional[np.ndarray] = None
   Wm: Optional[np.ndarray] = None
   Wc: Optional[np.ndarray] = None
-  
-  def shape(self) -> Tuple[int]:
-    return self.distribution.shape
 
-  @property
-  def size(self) -> int:
-    return self.distribution.size
+  # Give the distribution attributes to this class
+  def __getattr__(self, name):
+    if self.distribution is not None and hasattr(self.distribution, name):
+      return getattr(self.distribution, name)
+    raise AttributeError(
+        f"'{type(self).__name__}' object has no attribute '{name}'")
 
-  @property
-  def mean(self) -> np.ndarray:
-    return self.distribution.mean
-
-  @property
-  def covar(self) -> np.ndarray:
-    return self.distribution.covar
-
-  @property
-  def weight(self) -> np.ndarray:
-    return self.distribution.weight
-
-  def __getitem__(self, idx: int) -> SigmaPointGaussian:
-    return SigmaPointGaussian(
+  def __setattr__(self, name, value):
+    if self.distribution is not None and hasattr(self.distribution, name):
+      setattr(self.distribution, name, value)
+    else:
+      super().__setattr__(name, value)
+      
+  def __getitem__(self, idx: int) -> SigmaPointDistribution:
+    return SigmaPointDistribution(
         distribution=self.distribution[idx],
         sigma_points=self.sigma_points[idx],
         Wm=self.Wm,
         Wc=self.Wc
     )
 
-  def __setitem__(self, idx: int, value: SigmaPointGaussian) -> None:
+  def __setitem__(self, idx: int, value: SigmaPointDistribution) -> None:
     self.distribution[idx] = value.distribution
     self.sigma_points[idx] = value.sigma_points
     self.Wm = value.Wm
     self.Wc = value.Wc
 
   def append(self,
-             value: SigmaPointGaussian,
+             value: SigmaPointDistribution,
              axis: int = 0
-             ) -> SigmaPointGaussian:
-    return SigmaPointGaussian(
+             ) -> SigmaPointDistribution:
+    return SigmaPointDistribution(
         distribution=self.distribution.append(value.distribution),
         sigma_points=np.append(
             self.sigma_points, value.sigma_points, axis=axis
-        ),
+        ) if self.sigma_points is not None else None,
         Wm=self.Wm,
         Wc=self.Wc
     )

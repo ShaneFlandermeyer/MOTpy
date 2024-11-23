@@ -6,7 +6,7 @@ import numpy as np
 from motpy.gate import EllipsoidalGate
 from motpy.models.measurement import MeasurementModel
 from motpy.models.transition import TransitionModel
-from motpy.distributions.gaussian import Gaussian, SigmaPointGaussian
+from motpy.distributions.gaussian import Gaussian, SigmaPointDistribution
 import motpy.distributions.gaussian as gaussian
 
 
@@ -23,10 +23,10 @@ class UnscentedKalmanFilter():
     self.measurement_residual_fn = measurement_residual_fn
 
   def predict(self,
-              state: SigmaPointGaussian,
+              state: SigmaPointDistribution,
               dt: float,
               **kwargs,
-              ) -> SigmaPointGaussian:
+              ) -> SigmaPointDistribution:
     # Transform sigma points to prediction space
     predicted_sigmas = self.transition_model(
         state.sigma_points, dt=dt, **kwargs
@@ -40,7 +40,7 @@ class UnscentedKalmanFilter():
         residual_fn=self.state_residual_fn,
     )
 
-    predicted_state = SigmaPointGaussian(
+    predicted_state = SigmaPointDistribution(
         distribution=Gaussian(
             mean=x_pred,
             covar=P_pred,
@@ -54,31 +54,31 @@ class UnscentedKalmanFilter():
     return predicted_state
 
   def update(self,
-             predicted_state: SigmaPointGaussian,
+             state: SigmaPointDistribution,
              measurement: np.ndarray,
              **kwargs
              ) -> Tuple[Gaussian, Dict[str, Any]]:
 
     # Unscented transform in measurement space
     measured_sigmas = self.measurement_model(
-        predicted_state.sigma_points, **kwargs
+        state.sigma_points, **kwargs
     )
     z_pred, S = unscented_transform(
         sigmas=measured_sigmas,
-        Wm=predicted_state.Wm,
-        Wc=predicted_state.Wc,
+        Wm=state.Wm,
+        Wc=state.Wc,
         noise_covar=self.measurement_model.covar(),
         residual_fn=self.measurement_residual_fn,
     )
 
     # Standard kalman update
-    x_pred = predicted_state.distribution.mean
-    P_pred = predicted_state.distribution.covar
+    x_pred = state.distribution.mean
+    P_pred = state.distribution.covar
     z = measurement
     Pxz = np.einsum(
         '...n, ...ni, ...nj -> ...ij',
-        predicted_state.Wc,
-        self.state_residual_fn(predicted_state.sigma_points, x_pred),
+        state.Wc,
+        self.state_residual_fn(state.sigma_points, x_pred),
         self.measurement_residual_fn(measured_sigmas, z_pred)
     )
     y = self.measurement_residual_fn(z, z_pred)
@@ -87,15 +87,15 @@ class UnscentedKalmanFilter():
     P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
     P_post = 0.5*(P_post + P_post.swapaxes(-1, -2))
 
-    post_state = SigmaPointGaussian(
+    post_state = SigmaPointDistribution(
         distribution=Gaussian(
             mean=x_post,
             covar=P_post,
-            weight=predicted_state.distribution.weight
+            weight=state.distribution.weight
         ),
         sigma_points=measured_sigmas,
-        Wm=predicted_state.Wm,
-        Wc=predicted_state.Wc
+        Wm=state.Wm,
+        Wc=state.Wc
     )
 
     return post_state
@@ -103,7 +103,7 @@ class UnscentedKalmanFilter():
   def likelihood(
       self,
       measurement: np.ndarray,
-      state: SigmaPointGaussian,
+      state: SigmaPointDistribution,
       **kwargs
   ) -> np.ndarray:
     """
@@ -137,7 +137,7 @@ class UnscentedKalmanFilter():
 
   def gate(self,
            measurements: np.ndarray,
-           state: SigmaPointGaussian,
+           state: SigmaPointDistribution,
            pg: float,
            **kwargs,
            ) -> np.ndarray:

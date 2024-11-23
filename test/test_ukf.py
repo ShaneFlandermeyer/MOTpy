@@ -4,7 +4,7 @@ import pytest
 from filterpy.kalman import UnscentedKalmanFilter as UKF
 from filterpy.kalman.sigma_points import MerweScaledSigmaPoints
 
-from motpy.distributions.gaussian import Gaussian, SigmaPointGaussian
+from motpy.distributions.gaussian import Gaussian, SigmaPointDistribution
 from motpy.kalman import UnscentedKalmanFilter
 from motpy.kalman.sigma_points import (merwe_scaled_sigma_points,
                                        merwe_sigma_weights)
@@ -41,7 +41,7 @@ def test_predict():
   Wm, Wc = merwe_sigma_weights(
       ndim_state=state_dim, alpha=alpha, beta=beta, kappa=kappa
   )
-  state = SigmaPointGaussian(
+  state = SigmaPointDistribution(
       distribution=distribution,
       sigma_points=sigmas,
       Wm=Wm,
@@ -92,7 +92,7 @@ def test_update():
   )
 
   # Motpy UKF
-  state = SigmaPointGaussian(
+  state = SigmaPointDistribution(
       distribution=distribution,
       sigma_points=sigmas,
       Wm=Wm,
@@ -103,7 +103,7 @@ def test_update():
       measurement_model=range_bearing
   )
 
-  post_state = ukf.update(predicted_state=state, measurement=z)
+  post_state = ukf.update(state=state, measurement=z)
 
   # Filterpy UKF
   points = MerweScaledSigmaPoints(
@@ -141,7 +141,7 @@ def test_likelihood():
   sigma_points = merwe_scaled_sigma_points(
       x=distribution.mean, P=distribution.covar, alpha=0.1, beta=2, kappa=0
   )
-  state = SigmaPointGaussian(
+  state = SigmaPointDistribution(
       distribution=distribution,
       sigma_points=sigma_points,
       Wm=Wm,
@@ -172,7 +172,7 @@ def test_gate():
   sigma_points = merwe_scaled_sigma_points(
       x=distribution.mean, P=distribution.covar, alpha=0.1, beta=2, kappa=0
   )
-  state = SigmaPointGaussian(
+  state = SigmaPointDistribution(
       distribution=distribution,
       sigma_points=sigma_points,
       Wm=Wm,
