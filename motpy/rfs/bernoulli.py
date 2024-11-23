@@ -1,83 +1,76 @@
 from __future__ import annotations
+
+import copy
+from typing import Any, Dict, Optional, Tuple
+
 import numpy as np
-from motpy.kalman import KalmanFilter
-from motpy.distributions.gaussian import GaussianState
-from typing import Tuple, Optional, List
+
+from motpy.distributions import Distribution
+from motpy.estimators import StateEstimator
 
 
-class Bernoulli():
+class MultiBernoulli():
   def __init__(self,
-               r: float,
-               state: GaussianState,
+               state: Optional[Distribution] = None,
+               r: Optional[np.ndarray] = None
                ) -> None:
-    self.r = r
     self.state = state
+    self.r = r
 
   def __repr__(self) -> str:
-    return f"""Bernoulli(
+    return f"""MultiBernoulli(
       r={self.r}
       state={self.state})"""
 
+  @property
+  def shape(self) -> Tuple[int]:
+    return self.state.shape if self.state is not None else ()
+
+  @property
+  def size(self) -> int:
+    return self.state.size if self.state is not None else 0
+
+  def __getitem__(self, idx) -> MultiBernoulli:
+    return MultiBernoulli(state=self.state[idx], r=self.r[idx])
+
+  def __setitem__(self, idx, value: MultiBernoulli) -> None:
+    self.r[idx] = value.r
+    self.state[idx] = value.state
+
+  def append(self, state: Distribution, r: np.ndarray) -> MultiBernoulli:
+    if self.state is not None:
+      state = self.state.append(state)
+
+    if self.r is not None:
+      r = np.append(self.r, r)
+
+    return MultiBernoulli(state=state, r=r)
+
   def predict(self,
-              state_estimator: KalmanFilter,
-              ps: float,
+              state_estimator: StateEstimator,
               dt: float,
-              ) -> Bernoulli:
-    """
-    Performs prediction step for a Bernoulli component
-
-    Parameters
-    ----------
-    state_estimator : KalmanFilter
-        State prediction model
-    ps : float
-        Survival probability
-    dt : float
-        Prediction timestep
-
-    Returns
-    -------
-    Tuple[State, float]
-        - Predicted state
-        - Predicted survival probability
-    """
-    pred = Bernoulli(
-        r=self.r * ps,
-        state=state_estimator.predict(state=self.state, dt=dt),
+              ps: float,
+              **kwargs
+              ) -> MultiBernoulli:
+    predicted_state = state_estimator.predict(
+        state=self.state, dt=dt, **kwargs
     )
 
-    return pred
+    predicted_mb = MultiBernoulli(r=self.r * ps, state=predicted_state)
+    return predicted_mb
 
-  def update(self,
-             pd: float,
-             measurement: np.ndarray = None,
-             state_estimator: KalmanFilter = None,
-             ) -> Bernoulli:
-    """
-    Update the state of the Bernoulli component with an associated measurement. If no measurement is associated to this component, the state is predicted 
+  def prune(self: MultiBernoulli,
+            threshold: float = 1e-4,
+            meta: Optional[Dict[str, Any]] = None
+            ) -> Tuple[MultiBernoulli, Optional[Dict[str, Any]]]:
+    pruned = copy.deepcopy(self)
 
-    Parameters
-    ----------
-    pd : float
-        Detection probability, assumed constant in state space
-    measurement : np.ndarray, optional
-        Measurement associated to bernoulli component, by default None
-    state_estimator : KalmanFilter, optional
-        Measurement update model, which only needs to be provided if a measurement is associated to the component, by default None
+    valid = self.r > threshold
+    pruned = pruned[valid]
 
-    Returns
-    -------
-    Tuple[State, float, float]
-        - Updated state
-        - Updated existence probability
-    """
-    if measurement is None:
-      state_post = self.state
-      r_post = self.r * (1 - pd) / (1 - self.r + self.r * (1 - pd))
+    if meta is None:
+      new_meta = None
     else:
-      state_post = state_estimator.update(
-          measurement=measurement, predicted_state=self.state)
-      r_post = 1
+      new_meta = [meta[i] for i in range(len(meta)) if valid[i]]
 
-    posterior = Bernoulli(r=r_post, state=state_post)
-    return posterior
+    return pruned, new_meta

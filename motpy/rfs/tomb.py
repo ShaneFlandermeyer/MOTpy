@@ -1,75 +1,62 @@
 import copy
-from typing import Callable, List, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, Any
 
 import numpy as np
 
-from motpy.distributions.gaussian import GaussianState, mix_gaussians
-from motpy.kalman import KalmanFilter
-from motpy.rfs.bernoulli import Bernoulli
+from motpy.distributions.gaussian import Gaussian, merge_gaussians
+from motpy.distributions import Distribution
+from motpy.estimators import StateEstimator
+from motpy.rfs.bernoulli import MultiBernoulli
 from motpy.rfs.poisson import Poisson
 
 
 class TOMBP:
   """
-  Track-oriented Marginal MeMBer-Poisson Filter (TOMBP) for multi-object tracking.
-
-  Attributes
-  ----------
-  poisson : Poisson
-      The Poisson point process (PPP) representing the intensity of new objects.
-  mb : list
-      The list of Bernoulli components representing the multi-Bernoulli (MB).
-  pg : float
-      The gating size in terms of the probability of Gaussian error.
-  w_min : float
-      The minimum weight below which a component in the PPP is pruned.
-  r_min : float
-      The minimum probability of existence below which a Bernoulli component is pruned.
-  r_estimate_threshold : float
-      The threshold for the probability of existence above which an object is estimated to exist.
+  Track-oriented multi-Bernoulli/Poisson (TOMB/P) filter
   """
 
   def __init__(self,
-               birth_weights: np.ndarray,
-               birth_states: List[np.ndarray],
-               pg: float = None,
-               w_min: float = None,
-               r_min: float = None,
-               r_estimate_threshold: float = None,
+               birth_state: Distribution,
+               undetected_state: Optional[Distribution] = None,
+               pg: Optional[float] = None,
+               poisson_pd_threshold: Optional[float] = None,
                ):
     """
-    Initializes the Track-Oriented Multi-Bernoulli (TOMB) process.
-
     Parameters
     ----------
-    birth_weights : np.ndarray
-        The weights of the birth components in the Poisson point process (PPP) representing the intensity of new objects.
-    birth_states : List[np.ndarray]
-        The states of the birth components in the PPP representing the intensity of new objects.
+    birth_distribution : Distribution
+        The birth distribution for the Poisson component
+    undetected_distribution: Optional[Distribution]
+        The initial distribution for the Poisson component
     pg : float, optional
-        The gating size in terms of the probability of Gaussian error, by default None.
-    w_min : float, optional
-        The minimum weight below which a component in the PPP is pruned, by default None.
-    r_min : float, optional
-        The minimum probability of existence below which a Bernoulli component is pruned, by default None.
-    r_estimate_threshold : float, optional
-        The threshold for the probability of existence above which an object is estimated to exist, by default None.
-    """
-    self.poisson = Poisson(birth_weights=birth_weights,
-                           birth_states=birth_states)
-    self.mb = []
+        Gate probability for measurement association
+    poisson_pd_gate_threshold : float, optional
+        Detection probability threshold which determines if a Poisson component is detectable. This gate is applied before standard gating to reduce the number of matrix inverses required. If none, all Poisson components are considered detectable, by default None
+    """""
+    self.poisson = Poisson(
+        birth_distribution=birth_state,
+        state=undetected_state,
+    )
+    self.mb = MultiBernoulli()
+    self.metadata = dict(
+        mb=[],
+        poisson=[dict() for _ in range(self.poisson.size)],
+    )
 
-    self.pg = pg
-    self.w_min = w_min
-    self.r_min = r_min
-    self.r_estimate_threshold = r_estimate_threshold
+    self.pg = pg if pg is not None else 1.0
+    if poisson_pd_threshold is None:
+      self.poisson_pd_threshold = 0
+    else:
+      self.poisson_pd_threshold = poisson_pd_threshold
 
   def predict(self,
-              state_estimator: KalmanFilter,
+              state_estimator: StateEstimator,
               dt: float,
-              ps: float):
+              ps_func: float,
+              **kwargs
+              ) -> Tuple[MultiBernoulli, Poisson]:
     """
-    Predicts the state of the multi-object system in the next time step.
+    Propagate the multi-object state forward in time.
 
     Parameters
     ----------
@@ -77,189 +64,371 @@ class TOMBP:
         The Kalman filter used for state estimation.
     dt : float
         The time step size.
-    ps : float
-        The survival probability, i.e., the probability that each object will continue to exist.
+    ps_func: float
+        Handle to a function which takes the state as input and returns the survival probability.
 
     Returns
     -------
-    Tuple[List[Bernoulli], Poisson]
-        A tuple containing the list of predicted Bernoulli components representing the multi-Bernoulli mixture (MBM), 
-        and the predicted Poisson point process (PPP) representing the intensity of new objects.
+    Tuple[MultiBernoulli, Poisson]
+      - The MB distribution after prediction
+      - The poisson distribution after prediction
     """
-    # Implement prediction algorithm
+    meta = copy.deepcopy(self.metadata)
 
-    # Predict existing tracks
-    pred_mb = [bern.predict(state_estimator=state_estimator,
-                            ps=ps, dt=dt) for bern in self.mb]
+    # Predict MB
+    if self.mb.size > 0:
+      ps_mb = ps_func(self.mb.state)
+      predicted_mb = self.mb.predict(
+          state_estimator=state_estimator, ps=ps_mb, dt=dt, **kwargs
+      )
+    else:
+      predicted_mb = self.mb
 
-    # Predict existing PPP intensity
-    pred_poisson = self.poisson.predict(
-        state_estimator=state_estimator, ps=ps, dt=dt)
+    # Predict Poisson
+    ps_poisson = ps_func(self.poisson.state)
+    predicted_poisson = self.poisson.predict(
+        state_estimator=state_estimator,
+        ps=ps_poisson,
+        dt=dt,
+        **kwargs
+    )
 
-    # Not shown in paper--truncate low weight components
-    pred_poisson = pred_poisson.prune(threshold=self.w_min)
+    # Update metadata
+    meta['poisson'].extend(
+        [dict() for _ in range(self.poisson.birth_distribution.size)]
+    )
 
-    return pred_mb, pred_poisson
+    return predicted_mb, predicted_poisson, meta
 
   def update(self,
-             measurements: List[np.ndarray],
-             state_estimator: KalmanFilter,
-             pd: Callable,
-             lambda_fa: float):
+             measurements: np.ndarray,
+             state_estimator: StateEstimator,
+             pd_func: Callable,
+             lambda_fa: float) -> Tuple[MultiBernoulli, Poisson]:
     """
-    Updates the state of the multi-object system based on the given measurements.
+    Updates the state of the multi-object system based on measurements.
 
     Parameters
     ----------
     measurements : np.ndarray
-        The array of measurements.
-    pd : Callable
-        The detection probability, i.e., the probability that each object will be detected.
+        Array of measurement vectors
     state_estimator : KalmanFilter
         The Kalman filter used for state estimation.
+    pd_func : float
+        Detection probability function handle. This function takes the state as input and returns the detection probability.
     lambda_fa : float
-        The false alarm rate, representing the density of spurious measurements.
+        The false alarm density per unit volume.
 
     Returns
     -------
-    Tuple[List[Bernoulli], Poisson]
-        A tuple containing the list of updated Bernoulli components representing the multi-Bernoulli mixture (MBM), 
-        and the updated Poisson point process (PPP) representing the intensity of new objects.
+    Tuple[MultiBernoulli, Poisson]
+      - Updated MB distribution
+      - Updated Poisson distribution
     """
-    n = len(self.mb)
-    nu = len(self.poisson)
-    m = len(measurements)
+    meta = copy.deepcopy(self.metadata)
 
-    # Update existing tracks
-    wupd = np.zeros((n, m + 1))
-    mb_hypos = np.empty((n, m + 1), dtype=object)
-    in_gate_mb = np.zeros((n, m), dtype=bool)
-    for i, bern in enumerate(self.mb):
-      # Create missed detection hypothesis
-      wupd[i, 0] = 1 - bern.r + bern.r * (1 - pd(bern.state))
-      mb_hypos[i, 0] = bern.update(measurement=None,
-                                   pd=pd(bern.state),
-                                   state_estimator=state_estimator)
+    ########################################################
+    # Poisson update
+    ########################################################
+    pd_poisson = pd_func(self.poisson.state)
+    if isinstance(pd_poisson, float):
+      pd_poisson = np.full(self.poisson.size, pd_poisson)
 
-      valid_meas, valid_inds = state_estimator.gate(
-          measurements=measurements, predicted_state=bern.state, pg=self.pg)
-      in_gate_mb[i, valid_inds] = True
+    new_berns, w_new = self.bernoulli_birth(
+        state_estimator=state_estimator,
+        measurements=measurements,
+        pd_poisson=pd_poisson,
+        lambda_fa=lambda_fa
+    )
 
-      # Create hypotheses with measurement updates
-      if len(valid_inds) > 0:
-        l_mb = np.zeros(m)
-        l_mb[valid_inds] = state_estimator.likelihood(
-            measurement=valid_meas, predicted_state=bern.state)
+    poisson_post = copy.deepcopy(self.poisson)
+    poisson_post.state.weight *= 1 - pd_poisson
 
-      for j in valid_inds:
-        mb_hypos[i, j + 1] = bern.update(
-            pd=pd, measurement=measurements[j], state_estimator=state_estimator)
-        wupd[i, j + 1] = bern.r * pd(mb_hypos[i, j+1].state) * l_mb[j]
+    # Update metadata
+    meta['pd_poisson'] = pd_poisson
+    ########################################################
+    # MB Update
+    ########################################################
+    mb_hypos, mb_hypo_mask, w_updated = self.make_mb_hypos(
+        state_estimator=state_estimator,
+        measurements=measurements,
+        pd_func=pd_func
+    )
 
-    # Create a new track for each measurement by updating PPP with measurement
-    wnew = np.zeros(m)
-    new_berns = []
-
-    # Gate PPP components and pre-compute likelihoods
-    in_gate_poisson = np.zeros((nu, m), dtype=bool)
-    l_ppp = np.zeros((nu, m))
-    for k, state in enumerate(self.poisson.states):
-      valid_meas, valid_inds = state_estimator.gate(
-          measurements=measurements, predicted_state=state, pg=self.pg)
-      in_gate_poisson[k, valid_inds] = True
-      l_ppp[k, valid_inds] = state_estimator.likelihood(
-          measurement=valid_meas, predicted_state=state)
-
-    for j in range(m):
-      bern, wnew[j] = self.poisson.update(
-          measurement=measurements[j],
-          pd=pd,
-          likelihoods=l_ppp[:, j],
-          in_gate=np.ones(nu, dtype=bool),
-          state_estimator=state_estimator,
-          clutter_intensity=lambda_fa)
-      if wnew[j] > 0:
-        new_berns.append(bern)
-
-    # Update (i.e., thin) intensity of unknown targets
-    poisson_upd = copy.deepcopy(self.poisson)
-    for k in range(nu):
-      poisson_upd.weights[k] *= 1 - pd(poisson_upd.states[k])
-
-    # Not shown in paper--truncate low weight components
-    poisson_upd = poisson_upd.prune(threshold=self.w_min)
-
-    if wupd.size == 0:
-      pupd = np.empty_like(wupd)
-      pnew = np.ones_like(wnew)
+    ########################################################
+    # Data association and track updates
+    ########################################################
+    n = self.mb.size
+    m = len(measurements) if measurements is not None else 0
+    if n == 0:
+      p_updated = np.zeros_like(w_updated)
+      p_new = np.ones_like(w_new)
+    elif m == 0:
+      p_updated = w_updated
+      p_new = np.zeros_like(w_new)
     else:
-      pupd, pnew = self.spa(wupd=wupd, wnew=wnew)
+      p_updated, p_new = self.spa(w_updated=w_updated, w_new=w_new)
 
-    mb_upd = self.tomb(pupd=pupd, mb_hypos=mb_hypos, pnew=pnew,
-                       new_berns=new_berns, in_gate_mb=in_gate_mb)
+    mb_post, meta = self.tomb(
+        p_updated=p_updated,
+        p_new=p_new,
+        mb_hypos=mb_hypos,
+        mb_hypo_mask=mb_hypo_mask,
+        new_berns=new_berns,
+        meta=meta
+    )
 
-    return mb_upd, poisson_upd
+    return mb_post, poisson_post, meta
 
   def tomb(self,
-           pupd: np.ndarray,
-           mb_hypos: np.ndarray,
-           pnew: np.ndarray,
-           new_berns: List[Bernoulli],
-           in_gate_mb: np.ndarray) -> List[Bernoulli]:
+           p_updated: np.ndarray,
+           p_new: np.ndarray,
+           mb_hypos: List[MultiBernoulli],
+           mb_hypo_mask: np.ndarray,
+           new_berns: MultiBernoulli,
+           meta: Dict[str, Any] = dict()
+           ) -> MultiBernoulli:
     """
-    Implements the Track-Oriented Multi-Bernoulli (TOMB) update step.
+    Add new Bernoulli components to the filter and marginalize existing components across measurement hypotheses
+
+    NOTE: Makes Gaussian state assumption in marginalization step
+
+    TODO: Mixture merging can ~probably~ be implemented as a segment sum
 
     Parameters
     ----------
-    pupd : np.ndarray
-        The marginal association probabilities for existing objects.
-    mb_hypos : np.ndarray
-        The Bernoulli components representing the hypotheses for existing objects.
-    pnew : np.ndarray
-        The marginal association probabilities for potential new objects.
-    new_berns : List[Bernoulli]
-        The Bernoulli components representing the hypotheses for potential new objects.
-    in_gate_mb : np.ndarray
-        A boolean array indicating which measurements are inside the gating region for each existing object.
+    p_updated : np.ndarray
+        Association probabilities for existing Bernoulli components
+    p_new : np.ndarray
+        Association probabilities for new Bernoulli components
+    mb_hypos : List[MultiBernoulli]
+        Measurement-oriented MB hypotheses. This is a list of MultiBernoulli objects, where each MB is a set of possible track associations for a single measurement.
+    mb_hypo_mask : np.ndarray
+        Mask indicating which hypotheses in mb_hypos are valid.
+    new_berns : MultiBernoulli
+        New Bernoulli components created from the Poisson distribution
 
     Returns
     -------
-    List[Bernoulli]
-        The list of updated Bernoulli components representing the multi-Bernoulli mixture (MBM) after the TOMB update step.
+    MultiBernoulli
+        The updated MB distribution
     """
+    n_mb, mp1 = p_updated.shape
+    m = mp1 - 1
 
-    # Add false alarm hypothesis as valid
-    valid_hypos = np.concatenate(
-        (np.ones((len(self.mb), 1), dtype=bool), in_gate_mb), axis=1)
+    mb = MultiBernoulli()
+    if len(mb_hypos) > 0:
+      state_dim = mb_hypos[0].state.ndim
+      rs = np.zeros((n_mb, m+1))
+      xs = np.zeros((n_mb, m+1, state_dim))
+      Ps = np.zeros((n_mb, m+1, state_dim, state_dim))
+      # Transpose hypotheses to track-oriented format
+      for im in range(m+1):
+        if mb_hypos[im] is None:
+          continue
+        valid = mb_hypo_mask[:, im]
+        rs[valid, im] = mb_hypos[im].r
+        xs[valid, im] = mb_hypos[im].state.mean
+        Ps[valid, im] = mb_hypos[im].state.covar
 
-    # Form continuing tracks
-    tomb_mb = []
-    for i in range(len(self.mb)):
-      valid = valid_hypos[i]
-      rupd = np.array([bern.r for bern in mb_hypos[i, valid]])
-      xupd = [bern.state.mean for bern in mb_hypos[i, valid]]
-      Pupd = [bern.state.covar for bern in mb_hypos[i, valid]]
+      # Marginalize over hypotheses
+      for imb in range(n_mb):
+        valid = mb_hypo_mask[imb]
+        pr = p_updated[imb, valid] * rs[imb, valid]
+        if np.count_nonzero(valid) == 1:
+          x, P = xs[imb, valid], Ps[imb, valid]
+          r = pr
+        else:
+          r, x, P = merge_gaussians(
+              means=xs[imb, valid], covars=Ps[imb, valid], weights=pr)
+          x, P = x[None, ...], P[None, ...]
+        mb = mb.append(r=r, state=Gaussian(mean=x, covar=P))
+        meta['mb'][imb].update(
+            {'p_updated': p_updated[imb], 'in_gate': valid})
 
-      pr = pupd[i, valid] * rupd
-      r = np.sum(pr)
-      x, P = mix_gaussians(means=xupd, covars=Pupd, weights=pr)
+    # Form new tracks
+    n_new = new_berns.size
+    if n_new > 0:
+      mb = mb.append(r=p_new * new_berns.r, state=new_berns.state)
+      meta['mb'].extend([dict(p_new=p_new[i]) for i in range(n_new)])
 
-      new_bern = Bernoulli(r=r, state=GaussianState(mean=x, covar=P))
-      tomb_mb.append(new_bern)
+    return mb, meta
 
-    # Form new tracks (already single hypothesis)
-    for j in range(len(new_berns)):
-      r = pnew[j] * new_berns[j].r
-      new_bern = Bernoulli(r=r, state=new_berns[j].state)
-      tomb_mb.append(new_bern)
+  def bernoulli_birth(self,
+                      state_estimator: StateEstimator,
+                      measurements: np.ndarray,
+                      pd_poisson: np.ndarray,
+                      lambda_fa: float,
+                      ) -> Tuple[MultiBernoulli, np.ndarray]:
+    """
+    Create new Bernoulli components from the Poisson distribution based on measurements
 
-    # Truncate tracks with low probability of existence (not shown in algorithm)
-    tomb_mb = [bern for bern in tomb_mb if bern.r >= self.r_min]
+    NOTE: Makes Gaussian state assumption for Poisson components
 
-    return tomb_mb
+    Parameters
+    ----------
+    state_estimator : KalmanFilter
+      The Kalman filter used for state estimation.
+    measurements : np.ndarray
+      Array of measurement vectors
+    pd_poisson : np.ndarray
+      Detection probabilities for the Poisson components
+    lambda_fa : float
+      False alarm density per unit volume
+
+    Returns
+    -------
+    Tuple[MultiBernoulli, np.ndarray]
+      - The new Bernoulli components
+      - The weights of the new Bernoulli components
+    """
+    m = len(measurements)
+    n_u = self.poisson.size
+    w_new = np.zeros(m)
+
+    state_dim = self.poisson.state.ndim
+    r = np.zeros(m)
+    means = np.zeros((m, state_dim))
+    covars = np.zeros((m, state_dim, state_dim))
+    if m > 0:
+      valid = np.zeros((n_u, m), dtype=bool)
+      # Valid poisson-measurement pairs
+      # Valid = in gate and detectable
+      detectable = pd_poisson > self.poisson_pd_threshold
+      in_gate = state_estimator.gate(
+          measurements=measurements,
+          state=self.poisson.state[detectable],
+          pg=self.pg
+      )
+      valid[detectable] = in_gate
+
+      # Compute likelihoods for all valid Poisson-measurement pairs
+      l_poisson = np.zeros((n_u, m))
+      valid_meas = np.argwhere(np.any(valid, axis=0)).ravel()
+      valid_poisson = np.argwhere(np.any(valid, axis=1)).ravel()
+      l_poisson[np.ix_(valid_poisson, valid_meas)] = state_estimator.likelihood(
+          measurement=measurements[valid_meas],
+          state=self.poisson.state[valid_poisson]
+      )
+
+      # Create a new track hypothesis for each measurement
+      for im in range(m):
+        valid_u = valid[:, im]
+        n_valid = np.count_nonzero(valid_u)
+        if n_valid == 0:
+          continue
+
+        mixture = state_estimator.update(
+            state=self.poisson.state[valid_u],
+            measurement=measurements[im],
+        )
+        mixture.weight *= l_poisson[valid_u, im] * pd_poisson[valid_u]
+
+        sum_w_mixture = np.sum(mixture.weight)
+        w_new[im] = sum_w_mixture + lambda_fa
+        r[im] = sum_w_mixture / (w_new[im] + 1e-15)
+
+        # Reduce the mixture to a single Gaussian
+        if n_valid == 1:
+          means[im], covars[im] = mixture.mean, mixture.covar
+        else:
+          _, means[im], covars[im] = merge_gaussians(
+              means=mixture.mean,
+              covars=mixture.covar,
+              weights=mixture.weight
+          )
+
+      # Create Bernoulli components for each measurement
+      new_berns = MultiBernoulli(
+          r=r,
+          state=Gaussian(mean=means, covar=covars, weight=None)
+      )
+    else:
+      new_berns = MultiBernoulli()
+
+    return new_berns, w_new
+
+  def make_mb_hypos(self,
+                    state_estimator: StateEstimator,
+                    measurements: np.ndarray,
+                    pd_func: Callable
+                    ) -> Tuple[List[MultiBernoulli], np.ndarray, np.ndarray]:
+    """
+    Create MB data association hypotheses for existing measurement-track pairs
+
+
+    Parameters
+    ----------
+    state_estimator : KalmanFilter
+        Kalman filter used for state estimation
+    measurements : np.ndarray
+        Array of measurement vectors
+    pd_func : Callable
+        Function handle to the detection probability function
+
+    Returns
+    -------
+    Tuple[List[MultiBernoulli], np.ndarray, np.ndarray]
+        - List of MB hypotheses
+        - Mask indicating which hypotheses are valid
+        - Data association weights for each hypothesis
+    """
+    n = self.mb.size if self.mb is not None else 0
+    m = len(measurements) if measurements is not None else 0
+
+    # One MB hypothesis per measurement (including missed detection event)
+    hypos = []
+    mask = np.zeros((n, m+1), dtype=bool)
+    w_upd = np.zeros((n, m+1))
+    if n > 0:
+      # Missed detection hypothesis
+      pd = pd_func(self.mb.state)
+      w_upd[:, 0] = (1 - self.mb.r) + self.mb.r * (1 - pd)
+      r_post = self.mb.r * (1 - pd) / (w_upd[:, 0] + 1e-15)
+      state_post = self.mb.state
+      hypos.append(MultiBernoulli(r=r_post, state=state_post))
+      mask[:, 0] = True
+
+      # Gate MB components and compute likelihoods for state-measurement pairs
+      if m > 0:
+        in_gate = state_estimator.gate(
+            measurements=measurements,
+            state=self.mb.state,
+            pg=self.pg
+        )
+        mask[:, 1:] = in_gate
+
+        l_mb = np.zeros((n, m))
+        valid_meas = np.argwhere(np.any(in_gate, axis=0)).ravel()
+        valid_mb = np.argwhere(np.any(in_gate, axis=1)).ravel()
+        l_mb[np.ix_(valid_mb, valid_meas)] = state_estimator.likelihood(
+            measurement=measurements[valid_meas],
+            state=self.mb.state[valid_mb]
+        )
+
+        # Create hypotheses for each state-measurement pair
+        for im in range(m):
+          valid = in_gate[:, im]
+          n_valid = np.count_nonzero(valid)
+          if n_valid > 0:
+            state_post = state_estimator.update(
+                state=self.mb.state[valid],
+                measurement=measurements[im],
+            )
+            r_post = np.ones(n_valid)
+            hypos.append(MultiBernoulli(r=r_post, state=state_post))
+            w_upd[valid, im+1] = self.mb[valid].r * \
+                pd_func(state_post) * l_mb[valid, im]
+          else:
+            hypos.append(None)
+
+    return hypos, mask, w_upd
 
   @staticmethod
-  def spa(wupd: np.ndarray, wnew: np.ndarray, eps: float = 1e-4
+  def spa(w_updated: np.ndarray,
+          w_new: np.ndarray,
+          eps: float = 1e-4,
+          max_iter: Optional[int] = None
           ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Compute marginal association probabilities using the Sum-Product Algorithm, allowing for a time-varying number of objects.
@@ -281,26 +450,35 @@ class TOMBP:
         - p_new : np.ndarray
             Marginal association probabilities for new objects
     """
+    if max_iter is None:
+      max_iter = np.inf
 
-    n, mp1 = wupd.shape
+    n, mp1 = w_updated.shape
     m = mp1 - 1
 
     mu_ba = np.ones((n, m))
     mu_ba_old = np.zeros((n, m))
     mu_ab = np.zeros((n, m))
 
-    while np.max(np.abs(mu_ba - mu_ba_old)) > eps:
+    i = 0
+    while True:
       mu_ba_old = mu_ba
 
-      w_muba = wupd[:, 1:] * mu_ba
-      mu_ab = wupd[:, 1:] / (wupd[:, 0][:, np.newaxis] +
-                             np.sum(w_muba, axis=1, keepdims=True) - w_muba)
-      mu_ba = 1 / (wnew + np.sum(mu_ab, axis=0, keepdims=True) - mu_ab)
+      w_muba = w_updated[:, 1:] * mu_ba
+      mu_ab = w_updated[:, 1:] / (w_updated[:, 0][:, np.newaxis] +
+                                  np.sum(w_muba, axis=1, keepdims=True) - w_muba + 1e-15)
+      mu_ba = 1 / (w_new + np.sum(mu_ab, axis=0,
+                                  keepdims=True) - mu_ab + 1e-15)
+      i += 1
+
+      if np.max(np.abs(mu_ba - mu_ba_old)) < eps or i == max_iter:
+        break
 
     # Compute marginal association probabilities
     mu_ba = np.concatenate((np.ones((n, 1)), mu_ba), axis=1)
-    p_upd = wupd * mu_ba / (np.sum(wupd * mu_ba, axis=1, keepdims=True))
+    p_updated = w_updated * mu_ba / \
+        (np.sum(w_updated * mu_ba, axis=1, keepdims=True) + 1e-15)
 
-    p_new = wnew / (wnew + np.sum(mu_ab, axis=0))
+    p_new = w_new / (w_new + np.sum(mu_ab, axis=0) + 1e-15)
 
-    return p_upd, p_new
+    return p_updated, p_new

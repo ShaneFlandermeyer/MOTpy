@@ -1,107 +1,79 @@
 import functools
-from typing import Union
+from typing import Tuple, Union, Literal, Optional
 from scipy.linalg import block_diag
 import numpy as np
 from motpy.models.transition.base import TransitionModel
 
 
 class ConstantVelocity(TransitionModel):
-  r"""This is a class implementation of a discrete, time-variant 1D
-    Linear-Gaussian Constant Velocity Transition Model.
-
-    The target is assumed to move with (nearly) constant velocity, where
-    target acceleration is modelled as white noise.
-
-    This is a faster than the :class:`ConstantVelocity` model in StoneSoup since it can be vectorized and avoids the for loops in the transition and covariance matrix computations. This also makes it less extensible to higher-order motion models.
-
-    The model is described by the following SDEs:
-
-        .. math::
-            :nowrap:
-
-            \begin{eqnarray}
-                dx_{pos} & = & x_{vel} d & | {Position \ on \
-                X-axis (m)} \\
-                dx_{vel} & = & q\cdot dW_t,\ W_t \sim \mathcal{N}(0,q^2) & | \
-                Speed on\ X-axis (m/s)
-            \end{eqnarray}
-
-    Or equivalently:
-
-        .. math::
-            x_t = F_t x_{t-1} + w_t,\ w_t \sim \mathcal{N}(0,Q_t)
-
-    where:
-
-        .. math::
-            x & = & \begin{bmatrix}
-                        x_{pos} \\
-                        x_{vel}
-                \end{bmatrix}
-
-        .. math::
-            F_t & = & \begin{bmatrix}
-                        1 & dt\\
-                        0 & 1
-                \end{bmatrix}
-
-        .. math::
-            Q_t & = & \begin{bmatrix}
-                        \frac{dt^3}{3} & \frac{dt^2}{2} \\
-                        \frac{dt^2}{2} & dt
-                \end{bmatrix} q
-    """
+  """
+  A nearly constant velocity (NCV) kinematic transition model with continuous or discrete white noise acceleration (C/DWNA).
+  """
 
   def __init__(self,
-               ndim_pos: float,
-               q: float,
-               position_mapping: np.array = None,
-               velocity_mapping: np.array = None,
+               ndim_state: float,
+               w: float,
+               position_inds: Optional[np.ndarray] = None,
+               velocity_inds: Optional[np.ndarray] = None,
+               noise_type: Literal["continuous", "discrete"] = "continuous",
                seed: int = np.random.randint(0, 2**32-1),
                ):
-    self.ndim_pos = ndim_pos
-    self.ndim = self.ndim_pos*2
-    self.q = q
+    self.ndim = ndim_state
+    self.w = w
+    self.noise_type = noise_type.lower()
 
-    self.position_mapping = position_mapping
-    self.velocity_mapping = velocity_mapping
-    if position_mapping is None:
-      self.position_mapping = np.arange(0, self.ndim, 2)
-    if velocity_mapping is None:
-      self.velocity_mapping = np.arange(1, self.ndim, 2)
+    if position_inds is None:
+      position_inds = np.arange(0, self.ndim, 2)
+    if velocity_inds is None:
+      velocity_inds = np.arange(1, self.ndim, 2)
+    self.position_inds = position_inds
+    self.velocity_inds = velocity_inds
+
     self.np_random = np.random.RandomState(seed)
 
   def __call__(
       self,
       x: np.ndarray,
       dt: float = 0,
-      noise: bool = False
+      noise: bool = False,
   ) -> np.ndarray:
-    next_state = x.copy().astype(float)
-    next_state[self.position_mapping] += x[self.velocity_mapping]*dt
+    next_x = np.array(x).astype(float)
+    next_x[..., self.position_inds] += x[..., self.velocity_inds]*dt
+
     if noise:
-      next_state += self.sample_noise(dt).reshape(x.shape)
-    return next_state
+      next_x += self.sample_noise(covar=self.covar(dt=dt), size=x.shape[:-1])
+
+    return next_x
 
   @functools.lru_cache()
   def matrix(self, dt: float):
-    # TODO: Account for state mapping
-    F = np.array([[1, dt],
-                  [0, 1]])
-    F = block_diag(*[F]*self.ndim_pos)
-    return F.astype(float)
+    F = np.zeros((self.ndim, self.ndim))
+
+    pos, vel = self.position_inds, self.velocity_inds
+    F[pos, pos] = 1
+    F[pos, vel] = dt
+    F[vel, vel] = 1
+    return F
 
   @functools.lru_cache()
   def covar(self, dt: float):
-    # TODO: Account for state mapping
-    Q = np.array([[1/3*dt**3, 1/2*dt**2],
-                  [1/2*dt**2, dt]])
-    Q = block_diag(*[Q for _ in range(self.ndim_pos)]) * self.q
-    return Q.astype(float)
+    ipos, ivel = self.position_inds, self.velocity_inds
+    Q = np.zeros((self.ndim, self.ndim))
 
-  def sample_noise(self,
-                   dt: float = 0) -> np.array:
-    covar = self.covar(dt)
-    noise = self.np_random.multivariate_normal(
-        mean=np.zeros((self.ndim)), cov=covar)
-    return np.asarray(noise)
+    if self.noise_type == "continuous":
+      Q[ipos, ipos] = dt**3 / 3
+      Q[ipos, ivel] = dt**2 / 2
+      Q[ivel, ipos] = dt**2 / 2
+      Q[ivel, ivel] = dt
+    elif self.noise_type == "discrete":
+      Q[ipos, ipos] = dt**4 / 4
+      Q[ipos, ivel] = dt**3 / 2
+      Q[ivel, ipos] = dt**2 / 2
+      Q[ivel, ivel] = dt**2
+    Q *= self.w
+
+    return Q
+
+  def sample_noise(self, covar, size: Tuple[int, ...]) -> np.ndarray:
+    return self.np_random.multivariate_normal(
+        mean=np.zeros(self.ndim), cov=covar, size=size)
