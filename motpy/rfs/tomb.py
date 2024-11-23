@@ -4,7 +4,8 @@ from typing import Callable, Dict, List, Optional, Tuple, Any
 import numpy as np
 
 from motpy.distributions.gaussian import Gaussian, merge_gaussians
-from motpy.kalman import KalmanFilter
+from motpy.distributions import Distribution
+from motpy.estimators import StateEstimator
 from motpy.rfs.bernoulli import MultiBernoulli
 from motpy.rfs.poisson import Poisson
 
@@ -15,17 +16,17 @@ class TOMBP:
   """
 
   def __init__(self,
-               birth_state: Gaussian,
-               undetected_state: Optional[Gaussian] = None,
+               birth_state: Distribution,
+               undetected_state: Optional[Distribution] = None,
                pg: Optional[float] = None,
                poisson_pd_threshold: Optional[float] = None,
                ):
     """
     Parameters
     ----------
-    birth_distribution : GaussianState
+    birth_distribution : Distribution
         The birth distribution for the Poisson component
-    undetected_distribution: Optional[GaussianState]
+    undetected_distribution: Optional[Distribution]
         The initial distribution for the Poisson component
     pg : float, optional
         Gate probability for measurement association
@@ -49,7 +50,7 @@ class TOMBP:
       self.poisson_pd_threshold = poisson_pd_threshold
 
   def predict(self,
-              state_estimator: KalmanFilter,
+              state_estimator: StateEstimator,
               dt: float,
               ps_func: float,
               **kwargs
@@ -101,7 +102,7 @@ class TOMBP:
 
   def update(self,
              measurements: np.ndarray,
-             state_estimator: KalmanFilter,
+             state_estimator: StateEstimator,
              pd_func: Callable,
              lambda_fa: float) -> Tuple[MultiBernoulli, Poisson]:
     """
@@ -192,6 +193,8 @@ class TOMBP:
 
     NOTE: Makes Gaussian state assumption in marginalization step
 
+    TODO: Mixture merging can ~probably~ be implemented as a segment sum
+
     Parameters
     ----------
     p_updated : np.ndarray
@@ -252,7 +255,7 @@ class TOMBP:
     return mb, meta
 
   def bernoulli_birth(self,
-                      state_estimator: KalmanFilter,
+                      state_estimator: StateEstimator,
                       measurements: np.ndarray,
                       pd_poisson: np.ndarray,
                       lambda_fa: float,
@@ -346,7 +349,7 @@ class TOMBP:
     return new_berns, w_new
 
   def make_mb_hypos(self,
-                    state_estimator: KalmanFilter,
+                    state_estimator: StateEstimator,
                     measurements: np.ndarray,
                     pd_func: Callable
                     ) -> Tuple[List[MultiBernoulli], np.ndarray, np.ndarray]:

@@ -4,7 +4,7 @@ import scipy.stats
 from filterpy.kalman import predict, update
 
 from motpy.distributions.gaussian import Gaussian
-from motpy.kalman import KalmanFilter
+from motpy.estimators.kalman import KalmanFilter
 from motpy.models.measurement import LinearMeasurementModel
 from motpy.models.transition import ConstantVelocity
 

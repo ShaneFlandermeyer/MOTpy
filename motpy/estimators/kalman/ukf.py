@@ -6,7 +6,8 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 
 import motpy.distributions.gaussian as gaussian
-from motpy.distributions.gaussian import Gaussian
+from motpy.distributions import Distribution, Gaussian
+from motpy.estimators import StateEstimator
 from motpy.gate import EllipsoidalGate
 from motpy.models.measurement import MeasurementModel
 from motpy.models.transition import TransitionModel
@@ -19,7 +20,7 @@ class SigmaPointDistribution:
 
   NOTE: We assume Wm and Wc are the same for all elements
   """
-  distribution: Optional[Gaussian] = None
+  distribution: Optional[Distribution] = None
   sigma_points: Optional[np.ndarray] = None
   Wm: Optional[np.ndarray] = None
   Wc: Optional[np.ndarray] = None
@@ -65,7 +66,7 @@ class SigmaPointDistribution:
     )
 
 
-class UnscentedKalmanFilter():
+class UnscentedKalmanFilter(StateEstimator):
   def __init__(self,
                transition_model: TransitionModel,
                measurement_model: MeasurementModel,
@@ -112,7 +113,7 @@ class UnscentedKalmanFilter():
              state: SigmaPointDistribution,
              measurement: np.ndarray,
              **kwargs
-             ) -> Tuple[Gaussian, Dict[str, Any]]:
+             ) -> Tuple[SigmaPointDistribution, Dict[str, Any]]:
 
     # Unscented transform in measurement space
     measured_sigmas = self.measurement_model(

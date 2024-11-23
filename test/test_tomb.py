@@ -3,11 +3,11 @@ import pytest
 
 from motpy.distributions.gaussian import Gaussian
 from motpy.distributions.mixture import static_reduce
-from motpy.kalman import (KalmanFilter, SigmaPointDistribution,
+from motpy.estimators.kalman import (KalmanFilter, SigmaPointDistribution,
                           UnscentedKalmanFilter)
-from motpy.kalman.sigma_points import (merwe_scaled_sigma_points,
+from motpy.estimators.kalman.sigma_points import (merwe_scaled_sigma_points,
                                        merwe_sigma_weights)
-from motpy.kalman.ukf import UnscentedKalmanFilter
+from motpy.estimators.kalman.ukf import UnscentedKalmanFilter
 from motpy.models.measurement import LinearMeasurementModel
 from motpy.models.transition import ConstantVelocity
 from motpy.rfs.tomb import TOMBP

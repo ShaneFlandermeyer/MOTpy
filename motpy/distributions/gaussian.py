@@ -4,9 +4,10 @@ import dataclasses
 from typing import *
 
 import numpy as np
+from motpy.distributions.base import Distribution
 
 
-class Gaussian:
+class Gaussian(Distribution):
   """
   A general class to represent both Gaussian state and Gaussian mixture distributions.
 

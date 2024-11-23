@@ -71,16 +71,3 @@ def gate_probability(threshold: float, ndim: int) -> float:
     return 2*gc(sqrt_G) - (1+G/3)*np.sqrt(2*G/np.pi)*np.exp(-G/2)
   elif ndim == 6:
     return 1 - 0.5*(G**2/4+G+2)*np.exp(-G/2)
-
-
-if __name__ == '__main__':
-  measurements = np.array([[1, 1], [2, 2], [3, 3]])
-  z_pred = np.array([[1, 1], [2, 2]])
-  S = np.array([np.eye(2)]*2)
-  pg = 0.99
-
-  gate = EllipsoidalGate(pg=pg, ndim=2)
-
-  print(gate(measurements=measurements,
-        predicted_measurement=z_pred, innovation_covar=S))
-  print(gate.volume(covar=S))

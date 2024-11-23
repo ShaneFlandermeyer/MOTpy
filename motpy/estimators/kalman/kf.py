@@ -7,9 +7,10 @@ from motpy.models.transition.base import TransitionModel
 from motpy.distributions.gaussian import Gaussian
 import motpy.distributions.gaussian as gaussian
 from motpy.gate import EllipsoidalGate
+from motpy.estimators import StateEstimator
 
 
-class KalmanFilter():
+class KalmanFilter(StateEstimator):
   def __init__(self,
                transition_model: Optional[TransitionModel] = None,
                measurement_model: Optional[MeasurementModel] = None,

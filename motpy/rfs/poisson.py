@@ -2,8 +2,8 @@ from __future__ import annotations
 import copy
 from typing import Any, Dict, List, Optional, Tuple
 
-from motpy.kalman import KalmanFilter
-from motpy.distributions.gaussian import Gaussian
+from motpy.estimators import StateEstimator
+from motpy.distributions import Distribution
 import numpy as np
 
 
@@ -14,8 +14,8 @@ class Poisson:
 
   def __init__(
       self,
-      birth_distribution: Gaussian,
-      state: Optional[Gaussian] = None,
+      birth_distribution: Distribution,
+      state: Optional[Distribution] = None,
   ):
     self.birth_distribution = birth_distribution
     self.state = state
@@ -33,7 +33,7 @@ class Poisson:
     return self.state.size
 
   def predict(self,
-              state_estimator: KalmanFilter,
+              state_estimator: StateEstimator,
               ps: float,
               dt: float,
               **kwargs

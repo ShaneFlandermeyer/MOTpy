@@ -5,9 +5,9 @@ from filterpy.kalman import UnscentedKalmanFilter as UKF
 from filterpy.kalman.sigma_points import MerweScaledSigmaPoints
 
 from motpy.distributions.gaussian import Gaussian
-from motpy.kalman import UnscentedKalmanFilter, SigmaPointDistribution
-from motpy.kalman.sigma_points import (merwe_scaled_sigma_points,
-                                       merwe_sigma_weights)
+from motpy.estimators.kalman import UnscentedKalmanFilter, SigmaPointDistribution
+from motpy.estimators.kalman.sigma_points import (merwe_scaled_sigma_points,
+                                                  merwe_sigma_weights)
 from motpy.models.measurement.linear import LinearMeasurementModel
 from motpy.models.measurement.range_bearing import RangeBearingModel
 from motpy.models.transition import ConstantVelocity
