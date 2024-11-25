@@ -7,36 +7,15 @@ import math
 from motpy.distributions.gaussian import mahalanobis
 
 
-class EllipsoidalGate:
-  def __init__(self, pg: float, ndim: int):
-    self.pg = pg
-    self.ndim = ndim
+def ellipsoidal_gate(pg: float, ndim: int, x: np.ndarray, mean: np.ndarray, covar: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+  dist = mahalanobis(x=x, mean=mean, covar=covar)
+  t = gate_threshold(pg=pg, ndim=ndim)
+  in_gate = dist**2 < t
+  return in_gate, dist
 
-  def __call__(self,
-               x: np.ndarray,
-               mean: np.ndarray,
-               covar: np.ndarray,
-               ) -> Tuple[np.ndarray, np.ndarray]:
-    # Thresholding for all pairs
-    dist = mahalanobis(
-        x=x,
-        mean=mean,
-        covar=covar
-    )
-    t = self.threshold(pg=self.pg, ndim=self.ndim)
-    in_gate = dist**2 < t
-    return in_gate, dist
-
-  @staticmethod
-  @functools.lru_cache
-  def threshold(pg: int, ndim: int) -> float:
-    return chi2.ppf(pg, ndim)
-
-  def volume(self, covar: np.ndarray):
-    gamma = self.threshold(pg=self.pg, ndim=self.ndim)
-
-    c = np.pi**(self.ndim/2) / math.gamma(self.ndim/2+1)
-    return c*gamma**(self.ndim/2) * np.sqrt(np.linalg.det(covar))
+@functools.lru_cache
+def gate_threshold(pg: float, ndim: int) -> float:
+  return chi2.ppf(pg, ndim)
 
 
 def gate_probability(threshold: float, ndim: int) -> float:
@@ -71,3 +50,11 @@ def gate_probability(threshold: float, ndim: int) -> float:
     return 2*gc(sqrt_G) - (1+G/3)*np.sqrt(2*G/np.pi)*np.exp(-G/2)
   elif ndim == 6:
     return 1 - 0.5*(G**2/4+G+2)*np.exp(-G/2)
+
+
+def gate_volume(pg: float, ndim: int, covar: np.ndarray) -> float:
+  gamma = gate_threshold(pg=pg, ndim=ndim)
+
+  c = np.pi**(ndim/2) / math.gamma(ndim/2+1)
+  volume = c*gamma**(ndim/2) * np.sqrt(np.linalg.det(covar))
+  return volume

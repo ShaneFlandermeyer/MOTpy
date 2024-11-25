@@ -6,7 +6,7 @@ from motpy.models.measurement.base import MeasurementModel
 from motpy.models.transition.base import TransitionModel
 from motpy.distributions.gaussian import Gaussian
 import motpy.distributions.gaussian as gaussian
-from motpy.gate import EllipsoidalGate
+from motpy.gate import ellipsoidal_gate
 from motpy.estimators import StateEstimator
 
 
@@ -45,7 +45,7 @@ class KalmanFilter(StateEstimator):
              **kwargs,
              ) -> Gaussian:
     assert self.measurement_model is not None
-    
+
     measurement = np.asarray(measurement)
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
@@ -55,7 +55,7 @@ class KalmanFilter(StateEstimator):
     z = np.atleast_2d(measurement)
     z_pred = self.measurement_model(x_pred, **kwargs)
     y = z - z_pred
-    
+
     S = H @ P_pred @ H.T + R
     K = P_pred @ H.T @ np.linalg.inv(S)
     x_post = x_pred + \
@@ -63,7 +63,6 @@ class KalmanFilter(StateEstimator):
     P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
     P_post = 0.5 * (P_post + P_post.swapaxes(-1, -2))
 
-    
     # Handle broadcasting for multiple measurements
     weight = state.weight
     if measurement.ndim == 1:
@@ -140,8 +139,9 @@ class KalmanFilter(StateEstimator):
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
     S = H @ P @ H.T + R
-    gate = EllipsoidalGate(pg=pg, ndim=measurements.shape[-1])
-    gate_mask, _ = gate(
+    gate_mask, _ = ellipsoidal_gate(
+        pg=pg,
+        ndim=measurements.shape[-1],
         x=measurements,
         mean=self.measurement_model(x, **kwargs),
         covar=S

@@ -9,7 +9,7 @@ from motpy.distributions import Gaussian
 from motpy.estimators import StateEstimator
 from motpy.estimators.kalman.sigma_points import (merwe_scaled_sigma_points,
                                                   merwe_sigma_weights)
-from motpy.gate import EllipsoidalGate
+from motpy.gate import ellipsoidal_gate
 from motpy.models.measurement import MeasurementModel
 from motpy.models.transition import TransitionModel
 
@@ -45,9 +45,7 @@ class UnscentedKalmanFilter(StateEstimator):
     )
 
     # Transform sigma points to prediction space
-    predicted_sigmas = self.transition_model(
-        sigma_points, dt=dt, **kwargs
-    )
+    predicted_sigmas = self.transition_model(sigma_points, dt=dt, **kwargs)
 
     x_pred, P_pred = unscented_transform(
         sigmas=predicted_sigmas,
@@ -57,11 +55,7 @@ class UnscentedKalmanFilter(StateEstimator):
         residual_fn=self.state_residual_fn,
     )
 
-    predicted_state = Gaussian(
-        mean=x_pred,
-        covar=P_pred,
-        weight=state.weight
-    )
+    predicted_state = Gaussian(mean=x_pred, covar=P_pred, weight=state.weight)
 
     return predicted_state
 
@@ -79,9 +73,7 @@ class UnscentedKalmanFilter(StateEstimator):
     )
 
     # Unscented transform in measurement space
-    measured_sigmas = self.measurement_model(
-        sigma_points, **kwargs
-    )
+    measured_sigmas = self.measurement_model(sigma_points, **kwargs)
     z_pred, S = unscented_transform(
         sigmas=measured_sigmas,
         Wm=Wm,
@@ -118,11 +110,7 @@ class UnscentedKalmanFilter(StateEstimator):
       if weight is not None:
         weight = np.expand_dims(weight, axis=-1).repeat(z.shape[-2], axis=-1)
 
-    post_state = Gaussian(
-        mean=x_post,
-        covar=P_post,
-        weight=weight
-    )
+    post_state = Gaussian(mean=x_post, covar=P_post, weight=weight)
 
     return post_state
 
@@ -161,11 +149,7 @@ class UnscentedKalmanFilter(StateEstimator):
         noise_covar=self.measurement_model.covar(),
         residual_fn=self.measurement_residual_fn,
     )
-    return gaussian.likelihood(
-        x=measurement,
-        mean=z_pred,
-        covar=S
-    )
+    return gaussian.likelihood(x=measurement, mean=z_pred, covar=S)
 
   def gate(self,
            measurements: np.ndarray,
@@ -189,8 +173,9 @@ class UnscentedKalmanFilter(StateEstimator):
         noise_covar=self.measurement_model.covar(),
         residual_fn=self.measurement_residual_fn,
     )
-    gate = EllipsoidalGate(pg=pg, ndim=measurements.shape[-1])
-    gate_mask, _ = gate(
+    gate_mask, _ = ellipsoidal_gate(
+        pg=pg,
+        ndim=measurements.shape[-1],
         x=measurements,
         mean=z_pred,
         covar=S
