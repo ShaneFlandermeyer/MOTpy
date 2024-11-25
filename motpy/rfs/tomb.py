@@ -218,7 +218,7 @@ class TOMBP:
 
     mb = MultiBernoulli()
     if len(mb_hypos) > 0:
-      state_dim = mb_hypos[0].state.ndim
+      state_dim = mb_hypos[0].state.state_dim
       rs = np.zeros((n_mb, m+1))
       xs = np.zeros((n_mb, m+1, state_dim))
       Ps = np.zeros((n_mb, m+1, state_dim, state_dim))
@@ -286,7 +286,7 @@ class TOMBP:
     n_u = self.poisson.size
     w_new = np.zeros(m)
 
-    state_dim = self.poisson.state.ndim
+    state_dim = self.poisson.state.state_dim
     r = np.zeros(m)
     means = np.zeros((m, state_dim))
     covars = np.zeros((m, state_dim, state_dim))
@@ -306,37 +306,28 @@ class TOMBP:
       l_poisson = np.zeros((n_u, m))
       valid_meas = np.argwhere(np.any(valid, axis=0)).ravel()
       valid_poisson = np.argwhere(np.any(valid, axis=1)).ravel()
-      l_poisson[np.ix_(valid_poisson, valid_meas)] = state_estimator.likelihood(
+      valid_inds = np.ix_(valid_poisson, valid_meas)
+      l_poisson[valid_inds] = state_estimator.likelihood(
           measurement=measurements[valid_meas],
           state=self.poisson.state[valid_poisson]
       )
 
       # Create a new track hypothesis for each measurement
-      for im in range(m):
-        valid_u = valid[:, im]
-        n_valid = np.count_nonzero(valid_u)
-        if n_valid == 0:
-          continue
-
-        mixture = state_estimator.update(
-            state=self.poisson.state[valid_u],
-            measurement=measurements[im],
-        )
-        mixture.weight *= l_poisson[valid_u, im] * pd_poisson[valid_u]
-
-        sum_w_mixture = np.sum(mixture.weight)
-        w_new[im] = sum_w_mixture + lambda_fa
-        r[im] = sum_w_mixture / (w_new[im] + 1e-15)
-
-        # Reduce the mixture to a single Gaussian
-        if n_valid == 1:
-          means[im], covars[im] = mixture.mean, mixture.covar
-        else:
-          _, means[im], covars[im] = merge_gaussians(
-              means=mixture.mean,
-              covars=mixture.covar,
-              weights=mixture.weight
-          )
+      mixtures = state_estimator.update(
+          state=self.poisson.state[valid_poisson],
+          measurement=measurements[valid_meas]
+      )
+      mixtures.weight *= l_poisson[valid_inds] * pd_poisson[valid_poisson, None]
+      sum_w_mixture = np.sum(mixtures.weight, axis=0, where=valid)
+      w_new = sum_w_mixture + lambda_fa
+      r = sum_w_mixture / (w_new + 1e-15)
+      _, means, covars = merge_gaussians(
+          means=mixtures.mean,
+          covars=mixtures.covar,
+          weights=mixtures.weight,
+          axis=0,
+          where=valid,
+      )
 
       # Create Bernoulli components for each measurement
       new_berns = MultiBernoulli(

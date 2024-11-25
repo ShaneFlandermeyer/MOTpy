@@ -20,13 +20,13 @@ def make_data(dt, lambda_c, pd, n_steps):
   noisy = False
   # Object trajectories
   paths = [[np.array([-90, 1, -90, 1])], [np.array([-90, 1, 90, -1])]]
-  cv = ConstantVelocity(ndim_state=4,
+  cv = ConstantVelocity(state_dim=4,
                         w=0.01,
                         position_inds=[0, 2],
                         velocity_inds=[1, 3],
                         seed=seed)
   linear = LinearMeasurementModel(
-      ndim_state=4, covar=np.eye(2), measured_dims=[0, 2], seed=seed)
+      state_dim=4, covar=np.eye(2), measured_dims=[0, 2], seed=seed)
 
   for i in range(n_steps):
     for path in paths:
@@ -242,6 +242,6 @@ def test_ukf_tomb():
 
 
 if __name__ == '__main__':
-  test_ukf_tomb()
-  # test_scenario_prune()
+#   test_ukf_tomb()
+#   test_scenario_prune()
   pytest.main([__file__])

@@ -10,7 +10,7 @@ class RangeBearingModel():
                ):
     self.noise_covar = covar
     self.pos_dims = pos_dims
-    self.ndim = 2
+    self.measurement_dim = 2
 
     self.np_random = np.random.RandomState(seed)
 
@@ -32,4 +32,4 @@ class RangeBearingModel():
 
   def sample_noise(self, size: Tuple[int, ...]) -> np.ndarray:
     return self.np_random.multivariate_normal(
-        mean=np.zeros(self.ndim), cov=self.noise_covar, size=size)
+        mean=np.zeros(self.measurement_dim), cov=self.noise_covar, size=size)

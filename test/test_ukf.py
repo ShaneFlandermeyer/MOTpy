@@ -26,10 +26,10 @@ def test_predict():
       mean=np.array([0, 1, 0, 1]),
       covar=np.diag([1., 0.5, 1., 0.5])
   )
-  state_dim = distribution.ndim
+  state_dim = distribution.state_dim
 
   # Motpy UKF
-  cv = ConstantVelocity(ndim_state=state_dim, w=w, seed=seed)
+  cv = ConstantVelocity(state_dim=state_dim, w=w, seed=seed)
   ukf = UnscentedKalmanFilter(transition_model=cv, measurement_model=None)
   sigmas = merwe_scaled_sigma_points(
       x=distribution.mean,
@@ -80,7 +80,7 @@ def test_update():
   R = np.diag([0.1, np.deg2rad(0.1)])
   range_bearing = RangeBearingModel(covar=R)
 
-  state_dim = distribution.ndim
+  state_dim = distribution.state_dim
   ground_truth = np.array([0, 1, 0, 1])
   z = range_bearing(ground_truth, noise=False)
 
@@ -130,7 +130,7 @@ def test_update():
 def test_likelihood():
   state_dim = 2
   linear = LinearMeasurementModel(
-      ndim_state=state_dim, covar=np.eye(state_dim)
+      state_dim=state_dim, covar=np.eye(state_dim)
   )
   ukf = UnscentedKalmanFilter(transition_model=None, measurement_model=linear)
 
@@ -161,7 +161,7 @@ def test_likelihood():
 def test_gate():
   state_dim = 2
   linear = LinearMeasurementModel(
-      ndim_state=state_dim, covar=np.eye(state_dim)
+      state_dim=state_dim, covar=np.eye(state_dim)
   )
   ukf = UnscentedKalmanFilter(transition_model=None, measurement_model=linear)
 

@@ -20,20 +20,20 @@ class Gaussian(Distribution):
       covar: Optional[np.ndarray],
       weight: Optional[np.ndarray] = None,
   ):
-    shape, ndim = mean.shape[:-1], mean.shape[-1]
+    shape, state_dim = mean.shape[:-1], mean.shape[-1]
 
-    self.mean = np.reshape(mean, shape + (ndim,))
-    self.covar = np.reshape(covar, shape + (ndim, ndim))
+    self.mean = np.reshape(mean, shape + (state_dim,))
+    self.covar = np.reshape(covar, shape + (state_dim, state_dim))
     if weight is not None:
       self.weight = np.reshape(weight, shape)
     else:
       self.weight = None
-    self.ndim = ndim
+    self.state_dim = state_dim
 
   def __repr__(self):
     return f"""Gaussian(
       shape={self.shape},
-      ndim={self.ndim},
+      state_dim={self.state_dim},
       means={self.mean}
       covars=\n{self.covar})
       weights={self.weight}
@@ -79,7 +79,7 @@ class Gaussian(Distribution):
     Sample points from each Gaussian component at the specified dimensions.
     """
     if dims is None:
-      dims = np.arange(self.ndim)
+      dims = np.arange(self.state_dim)
 
     covar_inds = np.ix_(dims, dims)
     P = self.covar[..., covar_inds[0], covar_inds[1]]
@@ -95,7 +95,10 @@ class Gaussian(Distribution):
 def merge_gaussians(
         means: np.ndarray,
         covars: np.ndarray,
-        weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        weights: np.ndarray,
+        axis: int = 0,
+        where: Optional[np.ndarray] = None,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
   """
   Compute a Gaussian mixture as a weighted sum of N Gaussian distributions, each with dimension D.
 
@@ -118,13 +121,16 @@ def merge_gaussians(
   P = covars
   w = weights
 
-  w_merged = np.sum(w, axis=-1)
-  w /= w_merged[..., None] + 1e-15
-  mu_merged = np.einsum('...i, ...ij -> ...j', w, mu)
+  if where is not None:
+    w = np.where(where, w, 0.0)
 
-  y = mu - mu_merged
+  w_merged = np.sum(w, axis=axis)
+  w /= np.expand_dims(w_merged, axis=axis) + 1e-15
+  mu_merged = np.sum(np.expand_dims(w, -1) * mu, axis=axis)
+
+  y = mu - np.expand_dims(mu_merged, axis=axis)
   y_outer = np.einsum('...i, ...j -> ...ij', y, y)
-  P_merged = np.einsum('...i, ...ijk -> ...jk', w, P + y_outer)
+  P_merged = np.sum(np.expand_dims(w, (-1, -2)) * (P + y_outer), axis=axis)
   return w_merged, mu_merged, P_merged
 
 
