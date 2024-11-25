@@ -104,7 +104,8 @@ class TOMBP:
              measurements: np.ndarray,
              state_estimator: StateEstimator,
              pd_func: Callable,
-             lambda_fa: float) -> Tuple[MultiBernoulli, Poisson]:
+             lambda_fa: float
+             ) -> Tuple[MultiBernoulli, Poisson]:
     """
     Updates the state of the multi-object system based on measurements.
 
@@ -211,62 +212,30 @@ class TOMBP:
     MultiBernoulli
         The updated MB distribution
     """
-    n_mb, mp1 = p_updated.shape
-    m = mp1 - 1
+    n_mb = p_updated.shape[0]
 
     mb = MultiBernoulli()
 
-    # Marginalize over existing tracks
+    # Marginalize over measurements for existing tracks
     measurement_inds = np.argwhere(np.any(hypo_mask, axis=0)).ravel()
-    mb_inds = np.argwhere(np.any(hypo_mask[:, 1:], axis=1)).ravel()
-    valid_inds = np.ix_(mb_inds, measurement_inds)
     for i in range(n_mb):
       hypo = mb_hypos[i]
-      # TODO: Only consider the hypothesis components with r > 0
       x, P, r = hypo.state.mean, hypo.state.covar, hypo.r
       pr = p_updated[i][measurement_inds] * r
-      if x.ndim == 1:
-        x, P = x[None, ...], P[None, ...]
-        r = pr[0]
+      if x.ndim == 1:  # No associations
+        r, x, P = pr[0], x[None, ...], P[None, ...]
       else:
-        r, x, P = merge_gaussians(means=x, covars=P, weights=pr, axis=0)
+        r, x, P = merge_gaussians(
+            means=x[pr > 0],
+            covars=P[pr > 0],
+            weights=pr[pr > 0],
+            axis=0
+        )
         x, P = x[None, ...], P[None, ...]
       mb = mb.append(r=r, state=Gaussian(mean=x, covar=P))
       meta['mb'][i].update(
-          {
-              'p_updated': p_updated[i][measurement_inds],
-              'in_gate': hypo_mask[i, 1:]
-          }
+          dict(p_updated=p_updated[i], in_gate=hypo_mask[i, 1:])
       )
-
-    # if len(mb_hypos) > 0:
-    #   state_dim = mb_hypos[0].state.state_dim
-    #   rs = np.zeros((n_mb, m+1))
-    #   xs = np.zeros((n_mb, m+1, state_dim))
-    #   Ps = np.zeros((n_mb, m+1, state_dim, state_dim))
-    #   # Transpose hypotheses to track-oriented format
-    #   for im in range(m+1):
-    #     if mb_hypos[im] is None:
-    #       continue
-    #     valid = hypo_mask[:, im]
-    #     rs[valid, im] = mb_hypos[im].r
-    #     xs[valid, im] = mb_hypos[im].state.mean
-    #     Ps[valid, im] = mb_hypos[im].state.covar
-
-    #   # Marginalize over hypotheses
-    #   for imb in range(n_mb):
-    #     valid = hypo_mask[imb]
-    #     pr = p_updated[imb, valid] * rs[imb, valid]
-    #     if np.count_nonzero(valid) == 1:
-    #       x, P = xs[imb, valid], Ps[imb, valid]
-    #       r = pr
-    #     else:
-    #       r, x, P = merge_gaussians(
-    #           means=xs[imb, valid], covars=Ps[imb, valid], weights=pr)
-    #       x, P = x[None, ...], P[None, ...]
-    #     mb = mb.append(r=r, state=Gaussian(mean=x, covar=P))
-    #     meta['mb'][imb].update(
-    #         {'p_updated': p_updated[imb], 'in_gate': valid})
 
     # Form new tracks
     n_new = new_berns.size
@@ -433,7 +402,6 @@ class TOMBP:
           if i in valid_mb:
             imb = np.argwhere(valid_mb == i).ravel()[0]
             r = np.append(r_missed[i], r_post[imb])
-            # TODO: Problem for UKF: append breaks sigma points
             state = state_missed[i, None].append(state_updates[imb])
             hypos.append(MultiBernoulli(r=r, state=state))
           else:
