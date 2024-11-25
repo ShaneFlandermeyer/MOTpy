@@ -45,26 +45,36 @@ class KalmanFilter(StateEstimator):
              **kwargs,
              ) -> Gaussian:
     assert self.measurement_model is not None
-
-    x_pred, P_pred = state.mean, state.covar
-
-    z = measurement
+    
+    measurement = np.asarray(measurement)
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
 
+    x_pred = np.expand_dims(state.mean, axis=-2)
+    P_pred = state.covar
+    z = np.atleast_2d(measurement)
+    z_pred = self.measurement_model(x_pred, **kwargs)
+    y = z - z_pred
+    
     S = H @ P_pred @ H.T + R
     K = P_pred @ H.T @ np.linalg.inv(S)
+    x_post = x_pred + \
+        np.einsum('...ij, ...j -> ...i', np.expand_dims(K, axis=-3), y)
     P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
-    P_post = (P_post + P_post.swapaxes(-1, -2)) / 2
+    P_post = 0.5 * (P_post + P_post.swapaxes(-1, -2))
 
-    if z is None:
-      x_post = x_pred
+    
+    # Handle broadcasting for multiple measurements
+    weight = state.weight
+    if measurement.ndim == 1:
+      x_post = x_post.squeeze(axis=-2)
     else:
-      z_pred = self.measurement_model(x_pred, **kwargs)
-      x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, z - z_pred)
+      P_post = np.expand_dims(P_post, axis=-3).repeat(z.shape[-2], axis=-3)
+      if weight is not None:
+        weight = np.expand_dims(weight, axis=-1).repeat(z.shape[-2], axis=-1)
 
     post_state = Gaussian(
-        mean=x_post, covar=P_post, weight=state.weight
+        mean=x_post, covar=P_post, weight=weight
     )
 
     return post_state
