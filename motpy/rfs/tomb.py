@@ -403,9 +403,10 @@ class TOMBP:
             imb = np.argwhere(valid_mb == i).ravel()[0]
             r = np.append(r_missed[i], r_post[imb])
             state = state_missed[i, None].append(state_updates[imb])
-            hypos.append(MultiBernoulli(r=r, state=state))
           else:
-            hypos.append(MultiBernoulli(r=r_missed[i], state=state_missed[i]))
+            r = r_missed[i]
+            state = state_missed[i]
+          hypos.append(MultiBernoulli(r=r, state=state))
 
     return hypos, mask, w_upd
 

@@ -13,6 +13,7 @@ def ellipsoidal_gate(pg: float, ndim: int, x: np.ndarray, mean: np.ndarray, cova
   in_gate = dist**2 < t
   return in_gate, dist
 
+
 @functools.lru_cache
 def gate_threshold(pg: float, ndim: int) -> float:
   return chi2.ppf(pg, ndim)
