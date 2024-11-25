@@ -150,7 +150,7 @@ class TOMBP:
     ########################################################
     # MB Update
     ########################################################
-    mb_hypos, mb_hypo_mask, w_updated = self.make_mb_hypos(
+    mb_hypotheses, hypothesis_mask, w_updated = self.make_mb_hypos(
         state_estimator=state_estimator,
         measurements=measurements,
         pd_func=pd_func
@@ -173,8 +173,8 @@ class TOMBP:
     mb_post, meta = self.tomb(
         p_updated=p_updated,
         p_new=p_new,
-        mb_hypos=mb_hypos,
-        hypo_mask=mb_hypo_mask,
+        mb_hypotheses=mb_hypotheses,
+        hypothesis_mask=hypothesis_mask,
         new_berns=new_berns,
         meta=meta
     )
@@ -184,8 +184,8 @@ class TOMBP:
   def tomb(self,
            p_updated: np.ndarray,
            p_new: np.ndarray,
-           mb_hypos: List[MultiBernoulli],
-           hypo_mask: np.ndarray,
+           mb_hypotheses: List[MultiBernoulli],
+           hypothesis_mask: np.ndarray,
            new_berns: MultiBernoulli,
            meta: Dict[str, Any] = dict()
            ) -> MultiBernoulli:
@@ -217,9 +217,9 @@ class TOMBP:
     mb = MultiBernoulli()
 
     # Marginalize over measurements for existing tracks
-    measurement_inds = np.argwhere(np.any(hypo_mask, axis=0)).ravel()
+    measurement_inds = np.argwhere(np.any(hypothesis_mask, axis=0)).ravel()
     for i in range(n_mb):
-      hypo = mb_hypos[i]
+      hypo = mb_hypotheses[i]
       x, P, r = hypo.state.mean, hypo.state.covar, hypo.r
       pr = p_updated[i][measurement_inds] * r
       if x.ndim == 1:  # No associations
@@ -234,7 +234,7 @@ class TOMBP:
         x, P = x[None, ...], P[None, ...]
       mb = mb.append(r=r, state=Gaussian(mean=x, covar=P))
       meta['mb'][i].update(
-          dict(p_updated=p_updated[i], in_gate=hypo_mask[i, 1:])
+          dict(p_updated=p_updated[i], in_gate=hypothesis_mask[i, 1:])
       )
 
     # Form new tracks
