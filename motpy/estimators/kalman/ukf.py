@@ -205,11 +205,15 @@ def unscented_transform(sigmas: np.ndarray,
                         noise_covar: np.ndarray,
                         residual_fn: callable = np.subtract,
                         ) -> Tuple[np.ndarray, np.ndarray]:
+  Wm = np.expand_dims(Wm, axis=-1)
+  Wc = np.expand_dims(Wc, axis=(-1, -2))
+
   # Mean
-  x = np.einsum('...n, ...ni -> ...i', Wm, sigmas)
+  x = np.sum(Wm * sigmas, axis=-2)
 
   # Covariance
-  y = residual_fn(sigmas, x[..., None, :])
-  P = np.einsum('...n, ...ni, ...nj -> ...ij', Wc, y, y) + noise_covar
+  y = residual_fn(sigmas, np.expand_dims(x, axis=-2))
+  y_outer = np.einsum('...i, ...j -> ...ij', y, y)
+  P = np.sum(Wc * y_outer, axis=-3) + noise_covar
 
   return x, P
