@@ -20,15 +20,15 @@ class UnscentedKalmanFilter(StateEstimator):
                measurement_model: MeasurementModel,
                state_residual_fn: callable = np.subtract,
                measurement_residual_fn: callable = np.subtract,
+               # Sigma point parameters
+               sigma_params: Dict[str, Any] = dict(alpha=0.1, beta=2, kappa=0),
                ):
     self.transition_model = transition_model
     self.measurement_model = measurement_model
     self.state_residual_fn = state_residual_fn
     self.measurement_residual_fn = measurement_residual_fn
-    # TODO: Make these parameters configurable
-    self.sigma_params = dict(
-        alpha=0.1, beta=2, kappa=0
-    )
+
+    self.sigma_params = sigma_params
 
   def predict(self,
               state: Gaussian,

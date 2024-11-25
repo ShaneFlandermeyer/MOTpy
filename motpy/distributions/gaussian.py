@@ -126,6 +126,7 @@ def merge_gaussians(
 
   w_merged = np.sum(w, axis=axis)
   w /= np.expand_dims(w_merged, axis=axis) + 1e-15
+
   mu_merged = np.sum(np.expand_dims(w, -1) * mu, axis=axis)
 
   y = mu - np.expand_dims(mu_merged, axis=axis)

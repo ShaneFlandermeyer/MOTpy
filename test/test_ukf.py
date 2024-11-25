@@ -15,9 +15,7 @@ import scipy.stats
 
 
 def test_predict():
-  alpha = 0.1
-  beta = 2
-  kappa = 0
+  sigma_params = dict(alpha=0.1, beta=2, kappa=0)
   seed = 0
   dt = 1
   w = 0.01
@@ -29,12 +27,14 @@ def test_predict():
 
   # Motpy UKF
   cv = ConstantVelocity(state_dim=state_dim, w=w, seed=seed)
-  ukf = UnscentedKalmanFilter(transition_model=cv, measurement_model=None)
+  ukf = UnscentedKalmanFilter(
+      transition_model=cv, measurement_model=None, sigma_params=sigma_params
+  )
 
   pred_state = ukf.predict(state=state, dt=dt)
 
   # Filterpy UKF
-  sigmas = MerweScaledSigmaPoints(n=4, alpha=0.1, beta=2, kappa=0)
+  sigmas = MerweScaledSigmaPoints(n=4, **sigma_params)
   expected = UKF(
       dim_x=4,
       dim_z=0,
@@ -53,9 +53,7 @@ def test_predict():
 
 
 def test_update():
-  alpha = 0.1
-  beta = 2
-  kappa = 0
+  sigma_params = dict(alpha=0.1, beta=2, kappa=0)
   state = Gaussian(
       mean=np.array([0, 1, 0, 1]),
       covar=np.diag([1., 0.5, 1., 0.5])
@@ -65,22 +63,20 @@ def test_update():
   R = np.diag([0.1, np.deg2rad(0.1)])
   range_bearing = RangeBearingModel(covar=R)
 
-  
   ground_truth = np.array([0, 1, 0, 1])
   z = range_bearing(ground_truth, noise=False)
 
   # Motpy UKF
   ukf = UnscentedKalmanFilter(
       transition_model=None,
-      measurement_model=range_bearing
+      measurement_model=range_bearing,
+      sigma_params=sigma_params
   )
 
   post_state = ukf.update(state=state, measurement=z)
 
   # Filterpy UKF
-  points = MerweScaledSigmaPoints(
-      n=state_dim, alpha=alpha, beta=beta, kappa=kappa
-  )
+  points = MerweScaledSigmaPoints(n=state_dim, **sigma_params)
   expected = UKF(
       dim_x=4,
       dim_z=2,
@@ -107,7 +103,7 @@ def test_likelihood():
   ukf = UnscentedKalmanFilter(transition_model=None, measurement_model=linear)
 
   state = Gaussian(mean=np.zeros(state_dim), covar=np.eye(state_dim))
-  
+
   z = np.array([1, 1])
   l = ukf.likelihood(z, state)
 
@@ -125,9 +121,6 @@ def test_gate():
   )
   ukf = UnscentedKalmanFilter(transition_model=None, measurement_model=linear)
 
-  Wm, Wc = merwe_sigma_weights(
-      ndim_state=state_dim, alpha=0.1, beta=2, kappa=0
-  )
   state = Gaussian(mean=np.zeros(state_dim), covar=np.eye(state_dim))
   z = np.array([1, 1])
   gate_mask = ukf.gate(measurements=z, state=state, pg=1)
