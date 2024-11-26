@@ -83,34 +83,23 @@ class UnscentedKalmanFilter(StateEstimator):
     )
 
     # Standard kalman update
-    x_pred = np.expand_dims(state.mean, axis=-2)
+    x_pred = state.mean
     P_pred = state.covar
-    z = np.atleast_2d(measurement)
-    z_pred = np.expand_dims(z_pred, axis=-2)
+    z = measurement
 
     Pxz = np.einsum(
         '...n, ...ni, ...nj -> ...ij',
         Wc,
-        self.state_residual_fn(sigma_points, x_pred),
-        self.measurement_residual_fn(measured_sigmas, z_pred)
+        self.state_residual_fn(sigma_points, x_pred[..., None, :]),
+        self.measurement_residual_fn(measured_sigmas, z_pred[..., None, :])
     )
     y = self.measurement_residual_fn(z, z_pred)
     K = Pxz @ np.linalg.inv(S)
-    x_post = x_pred + \
-        np.einsum('...ij, ...j -> ...i', np.expand_dims(K, axis=-3), y)
+    x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, y)
     P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
     P_post = 0.5 * (P_post + P_post.swapaxes(-1, -2))
 
-    # Handle broadcasting for multiple measurements
-    weight = state.weight
-    if measurement.ndim == 1:
-      x_post = x_post.squeeze(axis=-2)
-    else:
-      P_post = np.expand_dims(P_post, axis=-3).repeat(z.shape[-2], axis=-3)
-      if weight is not None:
-        weight = np.expand_dims(weight, axis=-1).repeat(z.shape[-2], axis=-1)
-
-    post_state = Gaussian(mean=x_post, covar=P_post, weight=weight)
+    post_state = Gaussian(mean=x_post, covar=P_post, weight=state.weight)
 
     return post_state
 

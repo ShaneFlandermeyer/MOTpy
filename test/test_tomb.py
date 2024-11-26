@@ -178,25 +178,15 @@ def test_ukf_tomb():
       dt=dt, lambda_c=lambda_c, pd=pd, n_steps=n_steps)
 
   # Initialize TOMB filter
-  birth_dist = Gaussian(
-      mean=np.array([0, 0, 0, 0])[None, :],
-      covar=np.diag([100, 1, 100, 1])[None, :]**2,
-      weight=np.array([0.05])
-  )
   birth_state = Gaussian(
       mean=np.array([0, 0, 0, 0])[None, :],
       covar=np.diag([100, 1, 100, 1])[None, :]**2,
       weight=np.array([0.05])
   )
 
-  undetected_dist = Gaussian(
-      mean=birth_dist.mean,
-      covar=birth_dist.covar,
-      weight=np.array([10.0])
-  )
   undetected_state = Gaussian(
-      mean=birth_dist.mean,
-      covar=birth_dist.covar,
+      mean=birth_state.mean,
+      covar=birth_state.covar,
       weight=np.array([10.0])
   )
 
@@ -230,6 +220,7 @@ def test_ukf_tomb():
 
 
 if __name__ == '__main__':
-  test_ukf_tomb()
-#   test_scenario_gate()
+  # test_ukf_tomb()
+  # test_scenario_prune()
+  # test_scenario_gate()
   pytest.main([__file__])
