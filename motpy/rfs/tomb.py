@@ -218,41 +218,37 @@ class TOMBP:
     means = np.zeros((m, state_dim))
     covars = np.zeros((m, state_dim, state_dim))
     if m > 0:
-      # Valid poisson-measurement pairs
-      # Valid = in gate and detectable
-      valid = np.zeros((n_u, m), dtype=bool)
-      
+      in_gate = np.zeros((n_u, m), dtype=bool)
       detectable = pd_poisson > self.poisson_pd_threshold
-      in_gate = state_estimator.gate(
+      in_gate[detectable] = state_estimator.gate(
           measurements=measurements,
           state=self.poisson.state[detectable],
           pg=self.pg
       )
-      valid[detectable] = in_gate
-      valid_meas = np.argwhere(np.any(valid, axis=0)).ravel()
-      valid_poisson = np.argwhere(np.any(valid, axis=1)).ravel()
-      valid_inds = np.ix_(valid_poisson, valid_meas)
+
+      gated_measurements = np.argwhere(np.any(in_gate, axis=0)).ravel()
+      gated_poisson = np.argwhere(np.any(in_gate, axis=1)).ravel()
+      gated_inds = np.ix_(gated_poisson, gated_measurements)
 
       # Compute likelihoods for all valid Poisson-measurement pairs
       l_poisson = np.zeros((n_u, m))
-      l_poisson[valid_inds] = state_estimator.likelihood(
-          measurement=measurements[valid_meas],
-          state=self.poisson.state[valid_poisson]
+      l_poisson[gated_inds] = state_estimator.likelihood(
+          measurement=measurements[gated_measurements],
+          state=self.poisson.state[gated_poisson]
       )
 
       # Create a new track hypothesis for each measurement
       for i_m in range(m):
-        valid_u = valid[:, i_m]
-        n_valid = np.count_nonzero(valid_u)
+        gated = in_gate[:, i_m]
+        n_valid = np.count_nonzero(gated)
         if n_valid == 0:
           continue
 
         mixture = state_estimator.update(
-            state=self.poisson.state[valid_u],
+            state=self.poisson.state[gated],
             measurement=measurements[i_m]
         )
-        mixture.weight *= \
-            l_poisson[valid_u, i_m] * pd_poisson[valid_u]
+        mixture.weight *= l_poisson[gated, i_m] * pd_poisson[gated]
 
         sum_w_mixture = np.sum(mixture.weight)
         w_new[i_m] = sum_w_mixture + lambda_fa
@@ -331,29 +327,29 @@ class TOMBP:
             pg=self.pg
         )
         mask[:, 1:] = in_gate
-        valid_measurements = np.argwhere(np.any(in_gate, axis=0)).ravel()
-        valid_mb = np.argwhere(np.any(in_gate, axis=1)).ravel()
-        valid_inds = np.ix_(valid_mb, valid_measurements)
+        gated_measurements = np.argwhere(np.any(in_gate, axis=0)).ravel()
+        gated_mb = np.argwhere(np.any(in_gate, axis=1)).ravel()
+        gated_inds = np.ix_(gated_mb, gated_measurements)
 
         l_mb = np.zeros((n, m))
-        l_mb[valid_inds] = state_estimator.likelihood(
-            measurement=measurements[valid_measurements],
-            state=self.mb.state[valid_mb]
+        l_mb[gated_inds] = state_estimator.likelihood(
+            measurement=measurements[gated_measurements],
+            state=self.mb.state[gated_mb]
         )
 
         for i_m in range(m):
-          valid = in_gate[:, i_m]
-          n_valid = np.count_nonzero(valid)
+          gated = in_gate[:, i_m]
+          n_valid = np.count_nonzero(gated)
           if n_valid > 0:  # Add this measurement to gated hypotheses
             state_post = state_estimator.update(
-                state=self.mb.state[valid],
+                state=self.mb.state[gated],
                 measurement=measurements[i_m]
             )
-            w_updated[valid, i_m+1] = self.mb.r[valid] * \
-                pd_func(state_post) * l_mb[valid, i_m]
+            w_updated[gated, i_m+1] = self.mb.r[gated] * \
+                pd_func(state_post) * l_mb[gated, i_m]
 
-            for i, i_valid in enumerate(np.where(valid)[0]):
-              hypos[i_valid] = hypos[i_valid].append(
+            for i, i_gated in enumerate(np.where(gated)[0]):
+              hypos[i_gated] = hypos[i_gated].append(
                   r=1, state=state_post[i, None]
               )
 
