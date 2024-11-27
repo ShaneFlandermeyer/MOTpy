@@ -74,7 +74,7 @@ class Gaussian(Distribution):
     return Gaussian(
         mean=np.zeros(shape + (state_dim,)),
         covar=np.zeros(shape + (state_dim, state_dim)),
-        weight=None
+        weight=np.zeros(shape)
     )
 
   def sample(self,

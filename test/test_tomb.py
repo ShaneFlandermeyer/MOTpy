@@ -224,4 +224,5 @@ if __name__ == '__main__':
   # test_scenario_prune()
   # test_scenario_prune()
   # test_scenario_gate()
+  test_ukf_tomb()
   pytest.main([__file__])

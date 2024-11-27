@@ -35,8 +35,6 @@ class UnscentedKalmanFilter(StateEstimator):
               dt: float,
               **kwargs,
               ) -> Gaussian:
-    assert self.transition_model is not None
-
     sigma_points = merwe_scaled_sigma_points(
         x=state.mean, P=state.covar, **self.sigma_params
     )
@@ -64,7 +62,6 @@ class UnscentedKalmanFilter(StateEstimator):
              measurement: np.ndarray,
              **kwargs
              ) -> Gaussian:
-    assert self.measurement_model is not None
     sigma_points = merwe_scaled_sigma_points(
         x=state.mean, P=state.covar, **self.sigma_params
     )
@@ -85,7 +82,7 @@ class UnscentedKalmanFilter(StateEstimator):
     # Standard kalman update
     x_pred = state.mean
     P_pred = state.covar
-    z = measurement
+    z = np.asarray(measurement)
 
     Pxz = np.einsum(
         '...n, ...ni, ...nj -> ...ij',
@@ -146,7 +143,6 @@ class UnscentedKalmanFilter(StateEstimator):
            pg: float,
            **kwargs,
            ) -> np.ndarray:
-    assert self.measurement_model is not None
     sigma_points = merwe_scaled_sigma_points(
         x=state.mean, P=state.covar, **self.sigma_params
     )
@@ -171,6 +167,59 @@ class UnscentedKalmanFilter(StateEstimator):
     )
 
     return gate_mask
+
+  def update_vectorized(self,
+                        state: Gaussian,
+                        measurements: np.ndarray,
+                        **kwargs
+                        ) -> Gaussian:
+    sigma_points = merwe_scaled_sigma_points(
+        x=state.mean, P=state.covar, **self.sigma_params
+    )
+    Wm, Wc = merwe_sigma_weights(
+        ndim_state=state.mean.shape[-1], **self.sigma_params
+    )
+
+    # Unscented transform in measurement space
+    measured_sigmas = self.measurement_model(sigma_points, **kwargs)
+    z_pred, S = unscented_transform(
+        sigmas=measured_sigmas,
+        Wm=Wm,
+        Wc=Wc,
+        noise_covar=self.measurement_model.covar(),
+        residual_fn=self.measurement_residual_fn,
+    )
+
+    # Standard kalman update
+    z = np.atleast_2d(measurements)
+    x_pred = state.mean
+    P_pred = state.covar
+
+    Pxz = np.einsum(
+        '...n, ...ni, ...nj -> ...ij',
+        Wc,
+        self.state_residual_fn(sigma_points, x_pred[..., None, :]),
+        self.measurement_residual_fn(measured_sigmas, z_pred[..., None, :])
+    )
+    K = Pxz @ np.linalg.inv(S)
+    
+    x_post = x_pred[..., None, :] + np.einsum(
+        '...ij, ...j -> ...i',
+        K[..., None, :, :],
+        self.measurement_residual_fn(z[..., None, :, :], z_pred[..., None, :])
+    )
+    P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
+    P_post = 0.5 * (P_post + P_post.swapaxes(-1, -2))
+    P_post = np.repeat(P_post[..., None, :, :], z.shape[-2], axis=-3)
+
+    if state.weight is not None:
+      weight = state.weight[..., None].repeat(z.shape[-2], axis=-1)
+    else:
+      weight = None
+
+    post_state = Gaussian(mean=x_post, covar=P_post, weight=weight)
+
+    return post_state
 
 
 def unscented_transform(sigmas: np.ndarray,

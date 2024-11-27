@@ -327,10 +327,11 @@ class TOMBP:
             state=self.mb.state,
             pg=self.pg
         )
-        mask[:, 1:] = in_gate
         gated_measurements = np.argwhere(np.any(in_gate, axis=0)).ravel()
         gated_mb = np.argwhere(np.any(in_gate, axis=1)).ravel()
         gated_inds = np.ix_(gated_mb, gated_measurements)
+        mask[:, 1:] = in_gate
+
 
         l_mb = np.zeros((n, m))
         l_mb[gated_inds] = state_estimator.likelihood(
@@ -338,16 +339,13 @@ class TOMBP:
             state=self.mb.state[gated_mb]
         )
 
-        for i_m in range(m):
-          gated = in_gate[:, i_m]
-          if np.count_nonzero(gated) > 0:
-            state_post[gated, i_m+1] = state_estimator.update(
-                state=self.mb.state[gated],
-                measurement=measurements[i_m]
-            )
-            r_post[gated, i_m+1] = 1
-            w_updated[gated, i_m+1] = self.mb.r[gated] * \
-                pd_func(state_post) * l_mb[gated, i_m]
+        state_post[:, 1:][gated_inds] = state_estimator.update_vectorized(
+            state=self.mb.state[gated_mb],
+            measurements=measurements[gated_measurements],
+        )
+        w_updated[:, 1:][gated_inds] = self.mb.r[gated_mb, None] * \
+            pd_func(state_post[:, 1:][gated_inds]) * l_mb[gated_inds]
+        r_post[:, 1:][gated_inds] = 1
 
         hypos = [
             MultiBernoulli(state=state_post[i, mask[i]], r=r_post[i, mask[i]])
@@ -391,24 +389,24 @@ class TOMBP:
 
     # Marginalize over measurements for existing tracks
     for i in range(len(mb_hypotheses)):
-        mask = hypothesis_mask[i]
-        r = mb_hypotheses[i].r
-        x = mb_hypotheses[i].state.mean
-        P = mb_hypotheses[i].state.covar
-        pr = p_updated[i, mask] * r
-        if pr.size == 1:
-          r = pr
-        else:
-          r, x, P = merge_gaussians(
-              means=x,
-              covars=P,
-              weights=pr,
-          )
-          x, P = x[None, :], P[None, ...]
-        mb = mb.append(r=r, state=Gaussian(mean=x, covar=P, weight=None))
-        meta['mb'][i].update(
-            dict(p_updated=p_updated[i], in_gate=hypothesis_mask[i, 1:])
+      mask = hypothesis_mask[i]
+      r = mb_hypotheses[i].r
+      x = mb_hypotheses[i].state.mean
+      P = mb_hypotheses[i].state.covar
+      pr = p_updated[i, mask] * r
+      if pr.size == 1:
+        r = pr
+      else:
+        r, x, P = merge_gaussians(
+            means=x,
+            covars=P,
+            weights=pr,
         )
+        x, P = x[None, :], P[None, ...]
+      mb = mb.append(r=r, state=Gaussian(mean=x, covar=P, weight=None))
+      meta['mb'][i].update(
+          dict(p_updated=p_updated[i], in_gate=hypothesis_mask[i, 1:])
+      )
 
       # Form new tracks
     n_new = new_berns.size
