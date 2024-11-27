@@ -332,7 +332,6 @@ class TOMBP:
         gated_inds = np.ix_(gated_mb, gated_measurements)
         mask[:, 1:] = in_gate
 
-
         l_mb = np.zeros((n, m))
         l_mb[gated_inds] = state_estimator.likelihood(
             measurement=measurements[gated_measurements],
@@ -347,10 +346,10 @@ class TOMBP:
             pd_func(state_post[:, 1:][gated_inds]) * l_mb[gated_inds]
         r_post[:, 1:][gated_inds] = 1
 
-        hypos = [
-            MultiBernoulli(state=state_post[i, mask[i]], r=r_post[i, mask[i]])
-            for i in range(n)
-        ]
+      hypos = [
+          MultiBernoulli(state=state_post[i, mask[i]], r=r_post[i, mask[i]])
+          for i in range(n)
+      ]
     return hypos, mask, w_updated
 
   def tomb(self,
