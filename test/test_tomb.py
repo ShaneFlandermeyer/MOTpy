@@ -220,7 +220,8 @@ def test_ukf_tomb():
 
 
 if __name__ == '__main__':
-  # test_ukf_tomb()
+  
+  # test_scenario_prune()
   # test_scenario_prune()
   # test_scenario_gate()
   pytest.main([__file__])

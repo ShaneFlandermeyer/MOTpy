@@ -69,6 +69,14 @@ class Gaussian(Distribution):
       weights = None
     return Gaussian(mean=means, covar=covars, weight=weights)
 
+  @staticmethod
+  def empty(shape: Tuple[int], state_dim: int) -> Gaussian:
+    return Gaussian(
+        mean=np.zeros(shape + (state_dim,)),
+        covar=np.zeros(shape + (state_dim, state_dim)),
+        weight=None
+    )
+
   def sample(self,
              num_points: int,
              dims: Optional[Sequence[int]] = None,
@@ -126,7 +134,6 @@ def merge_gaussians(
   y_outer = np.einsum('...i, ...j -> ...ij', y, y)
   P_merged = np.einsum('...i, ...ijk -> ...jk', w, P + y_outer)
   return w_merged, mu_merged, P_merged
-
 
 
 def likelihood(

@@ -150,7 +150,7 @@ class TOMBP:
     ########################################################
     # MB Update
     ########################################################
-    mb_hypotheses, hypothesis_mask, w_updated = self.make_mb_hypos(
+    mb_hypotheses, hypothesis_mask, w_updated = self.make_mb_hypotheses(
         state_estimator=state_estimator,
         measurements=measurements,
         pd_func=pd_func
@@ -275,11 +275,11 @@ class TOMBP:
 
     return new_berns, w_new
 
-  def make_mb_hypos(self,
-                    state_estimator: StateEstimator,
-                    measurements: np.ndarray,
-                    pd_func: Callable
-                    ) -> Tuple[List[MultiBernoulli], np.ndarray, np.ndarray]:
+  def make_mb_hypotheses(self,
+                         state_estimator: StateEstimator,
+                         measurements: np.ndarray,
+                         pd_func: Callable
+                         ) -> Tuple[List[MultiBernoulli], np.ndarray, np.ndarray]:
     """
     Create MB data association hypotheses for existing measurement-track pairs
 
@@ -304,20 +304,21 @@ class TOMBP:
     m = len(measurements) if measurements is not None else 0
 
     # Create track-oriented hypotheses (one per existing track object)
-    hypos = []
     mask = np.zeros((n, m+1), dtype=bool)
     w_updated = np.zeros((n, m+1))
-    if n > 0:
+    if n == 0:
+      hypos = []
+    else:
+      state_post = self.mb.state.empty(
+          shape=(n, m+1), state_dim=self.mb.state.state_dim
+      )
+      r_post = np.zeros((n, m+1))
       # Each object has a missed detection hypothesis
       mask[:, 0] = True
       pd = pd_func(self.mb.state)
       w_updated[:, 0] = (1 - self.mb.r) + self.mb.r * (1 - pd)
-      r_missed = self.mb.r * (1 - pd) / (w_updated[:, 0] + 1e-15)
-      state_missed = self.mb.state
-      hypos = [
-          MultiBernoulli(r=r_missed[i_n], state=state_missed[i_n, None])
-          for i_n in range(n)
-      ]
+      state_post[:, 0] = self.mb.state
+      r_post[:, 0] = self.mb.r * (1 - pd) / (w_updated[:, 0] + 1e-15)
 
       # ...and a hypothesis for each measurement
       if m > 0:
@@ -339,20 +340,19 @@ class TOMBP:
 
         for i_m in range(m):
           gated = in_gate[:, i_m]
-          n_valid = np.count_nonzero(gated)
-          if n_valid > 0:  # Add this measurement to gated hypotheses
-            state_post = state_estimator.update(
+          if np.count_nonzero(gated) > 0:
+            state_post[gated, i_m+1] = state_estimator.update(
                 state=self.mb.state[gated],
                 measurement=measurements[i_m]
             )
+            r_post[gated, i_m+1] = 1
             w_updated[gated, i_m+1] = self.mb.r[gated] * \
                 pd_func(state_post) * l_mb[gated, i_m]
 
-            for i, i_gated in enumerate(np.where(gated)[0]):
-              hypos[i_gated] = hypos[i_gated].append(
-                  r=1, state=state_post[i, None]
-              )
-
+        hypos = [
+            MultiBernoulli(state=state_post[i, mask[i]], r=r_post[i, mask[i]])
+            for i in range(n)
+        ]
     return hypos, mask, w_updated
 
   def tomb(self,
@@ -391,24 +391,26 @@ class TOMBP:
 
     # Marginalize over measurements for existing tracks
     for i in range(len(mb_hypotheses)):
-      hypo = mb_hypotheses[i]
-      r, x, P = hypo.r, hypo.state.mean, hypo.state.covar
-      pr = p_updated[i, hypothesis_mask[i]] * r
-      if pr.size == 1:
-        r = pr
-      else:
-        r, x, P = merge_gaussians(
-            means=x,
-            covars=P,
-            weights=pr,
+        mask = hypothesis_mask[i]
+        r = mb_hypotheses[i].r
+        x = mb_hypotheses[i].state.mean
+        P = mb_hypotheses[i].state.covar
+        pr = p_updated[i, mask] * r
+        if pr.size == 1:
+          r = pr
+        else:
+          r, x, P = merge_gaussians(
+              means=x,
+              covars=P,
+              weights=pr,
+          )
+          x, P = x[None, :], P[None, ...]
+        mb = mb.append(r=r, state=Gaussian(mean=x, covar=P, weight=None))
+        meta['mb'][i].update(
+            dict(p_updated=p_updated[i], in_gate=hypothesis_mask[i, 1:])
         )
-        x, P = x[None, :], P[None, ...]
-      mb = mb.append(r=r, state=Gaussian(mean=x, covar=P, weight=None))
-      meta['mb'][i].update(
-          dict(p_updated=p_updated[i], in_gate=hypothesis_mask[i, 1:])
-      )
 
-    # Form new tracks
+      # Form new tracks
     n_new = new_berns.size
     if n_new > 0:
       mb = mb.append(r=p_new * new_berns.r, state=new_berns.state)
