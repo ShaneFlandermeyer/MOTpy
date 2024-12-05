@@ -76,4 +76,5 @@ class ConstantVelocity(TransitionModel):
 
   def sample_noise(self, covar, size: Tuple[int, ...]) -> np.ndarray:
     return self.np_random.multivariate_normal(
-        mean=np.zeros(self.state_dim), cov=covar, size=size)
+        mean=np.zeros(self.state_dim), cov=covar, size=size,
+    )

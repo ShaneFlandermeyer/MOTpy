@@ -73,7 +73,7 @@ class TOMBP:
       - The MB distribution after prediction
       - The poisson distribution after prediction
     """
-    meta = copy.deepcopy(self.metadata)
+    meta = self.metadata.copy()
 
     # Predict MB
     if self.mb.size > 0:
@@ -94,9 +94,8 @@ class TOMBP:
     )
 
     # Update metadata
-    meta['poisson'].extend(
-        [dict() for _ in range(self.poisson.birth_distribution.size)]
-    )
+    meta['poisson'] = meta['poisson'].copy() + \
+        [dict() for _ in range(predicted_poisson.size)]
 
     return predicted_mb, predicted_poisson, meta
 
@@ -126,7 +125,7 @@ class TOMBP:
       - Updated MB distribution
       - Updated Poisson distribution
     """
-    meta = copy.deepcopy(self.metadata)
+    meta = self.metadata.copy()
 
     ########################################################
     # Poisson update
@@ -170,13 +169,13 @@ class TOMBP:
     else:
       p_updated, p_new = self.spa(w_updated=w_updated, w_new=w_new)
 
-    mb_post, meta = self.tomb(
+    mb_post, meta['mb'] = self.tomb(
         p_updated=p_updated,
         p_new=p_new,
         mb_hypotheses=mb_hypotheses,
         hypothesis_mask=hypothesis_mask,
         new_berns=new_berns,
-        meta=meta
+        mb_meta=meta['mb']
     )
 
     return mb_post, poisson_post, meta
@@ -358,7 +357,7 @@ class TOMBP:
            mb_hypotheses: List[MultiBernoulli],
            hypothesis_mask: np.ndarray,
            new_berns: MultiBernoulli,
-           meta: Dict[str, Any] = dict()
+           mb_meta: List[Dict[str, Any]]
            ) -> MultiBernoulli:
     """
     Add new Bernoulli components to the filter and marginalize existing components across measurement hypotheses
@@ -383,8 +382,8 @@ class TOMBP:
     MultiBernoulli
         The updated MB distribution
     """
-
     mb = MultiBernoulli()
+    meta = mb_meta.copy()
 
     # Marginalize over measurements for existing tracks
     for i in range(len(mb_hypotheses)):
@@ -403,15 +402,14 @@ class TOMBP:
         )
         x, P = x[None, :], P[None, ...]
       mb = mb.append(r=r, state=Gaussian(mean=x, covar=P, weight=None))
-      meta['mb'][i].update(
-          dict(p_updated=p_updated[i], in_gate=hypothesis_mask[i, 1:])
-      )
+      meta[i] = meta[i].copy()
+      meta[i].update(p_updated=p_updated[i, mask], in_gate=mask[1:])
 
-      # Form new tracks
+    # Form new tracks
     n_new = new_berns.size
     if n_new > 0:
       mb = mb.append(r=p_new * new_berns.r, state=new_berns.state)
-      meta['mb'].extend([dict(p_new=p_new[i]) for i in range(n_new)])
+      meta.extend([dict(p_new=p_new[i]) for i in range(n_new)])
 
     return mb, meta
 
