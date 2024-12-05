@@ -393,8 +393,10 @@ class TOMBP:
       P = mb_hypotheses[i].state.covar
       pr = p_updated[i, mask] * r
       if pr.size == 1:
+        updated = False
         r = pr
       else:
+        updated = True
         r, x, P = merge_gaussians(
             means=x,
             covars=P,
@@ -403,13 +405,13 @@ class TOMBP:
         x, P = x[None, :], P[None, ...]
       mb = mb.append(r=r, state=Gaussian(mean=x, covar=P, weight=None))
       meta[i] = meta[i].copy()
-      meta[i].update(p_updated=p_updated[i, mask], in_gate=mask[1:])
+      meta[i].update(new=False, updated=updated, in_gate=mask[1:])
 
     # Form new tracks
     n_new = new_berns.size
     if n_new > 0:
       mb = mb.append(r=p_new * new_berns.r, state=new_berns.state)
-      meta.extend([dict(p_new=p_new[i]) for i in range(n_new)])
+      meta.extend([dict(new=True) for i in range(n_new)])
 
     return mb, meta
 
