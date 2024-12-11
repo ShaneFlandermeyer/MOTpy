@@ -130,7 +130,7 @@ def merge_gaussians(
   w /= w_merged[..., None] + 1e-15
   mu_merged = np.einsum('...i, ...ij -> ...j', w, mu)
 
-  y = mu - mu_merged
+  y = mu - mu_merged[..., None, :]
   y_outer = np.einsum('...i, ...j -> ...ij', y, y)
   P_merged = np.einsum('...i, ...ijk -> ...jk', w, P + y_outer)
   return w_merged, mu_merged, P_merged

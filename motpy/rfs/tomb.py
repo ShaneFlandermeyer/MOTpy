@@ -94,7 +94,7 @@ class TOMBP:
     )
 
     # Update metadata
-    meta['poisson'] = meta['poisson'].copy() + \
+    meta['poisson'] = meta['poisson'] + \
         [dict() for _ in range(predicted_poisson.size)]
 
     return predicted_mb, predicted_poisson, meta
@@ -141,7 +141,10 @@ class TOMBP:
         lambda_fa=lambda_fa
     )
 
-    poisson_post = copy.deepcopy(self.poisson)
+    poisson_post = Poisson(
+        birth_distribution=self.poisson.birth_distribution,
+        state=copy.deepcopy(self.poisson.state)
+    )
     poisson_post.state.weight *= 1 - pd_poisson
 
     # Update metadata
