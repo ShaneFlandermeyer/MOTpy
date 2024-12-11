@@ -28,8 +28,8 @@ def runnalls_merge(state: Gaussian, num_desired: int) -> Gaussian:
 
   # Step 1: Compute all possible mixture pairs and their costs
   ij = np.indices((num_components, num_components)).transpose(1, 2, 0)
-  wmix, mumix, Pmix = merge_gaussians(mu[ij], P[ij], w[ij])
-  c = runnals_cost(wi=w, wj=w, Pi=P, Pj=P, Pij=Pmix)
+  w_mix, mu_mix, P_mix = merge_gaussians(mu[ij], P[ij], w[ij])
+  c = runnals_cost(wi=w, wj=w, Pi=P, Pj=P, Pij=P_mix)
   c[np.diag_indices_from(c)] = np.inf
 
   # Step 2: While we still need to merge...
@@ -37,25 +37,24 @@ def runnalls_merge(state: Gaussian, num_desired: int) -> Gaussian:
   for i in range(num_components - num_desired):
     # Step 3: Select the merge hypothesis with the smallest cost
     i, j = np.unravel_index(np.argmin(c), c.shape)
-    w[i], mu[i], P[i] = wmix[i, j], mumix[i, j], Pmix[i, j]
+    w[i], mu[i], P[i] = w_mix[i, j], mu_mix[i, j], P_mix[i, j]
 
     # Step 4: Update mixture hypotheses and costs for new component
-    wmix[ij], mumix[ij], Pmix[ij] = merge_gaussians(
+    w_mix[i], mu_mix[i], P_mix[i] = w_mix[:, i], mu_mix[:, i], P_mix[:, i] = merge_gaussians(
         mu[ij[i]], P[ij[i]], w[ij[i]]
     )
-    # Symmetry
-    wmix[:, i], mumix[:, i], Pmix[:, i, :, :] = wmix[i], mumix[i], Pmix[i]
     c[i] = c[:, i] = np.where(
         ~np.isinf(c[i]),
-        runnals_cost(wi=w[i], wj=w, Pi=P[i], Pj=P, Pij=Pmix[i]),
+        runnals_cost(wi=w[i], wj=w, Pi=P[i], Pj=P, Pij=P_mix[i]),
         np.inf,
     )
 
     # Step 5: Remove merged component
     c[j] = c[:, j] = np.inf
     valid[j] = False
-
+    
   return Gaussian(mean=mu[valid], covar=P[valid], weight=w[valid])
+
 
 def static_reduce(distribution: Gaussian) -> Gaussian:
 
@@ -82,4 +81,4 @@ if __name__ == '__main__':
       weight=np.ones(3)
   )
   new_state = runnalls_merge(state, 1)
-
+  print(new_state)
