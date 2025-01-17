@@ -104,24 +104,6 @@ def merge_gaussians(
         means: np.ndarray,
         covars: np.ndarray,
         weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-  """
-  Compute a Gaussian mixture as a weighted sum of N Gaussian distributions, each with dimension D.
-
-  Parameters
-  ----------
-  means : np.ndarray
-      Length-N list of D-dimensional arrays of mean values for each Gaussian components
-  covars : np.ndarray
-      Length-N list of D x D covariance matrices for each Gaussian component
-  weights : np.ndarray
-      Length-N array of weights for each component
-
-  Returns
-  -------
-  Tuple[np.ndarray, np.ndarray]
-    Mixture PDF mean and covariance
-
-  """
   mu = means
   P = covars
   w = weights

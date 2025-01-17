@@ -25,7 +25,8 @@ class LinearMeasurementModel(MeasurementModel):
 
   def __call__(self,
                x: np.ndarray,
-               noise: bool = False
+               noise: bool = False,
+               **kwargs,
                ) -> List[np.ndarray]:
     out = x[..., self.measured_dims].astype(float)
 

@@ -52,7 +52,7 @@ class TOMBP:
   def predict(self,
               state_estimator: StateEstimator,
               dt: float,
-              ps_func: float,
+              ps_model: float,
               **kwargs
               ) -> Tuple[MultiBernoulli, Poisson]:
     """
@@ -64,8 +64,8 @@ class TOMBP:
         The Kalman filter used for state estimation.
     dt : float
         The time step size.
-    ps_func: float
-        Handle to a function which takes the state as input and returns the survival probability.
+    ps_model: float
+        Handle to a modeltion which takes the state as input and returns the survival probability.
 
     Returns
     -------
@@ -77,7 +77,7 @@ class TOMBP:
 
     # Predict MB
     if self.mb.size > 0:
-      ps_mb = ps_func(self.mb.state)
+      ps_mb = ps_model(self.mb.state)
       predicted_mb = self.mb.predict(
           state_estimator=state_estimator, ps=ps_mb, dt=dt, **kwargs
       )
@@ -85,7 +85,7 @@ class TOMBP:
       predicted_mb = self.mb
 
     # Predict Poisson
-    ps_poisson = ps_func(self.poisson.state)
+    ps_poisson = ps_model(self.poisson.state)
     predicted_poisson = self.poisson.predict(
         state_estimator=state_estimator,
         ps=ps_poisson,
@@ -102,8 +102,9 @@ class TOMBP:
   def update(self,
              measurements: np.ndarray,
              state_estimator: StateEstimator,
-             pd_func: Callable,
-             lambda_fa: float
+             pd_model: Callable,
+             lambda_fa: float,
+             **kwargs
              ) -> Tuple[MultiBernoulli, Poisson]:
     """
     Updates the state of the multi-object system based on measurements.
@@ -114,8 +115,8 @@ class TOMBP:
         Array of measurement vectors
     state_estimator : KalmanFilter
         The Kalman filter used for state estimation.
-    pd_func : float
-        Detection probability function handle. This function takes the state as input and returns the detection probability.
+    pd_model : float
+        Detection probability modeltion handle. This modeltion takes the state as input and returns the detection probability.
     lambda_fa : float
         The false alarm density per unit volume.
 
@@ -130,7 +131,7 @@ class TOMBP:
     ########################################################
     # Poisson update
     ########################################################
-    pd_poisson = pd_func(self.poisson.state)
+    pd_poisson = pd_model(self.poisson.state)
     if isinstance(pd_poisson, float):
       pd_poisson = np.full(self.poisson.size, pd_poisson)
 
@@ -138,7 +139,8 @@ class TOMBP:
         state_estimator=state_estimator,
         measurements=measurements,
         pd_poisson=pd_poisson,
-        lambda_fa=lambda_fa
+        lambda_fa=lambda_fa,
+        **kwargs
     )
 
     poisson_post = Poisson(
@@ -155,7 +157,8 @@ class TOMBP:
     mb_hypotheses, hypothesis_mask, w_updated = self.make_mb_hypotheses(
         state_estimator=state_estimator,
         measurements=measurements,
-        pd_func=pd_func
+        pd_model=pd_model,
+        **kwargs
     )
 
     ########################################################
@@ -170,7 +173,9 @@ class TOMBP:
       p_updated = w_updated
       p_new = np.zeros_like(w_new)
     else:
-      p_updated, p_new = self.spa(w_updated=w_updated, w_new=w_new)
+      p_updated, p_new = self.spa(
+          w_updated=w_updated, w_new=w_new, max_iter=1000
+      )
 
     mb_post, meta['mb'] = self.tomb(
         p_updated=p_updated,
@@ -188,6 +193,7 @@ class TOMBP:
                       measurements: np.ndarray,
                       pd_poisson: np.ndarray,
                       lambda_fa: float,
+                      **kwargs
                       ) -> Tuple[MultiBernoulli, np.ndarray]:
     """
     Create new Bernoulli components from the Poisson distribution based on measurements
@@ -225,7 +231,8 @@ class TOMBP:
       in_gate[detectable] = state_estimator.gate(
           measurements=measurements,
           state=self.poisson.state[detectable],
-          pg=self.pg
+          pg=self.pg,
+          **kwargs
       )
 
       gated_measurements = np.argwhere(np.any(in_gate, axis=0)).ravel()
@@ -236,7 +243,8 @@ class TOMBP:
       l_poisson = np.zeros((n_u, m))
       l_poisson[gated_inds] = state_estimator.likelihood(
           measurement=measurements[gated_measurements],
-          state=self.poisson.state[gated_poisson]
+          state=self.poisson.state[gated_poisson],
+          **kwargs
       )
 
       # Create a new track hypothesis for each measurement
@@ -248,7 +256,8 @@ class TOMBP:
 
         mixture = state_estimator.update(
             state=self.poisson.state[gated],
-            measurement=measurements[i_m]
+            measurement=measurements[i_m],
+            **kwargs
         )
         mixture.weight *= l_poisson[gated, i_m] * pd_poisson[gated]
 
@@ -280,7 +289,8 @@ class TOMBP:
   def make_mb_hypotheses(self,
                          state_estimator: StateEstimator,
                          measurements: np.ndarray,
-                         pd_func: Callable
+                         pd_model: Callable,
+                         **kwargs,
                          ) -> Tuple[List[MultiBernoulli], np.ndarray, np.ndarray]:
     """
     Create MB data association hypotheses for existing measurement-track pairs
@@ -292,8 +302,8 @@ class TOMBP:
         Kalman filter used for state estimation
     measurements : np.ndarray
         Array of measurement vectors
-    pd_func : Callable
-        Function handle to the detection probability function
+    pd_model : Callable
+        Function handle to the detection probability modeltion
 
     Returns
     -------
@@ -317,7 +327,7 @@ class TOMBP:
       r_post = np.zeros((n, m+1))
       # Each object has a missed detection hypothesis
       mask[:, 0] = True
-      pd = pd_func(self.mb.state)
+      pd = pd_model(self.mb.state)
       w_updated[:, 0] = (1 - self.mb.r) + self.mb.r * (1 - pd)
       state_post[:, 0] = self.mb.state
       r_post[:, 0] = self.mb.r * (1 - pd) / (w_updated[:, 0] + 1e-15)
@@ -327,7 +337,8 @@ class TOMBP:
         in_gate = state_estimator.gate(
             measurements=measurements,
             state=self.mb.state,
-            pg=self.pg
+            pg=self.pg,
+            **kwargs
         )
         gated_measurements = np.argwhere(np.any(in_gate, axis=0)).ravel()
         gated_mb = np.argwhere(np.any(in_gate, axis=1)).ravel()
@@ -337,15 +348,17 @@ class TOMBP:
         l_mb = np.zeros((n, m))
         l_mb[gated_inds] = state_estimator.likelihood(
             measurement=measurements[gated_measurements],
-            state=self.mb.state[gated_mb]
+            state=self.mb.state[gated_mb],
+            **kwargs
         )
 
         state_post[:, 1:][gated_inds] = state_estimator.update_vectorized(
             state=self.mb.state[gated_mb],
             measurements=measurements[gated_measurements],
+            **kwargs
         )
         w_updated[:, 1:][gated_inds] = self.mb.r[gated_mb, None] * \
-            pd_func(state_post[:, 1:][gated_inds]) * l_mb[gated_inds]
+            pd_model(state_post[:, 1:][gated_inds]) * l_mb[gated_inds]
         r_post[:, 1:][gated_inds] = 1
 
       hypos = [
@@ -467,7 +480,6 @@ class TOMBP:
 
       if np.max(np.abs(mu_ba - mu_ba_old)) < eps or i == max_iter:
         break
-
     # Compute marginal association probabilities
     mu_ba = np.concatenate((np.ones((n, 1)), mu_ba), axis=1)
     p_updated = w_updated * mu_ba / \

@@ -86,13 +86,13 @@ def test_scenario_prune():
 
   for k in range(n_steps):
     tracker.mb, tracker.poisson, tracker.meta = tracker.predict(
-        state_estimator=kf, dt=dt, ps_func=ps
+        state_estimator=kf, dt=dt, ps_model=ps
     )
     tracker.poisson, _ = tracker.poisson.prune(threshold=1e-4)
 
     tracker.mb, tracker.poisson, tracker.metadata = tracker.update(
         measurements=Z[k],
-        pd_func=pd,
+        pd_model=pd,
         state_estimator=kf,
         lambda_fa=lambda_c/volume
     )
@@ -142,12 +142,12 @@ def test_scenario_gate():
 
   for k in range(n_steps):
     tracker.mb, tracker.poisson, tracker.meta = tracker.predict(
-        state_estimator=kf, dt=dt, ps_func=ps)
+        state_estimator=kf, dt=dt, ps_model=ps)
     tracker.poisson.state = static_reduce(tracker.poisson.state)
 
     tracker.mb, tracker.poisson, tracker.metadata = tracker.update(
         measurements=Z[k],
-        pd_func=pd,
+        pd_model=pd,
         state_estimator=kf,
         lambda_fa=lambda_c/volume
     )
@@ -197,13 +197,13 @@ def test_ukf_tomb():
     tracker.mb, tracker.poisson, tracker.metadata = tracker.predict(
         state_estimator=ukf,
         dt=dt,
-        ps_func=ps,
+        ps_model=ps,
     )
     tracker.poisson, _ = tracker.poisson.prune(threshold=1e-4)
 
     tracker.mb, tracker.poisson, tracker.metadata = tracker.update(
         measurements=Z[k],
-        pd_func=pd,
+        pd_model=pd,
         state_estimator=ukf,
         lambda_fa=lambda_c / volume
     )
