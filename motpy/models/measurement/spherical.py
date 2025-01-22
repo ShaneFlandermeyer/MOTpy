@@ -30,11 +30,11 @@ class RangeAzimuthVelocity2D(MeasurementModel):
     
     rel_pos = x[..., self.pos_inds] - sensor_pos
     rel_vel = x[..., self.vel_inds] - sensor_vel
-    # TODO: SENSOR PLATFORM ASSUMED STATIONARY. NEED TO ADD APPLY A ROTATION TO THE RELATIVE VELOCITY OTHERWISE
 
     r = np.linalg.norm(rel_pos, axis=-1)
     az = np.arctan2(rel_pos[..., 1], rel_pos[..., 0])
-    v = np.einsum('...i, ...i->...', rel_pos, rel_vel) / (r + 1e-15)
+    # Negative by convention (positive velocity = moving towards radar)
+    v = -np.einsum('...i, ...i->...', rel_pos, rel_vel) / (r + 1e-15)
 
     measurement = np.stack([r, az, v], axis=-1)
 
