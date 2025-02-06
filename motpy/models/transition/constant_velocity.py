@@ -11,21 +11,21 @@ class ConstantVelocity(TransitionModel):
   """
 
   def __init__(self,
-               ndim_state: float,
+               state_dim: float,
                w: float,
                position_inds: Optional[np.ndarray] = None,
                velocity_inds: Optional[np.ndarray] = None,
                noise_type: Literal["continuous", "discrete"] = "continuous",
                seed: int = np.random.randint(0, 2**32-1),
                ):
-    self.ndim = ndim_state
+    self.state_dim = state_dim
     self.w = w
     self.noise_type = noise_type.lower()
 
     if position_inds is None:
-      position_inds = np.arange(0, self.ndim, 2)
+      position_inds = np.arange(0, self.state_dim, 2)
     if velocity_inds is None:
-      velocity_inds = np.arange(1, self.ndim, 2)
+      velocity_inds = np.arange(1, self.state_dim, 2)
     self.position_inds = position_inds
     self.velocity_inds = velocity_inds
 
@@ -47,7 +47,7 @@ class ConstantVelocity(TransitionModel):
 
   @functools.lru_cache()
   def matrix(self, dt: float):
-    F = np.zeros((self.ndim, self.ndim))
+    F = np.zeros((self.state_dim, self.state_dim))
 
     pos, vel = self.position_inds, self.velocity_inds
     F[pos, pos] = 1
@@ -58,7 +58,7 @@ class ConstantVelocity(TransitionModel):
   @functools.lru_cache()
   def covar(self, dt: float):
     ipos, ivel = self.position_inds, self.velocity_inds
-    Q = np.zeros((self.ndim, self.ndim))
+    Q = np.zeros((self.state_dim, self.state_dim))
 
     if self.noise_type == "continuous":
       Q[ipos, ipos] = dt**3 / 3
@@ -76,4 +76,5 @@ class ConstantVelocity(TransitionModel):
 
   def sample_noise(self, covar, size: Tuple[int, ...]) -> np.ndarray:
     return self.np_random.multivariate_normal(
-        mean=np.zeros(self.ndim), cov=covar, size=size)
+        mean=np.zeros(self.state_dim), cov=covar, size=size,
+    )

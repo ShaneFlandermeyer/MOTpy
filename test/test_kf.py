@@ -18,7 +18,7 @@ def test_predict():
       covar=np.array([[545, 150], [150, 500]])
   )
   dt = 0.3
-  cv = ConstantVelocity(ndim_state=2, w=0.01, seed=0)
+  cv = ConstantVelocity(state_dim=2, w=0.01, seed=0)
   F = cv.matrix(dt=dt)
   Q = cv.covar(dt=dt)
 
@@ -38,9 +38,9 @@ def test_update():
   """
   Test kalman update step. Example data from kalman filter ebook.
   """
-  cv = ConstantVelocity(ndim_state=2, w=0.01)
+  cv = ConstantVelocity(state_dim=2, w=0.01)
   lin = LinearMeasurementModel(
-      ndim_state=2, covar=np.array([[5.]]), measured_dims=[0])
+      state_dim=2, covar=np.array([[5.]]), measured_dims=[0])
   H = lin.matrix()
   R = lin.covar()
   z = 1
@@ -59,7 +59,7 @@ def test_update():
 
 
 def test_likelihood():
-  linear = LinearMeasurementModel(ndim_state=2, covar=np.eye(2))
+  linear = LinearMeasurementModel(state_dim=2, covar=np.eye(2))
   kf = KalmanFilter(transition_model=None, measurement_model=linear)
 
   state = Gaussian(mean=np.array([0, 0]), covar=np.eye(2))
@@ -74,7 +74,7 @@ def test_likelihood():
 
 
 def test_gate():
-  linear = LinearMeasurementModel(ndim_state=2, covar=np.eye(2))
+  linear = LinearMeasurementModel(state_dim=2, covar=np.eye(2))
   kf = KalmanFilter(transition_model=None, measurement_model=linear)
 
   state = Gaussian(mean=np.array([0, 0]), covar=np.eye(2))

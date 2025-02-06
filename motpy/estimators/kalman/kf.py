@@ -6,7 +6,7 @@ from motpy.models.measurement.base import MeasurementModel
 from motpy.models.transition.base import TransitionModel
 from motpy.distributions.gaussian import Gaussian
 import motpy.distributions.gaussian as gaussian
-from motpy.gate import EllipsoidalGate
+from motpy.gate import ellipsoidal_gate
 from motpy.estimators import StateEstimator
 
 
@@ -23,7 +23,6 @@ class KalmanFilter(StateEstimator):
               dt: float,
               **kwargs,
               ) -> Gaussian:
-    assert self.transition_model is not None
 
     x, P = state.mean, state.covar
 
@@ -33,9 +32,7 @@ class KalmanFilter(StateEstimator):
     x_pred = self.transition_model(x, dt=dt, **kwargs)
     P_pred = F @ P @ F.T + Q
 
-    predicted_state = Gaussian(
-        mean=x_pred, covar=P_pred, weight=state.weight
-    )
+    predicted_state = Gaussian(mean=x_pred, covar=P_pred, weight=state.weight)
 
     return predicted_state
 
@@ -44,28 +41,23 @@ class KalmanFilter(StateEstimator):
              measurement: Optional[np.ndarray] = None,
              **kwargs,
              ) -> Gaussian:
-    assert self.measurement_model is not None
 
-    x_pred, P_pred = state.mean, state.covar
-
-    z = measurement
+    measurement = np.asarray(measurement)
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
 
+    x_pred = state.mean
+    P_pred = state.covar
+    z = measurement
+    z_pred = self.measurement_model(x_pred, **kwargs)
+
     S = H @ P_pred @ H.T + R
     K = P_pred @ H.T @ np.linalg.inv(S)
+    x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, z - z_pred)
     P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
-    P_post = (P_post + P_post.swapaxes(-1, -2)) / 2
+    P_post = 0.5 * (P_post + P_post.swapaxes(-1, -2))
 
-    if z is None:
-      x_post = x_pred
-    else:
-      z_pred = self.measurement_model(x_pred, **kwargs)
-      x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, z - z_pred)
-
-    post_state = Gaussian(
-        mean=x_post, covar=P_post, weight=state.weight
-    )
+    post_state = Gaussian(mean=x_post, covar=P_post, weight=state.weight)
 
     return post_state
 
@@ -94,7 +86,7 @@ class KalmanFilter(StateEstimator):
 
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
-    S = H @ P @ H.swapaxes(-1, -2) + R
+    S = H @ P @ H.T + R
     return gaussian.likelihood(
         mean=self.measurement_model(x),
         covar=S,
@@ -123,18 +115,54 @@ class KalmanFilter(StateEstimator):
     -------
     Boolean array indicating whether each measurement is within the gate.
     """
-    assert self.measurement_model is not None
 
     x, P = state.mean, state.covar
 
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
     S = H @ P @ H.T + R
-    gate = EllipsoidalGate(pg=pg, ndim=measurements.shape[-1])
-    gate_mask, _ = gate(
+    gate_mask, _ = ellipsoidal_gate(
+        pg=pg,
+        ndim=measurements.shape[-1],
         x=measurements,
         mean=self.measurement_model(x, **kwargs),
         covar=S
     )
 
     return gate_mask
+
+  def update_vectorized(
+      self,
+      state: Gaussian,
+      measurements: np.ndarray,
+      **kwargs,
+  ) -> Gaussian:
+    # Perform the update step for multiple state/measurement pairs
+
+    H = self.measurement_model.matrix()
+    R = self.measurement_model.covar()
+
+    x_pred = state.mean
+    P_pred = state.covar
+    z = np.atleast_2d(measurements)
+    z_pred = self.measurement_model(x_pred, **kwargs)
+
+    S = H @ P_pred @ H.T + R
+    K = P_pred @ H.T @ np.linalg.inv(S)
+    x_post = x_pred[..., None, :] + np.einsum(
+        '...ij, ...j -> ...i',
+        K[..., None, :, :],
+        z[..., None, :, :] - z_pred[..., None, :]
+    )
+    P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
+    P_post = 0.5 * (P_post + P_post.swapaxes(-1, -2))
+    P_post = np.repeat(P_post[..., None, :, :], z.shape[-2], axis=-3)
+
+    if state.weight is not None:
+      weight = state.weight[..., None].repeat(z.shape[-2], axis=-1)
+    else:
+      weight = None
+
+    post_state = Gaussian(mean=x_post, covar=P_post, weight=weight)
+
+    return post_state

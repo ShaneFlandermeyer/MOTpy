@@ -8,24 +8,25 @@ from motpy.models.measurement.base import MeasurementModel
 
 class LinearMeasurementModel(MeasurementModel):
   def __init__(self,
-               ndim_state: int,
+               state_dim: int,
                covar: np.ndarray,
                measured_dims: Optional[np.ndarray] = None,
                seed: int = np.random.randint(0, 2**32-1),
                ):
 
-    self.ndim_state = ndim_state
+    self.state_dim = state_dim
     self.noise_covar = np.array(covar, dtype=float)
     self.np_random = np.random.RandomState(seed)
 
     if measured_dims is None:
       measured_dims = np.arange(self.noise_covar.shape[0])
     self.measured_dims = np.array(measured_dims, dtype=int)
-    self.ndim = len(measured_dims)
+    self.measurement_dim = len(measured_dims)
 
   def __call__(self,
                x: np.ndarray,
-               noise: bool = False
+               noise: bool = False,
+               **kwargs,
                ) -> List[np.ndarray]:
     out = x[..., self.measured_dims].astype(float)
 
@@ -36,8 +37,8 @@ class LinearMeasurementModel(MeasurementModel):
 
   @functools.lru_cache(maxsize=1)
   def matrix(self):
-    H = np.zeros((self.ndim, self.ndim_state))
-    H[np.arange(self.ndim), self.measured_dims] = 1
+    H = np.zeros((self.measurement_dim, self.state_dim))
+    H[np.arange(self.measurement_dim), self.measured_dims] = 1
     return H
 
   def covar(self):
@@ -45,5 +46,5 @@ class LinearMeasurementModel(MeasurementModel):
 
   def sample_noise(self, size: Tuple[int, ...]) -> np.ndarray:
     noise = self.np_random.multivariate_normal(
-        mean=np.zeros(self.ndim), cov=self.noise_covar, size=size)
+        mean=np.zeros(self.measurement_dim), cov=self.noise_covar, size=size)
     return noise

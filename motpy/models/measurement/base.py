@@ -9,11 +9,6 @@ class MeasurementModel(abc.ABC):
   def __call__(self, x, **kwargs):
     """Measurement function"""
     pass
-
-  @abc.abstractmethod
-  def matrix(self, **kwargs) -> np.ndarray:
-    """Measurement matrix"""
-    pass
   
   @abc.abstractmethod
   def covar(self, **kwargs) -> np.ndarray:

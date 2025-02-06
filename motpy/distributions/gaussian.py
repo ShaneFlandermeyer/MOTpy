@@ -20,20 +20,20 @@ class Gaussian(Distribution):
       covar: Optional[np.ndarray],
       weight: Optional[np.ndarray] = None,
   ):
-    shape, ndim = mean.shape[:-1], mean.shape[-1]
+    shape, state_dim = mean.shape[:-1], mean.shape[-1]
 
-    self.mean = np.reshape(mean, shape + (ndim,))
-    self.covar = np.reshape(covar, shape + (ndim, ndim))
+    self.mean = np.reshape(mean, shape + (state_dim,))
+    self.covar = np.reshape(covar, shape + (state_dim, state_dim))
     if weight is not None:
       self.weight = np.reshape(weight, shape)
     else:
       self.weight = None
-    self.ndim = ndim
+    self.state_dim = state_dim
 
   def __repr__(self):
     return f"""Gaussian(
       shape={self.shape},
-      ndim={self.ndim},
+      state_dim={self.state_dim},
       means={self.mean}
       covars=\n{self.covar})
       weights={self.weight}
@@ -69,6 +69,14 @@ class Gaussian(Distribution):
       weights = None
     return Gaussian(mean=means, covar=covars, weight=weights)
 
+  @staticmethod
+  def empty(shape: Tuple[int], state_dim: int) -> Gaussian:
+    return Gaussian(
+        mean=np.zeros(shape + (state_dim,)),
+        covar=np.zeros(shape + (state_dim, state_dim)),
+        weight=np.zeros(shape)
+    )
+
   def sample(self,
              num_points: int,
              dims: Optional[Sequence[int]] = None,
@@ -79,7 +87,7 @@ class Gaussian(Distribution):
     Sample points from each Gaussian component at the specified dimensions.
     """
     if dims is None:
-      dims = np.arange(self.ndim)
+      dims = np.arange(self.state_dim)
 
     covar_inds = np.ix_(dims, dims)
     P = self.covar[..., covar_inds[0], covar_inds[1]]
@@ -96,24 +104,6 @@ def merge_gaussians(
         means: np.ndarray,
         covars: np.ndarray,
         weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-  """
-  Compute a Gaussian mixture as a weighted sum of N Gaussian distributions, each with dimension D.
-
-  Parameters
-  ----------
-  means : np.ndarray
-      Length-N list of D-dimensional arrays of mean values for each Gaussian components
-  covars : np.ndarray
-      Length-N list of D x D covariance matrices for each Gaussian component
-  weights : np.ndarray
-      Length-N array of weights for each component
-
-  Returns
-  -------
-  Tuple[np.ndarray, np.ndarray]
-    Mixture PDF mean and covariance
-
-  """
   mu = means
   P = covars
   w = weights
@@ -122,7 +112,7 @@ def merge_gaussians(
   w /= w_merged[..., None] + 1e-15
   mu_merged = np.einsum('...i, ...ij -> ...j', w, mu)
 
-  y = mu - mu_merged
+  y = mu - mu_merged[..., None, :]
   y_outer = np.einsum('...i, ...j -> ...ij', y, y)
   P_merged = np.einsum('...i, ...ijk -> ...jk', w, P + y_outer)
   return w_merged, mu_merged, P_merged
