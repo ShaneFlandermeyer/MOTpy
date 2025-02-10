@@ -18,13 +18,3 @@ class StateEstimator():
     Update state with a single measurement
     """
     raise NotImplementedError
-
-  def update_vectorized(self,
-                        state: Distribution,
-                        measurements: np.ndarray,
-                        **kwargs
-                        ) -> Distribution:
-    """
-    Update multiple state-measurement pairs
-    """
-    raise NotImplementedError
