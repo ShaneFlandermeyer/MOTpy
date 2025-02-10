@@ -353,14 +353,15 @@ class TOMBP:
         )
 
         for im in gated_measurements:
-          state_post[in_gate[:, im], 1+im] = state_estimator.update(
-                state=self.mb.state[in_gate[:, im]],
-                measurement=measurements[im],
-                **kwargs
-            )
-        w_updated[:, 1:][gated_inds] = self.mb.r[gated_mb, None] * \
-            pd_model(state_post[:, 1:][gated_inds]) * l_mb[gated_inds]
-        r_post[:, 1:][gated_inds] = 1
+          mb_mask = in_gate[:, im]
+          state_post[mb_mask, 1+im] = state_estimator.update(
+              state=self.mb.state[mb_mask],
+              measurement=measurements[im],
+              **kwargs
+          )
+          w_updated[mb_mask, 1+im] = self.mb.r[mb_mask] * \
+              pd_model(state_post[mb_mask, 1+im]) * l_mb[mb_mask, im]
+          r_post[mb_mask, 1+im] = 1
 
       hypos = [
           MultiBernoulli(state=state_post[i, mask[i]], r=r_post[i, mask[i]])
