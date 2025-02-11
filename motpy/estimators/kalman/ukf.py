@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Tuple
+from typing import Any, Callable, Dict, Tuple
 
 import numpy as np
 
@@ -171,75 +171,20 @@ class UnscentedKalmanFilter(StateEstimator):
 
     return gate_mask
 
-  def update_vectorized(self,
-                        state: Gaussian,
-                        measurements: np.ndarray,
-                        **kwargs
-                        ) -> Gaussian:
-    sigma_points = merwe_scaled_sigma_points(
-        x=state.mean, P=state.covar, **self.sigma_params
-    )
-    Wm, Wc = merwe_sigma_weights(
-        ndim_state=state.mean.shape[-1], **self.sigma_params
-    )
 
-    # Unscented transform in measurement space
-    measured_sigmas = self.measurement_model(sigma_points, **kwargs)
-    z_pred, S = unscented_transform(
-        sigmas=measured_sigmas,
-        Wm=Wm,
-        Wc=Wc,
-        noise_covar=self.measurement_model.covar(),
-        residual_fn=self.measurement_residual_fn,
-    )
-
-    # Standard kalman update
-    z = np.atleast_2d(measurements)
-    x_pred = state.mean
-    P_pred = state.covar
-
-    Pxz = np.einsum(
-        '...n, ...ni, ...nj -> ...ij',
-        Wc,
-        self.state_residual_fn(sigma_points, x_pred[..., None, :]),
-        self.measurement_residual_fn(measured_sigmas, z_pred[..., None, :])
-    )
-    K = Pxz @ np.linalg.inv(S)
-
-    x_post = x_pred[..., None, :] + np.einsum(
-        '...ij, ...j -> ...i',
-        K[..., None, :, :],
-        self.measurement_residual_fn(z[..., None, :, :], z_pred[..., None, :])
-    )
-    P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
-    P_post = 0.5 * (P_post + P_post.swapaxes(-1, -2))
-    P_post = np.repeat(P_post[..., None, :, :], z.shape[-2], axis=-3)
-
-    if state.weight is not None:
-      weight = state.weight[..., None].repeat(z.shape[-2], axis=-1)
-    else:
-      weight = None
-
-    post_state = Gaussian(mean=x_post, covar=P_post, weight=weight)
-
-    return post_state
-
-
-def unscented_transform(sigmas: np.ndarray,
-                        Wm: np.ndarray,
-                        Wc: np.ndarray,
-                        noise_covar: np.ndarray,
-                        residual_fn: callable = np.subtract,
-                        ) -> Tuple[np.ndarray, np.ndarray]:
-  Wm = np.expand_dims(Wm, axis=-1)
-  Wc = np.expand_dims(Wc, axis=(-1, -2))
-
+def unscented_transform(
+    sigmas: np.ndarray,
+    Wm: np.ndarray,
+    Wc: np.ndarray,
+    noise_covar: np.ndarray,
+    residual_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
   # Mean
-  x = np.sum(Wm * sigmas, axis=-2)
+  x = np.sum(Wm[..., None] * sigmas, axis=-2)
 
   # Covariance
-  y = residual_fn(sigmas, np.expand_dims(x, axis=-2))
+  y = residual_fn(sigmas, x[..., None, :])
   y_outer = np.einsum('...i, ...j -> ...ij', y, y)
-  P = np.sum(Wc * y_outer, axis=-3) + noise_covar
+  P = np.sum(Wc[..., None, None] * y_outer, axis=-3) + noise_covar
 
   return x, P

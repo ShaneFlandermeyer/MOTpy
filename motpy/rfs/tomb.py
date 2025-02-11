@@ -352,11 +352,12 @@ class TOMBP:
             **kwargs
         )
 
-        state_post[:, 1:][gated_inds] = state_estimator.update_vectorized(
-            state=self.mb.state[gated_mb],
-            measurements=measurements[gated_measurements],
-            **kwargs
-        )
+        for im in gated_measurements:
+          state_post[in_gate[:, im], 1+im] = state_estimator.update(
+                state=self.mb.state[in_gate[:, im]],
+                measurement=measurements[im],
+                **kwargs
+            )
         w_updated[:, 1:][gated_inds] = self.mb.r[gated_mb, None] * \
             pd_model(state_post[:, 1:][gated_inds]) * l_mb[gated_inds]
         r_post[:, 1:][gated_inds] = 1
