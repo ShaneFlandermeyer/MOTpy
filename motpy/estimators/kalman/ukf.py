@@ -91,11 +91,12 @@ class UnscentedKalmanFilter(StateEstimator):
         self.measurement_residual_fn(measured_sigmas, z_pred[..., None, :])
     )
     K = Pxz @ np.linalg.inv(S)
-    if measurement is not None:
+    if measurement is None:
+      x_post = x_pred
+    else:
       y = self.measurement_residual_fn(z, z_pred)
       x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, y)
-    else:
-      x_post = x_pred
+
     P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
     P_post = 0.5 * (P_post + P_post.swapaxes(-1, -2))
 

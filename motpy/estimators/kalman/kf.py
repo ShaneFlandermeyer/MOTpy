@@ -42,7 +42,6 @@ class KalmanFilter(StateEstimator):
              **kwargs,
              ) -> Gaussian:
 
-    measurement = np.asarray(measurement)
     H = self.measurement_model.matrix()
     R = self.measurement_model.covar()
 
@@ -53,7 +52,10 @@ class KalmanFilter(StateEstimator):
 
     S = H @ P_pred @ H.T + R
     K = P_pred @ H.T @ np.linalg.inv(S)
-    x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, z - z_pred)
+    if measurement is None:
+      x_post = x_pred
+    else:
+      x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, z - z_pred)
     P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
     P_post = 0.5 * (P_post + P_post.swapaxes(-1, -2))
 
