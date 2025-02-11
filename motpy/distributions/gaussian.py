@@ -122,9 +122,12 @@ def likelihood(
         x: np.ndarray,
         mean: np.ndarray,
         covar: np.ndarray,
+        subtract_fn: Callable[
+            [np.ndarray, np.ndarray], np.ndarray
+        ] = np.subtract,
 ) -> np.ndarray:
   x = np.atleast_2d(x)
-  y = x[..., None, :, :] - mean[..., None, :]
+  y = subtract_fn(x[..., None, :, :], mean[..., None, :])
 
   Pi = np.linalg.inv(covar)
   det_P = np.linalg.det(covar)
@@ -141,6 +144,9 @@ def likelihood(
 def mahalanobis(x: np.ndarray,
                 mean: np.ndarray,
                 covar: np.ndarray,
+                subtract_fn: Callable[
+                    [np.ndarray, np.ndarray], np.ndarray
+                ] = np.subtract,
                 ) -> np.ndarray:
   """
   Batched mahalanobis distance.
@@ -160,7 +166,7 @@ def mahalanobis(x: np.ndarray,
       Mahalanobis distance for each reference/query pair. Shape (N, M).
   """
   x = np.atleast_2d(x)
-  y = x[..., None, :, :] - mean[..., None, :]
+  y = subtract_fn(x[..., None, :, :], mean[..., None, :])
 
   dist = np.sqrt(
       np.einsum('...nmi, ...nim ->...nm',

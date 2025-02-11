@@ -1,14 +1,22 @@
 import functools
 import numpy as np
-from typing import List, Tuple
+from typing import List, Tuple, Callable
 from scipy.stats import norm, chi2
 import math
 
 from motpy.distributions.gaussian import mahalanobis
 
 
-def ellipsoidal_gate(pg: float, ndim: int, x: np.ndarray, mean: np.ndarray, covar: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-  dist = mahalanobis(x=x, mean=mean, covar=covar)
+def ellipsoidal_gate(
+    pg: float,
+    ndim: int,
+    x: np.ndarray,
+    mean: np.ndarray,
+    covar: np.ndarray,
+    subtract_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] = np.subtract,
+) -> Tuple[np.ndarray, np.ndarray]:
+  
+  dist = mahalanobis(x=x, mean=mean, covar=covar, subtract_fn=subtract_fn)
   t = gate_threshold(pg=pg, ndim=ndim)
   in_gate = dist**2 < t
   return in_gate, dist

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import numpy as np
 
@@ -15,18 +15,31 @@ from motpy.models.transition import TransitionModel
 
 
 class UnscentedKalmanFilter(StateEstimator):
-  def __init__(self,
-               transition_model: TransitionModel,
-               measurement_model: MeasurementModel,
-               state_residual_fn: callable = np.subtract,
-               measurement_residual_fn: callable = np.subtract,
-               # Sigma point parameters
-               sigma_params: Dict[str, Any] = dict(alpha=0.1, beta=2, kappa=0),
-               ):
+  def __init__(
+      self,
+      transition_model: TransitionModel,
+      measurement_model: MeasurementModel,
+      state_subtract_fn: Callable[
+          [np.ndarray, np.ndarray], np.ndarray
+      ] = np.subtract,
+      state_mean_fn: Optional[
+          Callable[[np.ndarray, np.ndarray], np.ndarray]
+      ] = None,
+      measurement_subtract_fn: Callable[
+          [np.ndarray, np.ndarray], np.ndarray
+      ] = np.subtract,
+      measurement_mean_fn: Optional[
+          Callable[[np.ndarray, np.ndarray], np.ndarray]
+      ] = None,
+      # Sigma point parameters
+      sigma_params: Dict[str, Any] = dict(alpha=0.1, beta=2, kappa=0),
+  ):
     self.transition_model = transition_model
     self.measurement_model = measurement_model
-    self.state_residual_fn = state_residual_fn
-    self.measurement_residual_fn = measurement_residual_fn
+    self.state_subtract_fn = state_subtract_fn
+    self.state_mean_fn = state_mean_fn
+    self.measurement_subtract_fn = measurement_subtract_fn
+    self.measurement_mean_fn = measurement_mean_fn
 
     self.sigma_params = sigma_params
 
@@ -36,7 +49,10 @@ class UnscentedKalmanFilter(StateEstimator):
               **kwargs,
               ) -> Gaussian:
     sigma_points = merwe_scaled_sigma_points(
-        x=state.mean, P=state.covar, **self.sigma_params
+        x=state.mean,
+        P=state.covar,
+        subtract_fn=self.state_subtract_fn,
+        **self.sigma_params
     )
     Wm, Wc = merwe_sigma_weights(
         ndim_state=state.mean.shape[-1], **self.sigma_params
@@ -50,7 +66,8 @@ class UnscentedKalmanFilter(StateEstimator):
         Wm=Wm,
         Wc=Wc,
         noise_covar=self.transition_model.covar(dt=dt),
-        residual_fn=self.state_residual_fn,
+        subtract_fn=self.state_subtract_fn,
+        mean_fn=self.state_mean_fn,
     )
 
     predicted_state = Gaussian(mean=x_pred, covar=P_pred, weight=state.weight)
@@ -63,7 +80,10 @@ class UnscentedKalmanFilter(StateEstimator):
              **kwargs
              ) -> Gaussian:
     sigma_points = merwe_scaled_sigma_points(
-        x=state.mean, P=state.covar, **self.sigma_params
+        x=state.mean,
+        P=state.covar,
+        subtract_fn=self.state_subtract_fn,
+        **self.sigma_params
     )
     Wm, Wc = merwe_sigma_weights(
         ndim_state=state.mean.shape[-1], **self.sigma_params
@@ -76,7 +96,8 @@ class UnscentedKalmanFilter(StateEstimator):
         Wm=Wm,
         Wc=Wc,
         noise_covar=self.measurement_model.covar(),
-        residual_fn=self.measurement_residual_fn,
+        subtract_fn=self.measurement_subtract_fn,
+        mean_fn=self.measurement_mean_fn,
     )
 
     # Standard kalman update
@@ -87,14 +108,14 @@ class UnscentedKalmanFilter(StateEstimator):
     Pxz = np.einsum(
         '...n, ...ni, ...nj -> ...ij',
         Wc,
-        self.state_residual_fn(sigma_points, x_pred[..., None, :]),
-        self.measurement_residual_fn(measured_sigmas, z_pred[..., None, :])
+        self.state_subtract_fn(sigma_points, x_pred[..., None, :]),
+        self.measurement_subtract_fn(measured_sigmas, z_pred[..., None, :])
     )
     K = Pxz @ np.linalg.inv(S)
     if measurement is None:
       x_post = x_pred
     else:
-      y = self.measurement_residual_fn(z, z_pred)
+      y = self.measurement_subtract_fn(z, z_pred)
       x_post = x_pred + np.einsum('...ij, ...j -> ...i', K, y)
 
     P_post = P_pred - K @ S @ K.swapaxes(-1, -2)
@@ -126,7 +147,10 @@ class UnscentedKalmanFilter(StateEstimator):
         A matrix of likelihoods. Shape: (..., n, m)
     """
     sigma_points = merwe_scaled_sigma_points(
-        x=state.mean, P=state.covar, **self.sigma_params
+        x=state.mean,
+        P=state.covar,
+        subtract_fn=self.state_subtract_fn,
+        **self.sigma_params
     )
     Wm, Wc = merwe_sigma_weights(
         ndim_state=state.mean.shape[-1], **self.sigma_params
@@ -137,9 +161,15 @@ class UnscentedKalmanFilter(StateEstimator):
         Wm=Wm,
         Wc=Wc,
         noise_covar=self.measurement_model.covar(),
-        residual_fn=self.measurement_residual_fn,
+        subtract_fn=self.measurement_subtract_fn,
+        mean_fn=self.measurement_mean_fn,
     )
-    return gaussian.likelihood(x=measurement, mean=z_pred, covar=S)
+    return gaussian.likelihood(
+        x=measurement,
+        mean=z_pred,
+        covar=S,
+        subtract_fn=self.measurement_subtract_fn
+    )
 
   def gate(self,
            measurements: np.ndarray,
@@ -160,14 +190,16 @@ class UnscentedKalmanFilter(StateEstimator):
         Wm=Wm,
         Wc=Wc,
         noise_covar=self.measurement_model.covar(),
-        residual_fn=self.measurement_residual_fn,
+        subtract_fn=self.measurement_subtract_fn,
+        mean_fn=self.measurement_mean_fn,
     )
     gate_mask, _ = ellipsoidal_gate(
         pg=pg,
         ndim=measurements.shape[-1],
         x=measurements,
         mean=z_pred,
-        covar=S
+        covar=S,
+        subtract_fn=self.measurement_subtract_fn,
     )
 
     return gate_mask
@@ -178,13 +210,19 @@ def unscented_transform(
     Wm: np.ndarray,
     Wc: np.ndarray,
     noise_covar: np.ndarray,
-    residual_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] = None,
+    subtract_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] = np.subtract,
+    mean_fn: Optional[
+        Callable[[np.ndarray], np.ndarray]
+    ] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
   # Mean
-  x = np.sum(Wm[..., None] * sigmas, axis=-2)
+  if mean_fn is None:
+    x = np.sum(Wm[..., None] * sigmas, axis=-2)
+  else:
+    x = mean_fn(sigmas, Wm)
 
   # Covariance
-  y = residual_fn(sigmas, x[..., None, :])
+  y = subtract_fn(sigmas, x[..., None, :])
   y_outer = np.einsum('...i, ...j -> ...ij', y, y)
   P = np.sum(Wc[..., None, None] * y_outer, axis=-3) + noise_covar
 
