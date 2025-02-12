@@ -169,7 +169,9 @@ def mahalanobis(x: np.ndarray,
   y = subtract_fn(x[..., None, :, :], mean[..., None, :])
 
   dist = np.sqrt(
-      np.einsum('...nmi, ...nim ->...nm',
-                y, np.linalg.inv(covar) @ y.swapaxes(-1, -2))
+      np.einsum(
+          '...nmi, ...nim ->...nm',
+          y, np.linalg.inv(covar) @ y.swapaxes(-1, -2)
+      )
   )
   return dist
