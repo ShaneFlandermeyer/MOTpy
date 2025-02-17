@@ -228,12 +228,15 @@ class TOMBP:
     if m > 0:
       in_gate = np.zeros((n_u, m), dtype=bool)
       detectable = pd_poisson > self.poisson_pd_threshold
-      in_gate[detectable] = state_estimator.gate(
-          measurements=measurements,
-          state=self.poisson.state[detectable],
-          pg=self.pg,
-          **kwargs
-      )
+      if self.pg is None or self.pg == 1:
+        in_gate[detectable] = True
+      else:
+        in_gate[detectable] = state_estimator.gate(
+            measurements=measurements,
+            state=self.poisson.state[detectable],
+            pg=self.pg,
+            **kwargs
+        )
 
       gated_measurements = np.argwhere(np.any(in_gate, axis=0)).ravel()
       gated_poisson = np.argwhere(np.any(in_gate, axis=1)).ravel()
@@ -334,32 +337,35 @@ class TOMBP:
 
       # ...and a hypothesis for each measurement
       if m > 0:
-        in_gate = state_estimator.gate(
-            measurements=measurements,
-            state=self.mb.state,
-            pg=self.pg,
-            **kwargs
-        )
+        if self.pg is None or self.pg == 1:
+          in_gate = np.ones((n, m), dtype=bool)
+        else:
+          in_gate = state_estimator.gate(
+              measurements=measurements,
+              state=self.mb.state,
+              pg=self.pg,
+              **kwargs
+          )
         gated_measurements = np.argwhere(np.any(in_gate, axis=0)).ravel()
-        gated_mb = np.argwhere(np.any(in_gate, axis=1)).ravel()
-        gated_inds = np.ix_(gated_mb, gated_measurements)
         mask[:, 1:] = in_gate
 
         l_mb = np.zeros((n, m))
-        l_mb[gated_inds] = state_estimator.likelihood(
-            measurement=measurements[gated_measurements],
-            state=self.mb.state[gated_mb],
-            **kwargs
-        )
+        for im in gated_measurements:
+          mb_mask = in_gate[:, im]
+          l_mb[mb_mask, im] = state_estimator.likelihood(
+              measurement=measurements[im],
+              state=self.mb.state[mb_mask],
+              **kwargs
+          ).squeeze(-1)
 
-        state_post[:, 1:][gated_inds] = state_estimator.update_vectorized(
-            state=self.mb.state[gated_mb],
-            measurements=measurements[gated_measurements],
-            **kwargs
-        )
-        w_updated[:, 1:][gated_inds] = self.mb.r[gated_mb, None] * \
-            pd_model(state_post[:, 1:][gated_inds]) * l_mb[gated_inds]
-        r_post[:, 1:][gated_inds] = 1
+          state_post[mb_mask, 1+im] = state_estimator.update(
+              state=self.mb.state[mb_mask],
+              measurement=measurements[im],
+              **kwargs
+          )
+          w_updated[mb_mask, 1+im] = self.mb.r[mb_mask] * \
+              pd_model(state_post[mb_mask, im+1]) * l_mb[mb_mask, im]
+          r_post[mb_mask, 1+im] = 1
 
       hypos = [
           MultiBernoulli(state=state_post[i, mask[i]], r=r_post[i, mask[i]])
