@@ -6,7 +6,7 @@ import numpy as np
 from motpy.models.measurement import MeasurementModel
 
 
-class RangeAzimuthVelocity2D(MeasurementModel):
+class CartesianToSpherical2D(MeasurementModel):
   def __init__(self,
                covar: np.ndarray,
                pos_inds: List[int] = [0, 2],
@@ -42,7 +42,6 @@ class RangeAzimuthVelocity2D(MeasurementModel):
     if noise:
       measurement += self.sample_noise(size=measurement.shape[:-1])
 
-    # print(measurement)
     return measurement
 
   def covar(self):
@@ -67,9 +66,9 @@ class RangeAzimuthVelocity2D(MeasurementModel):
     w = np.abs(w) / np.abs(w).sum()
     out = np.zeros(x.shape[:-2] + (x.shape[-1],))
     out[..., 0] = np.arctan2(
-      np.sum(w * np.sin(x[..., 0]), axis=-1), 
-      np.sum(w * np.cos(x[..., 0]), axis=-1)
-      )
+        np.sum(w * np.sin(x[..., 0]), axis=-1),
+        np.sum(w * np.cos(x[..., 0]), axis=-1)
+    )
     out[..., 1:] = np.sum(w[..., None] * x[..., 1:], axis=-2)
 
     return out

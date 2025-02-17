@@ -347,8 +347,6 @@ class TOMBP:
               **kwargs
           )
         gated_measurements = np.argwhere(np.any(in_gate, axis=0)).ravel()
-        # gated_mb = np.argwhere(np.any(in_gate, axis=1)).ravel()
-        # gated_inds = np.ix_(gated_mb, gated_measurements)
         mask[:, 1:] = in_gate
 
         l_mb = np.zeros((n, m))
