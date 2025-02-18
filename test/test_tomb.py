@@ -99,7 +99,7 @@ def test_scenario_prune():
     if tracker.mb.size > 0:
       tracker.mb, tracker.metadata['mb'] = tracker.mb.prune(
           meta=tracker.metadata['mb'],
-          threshold=1e-4
+          valid_fn=lambda mb: mb.r > 1e-4,
       )
 
   assert tracker.mb.size == 54
@@ -154,7 +154,7 @@ def test_scenario_gate():
     if tracker.mb.size > 0:
       tracker.mb, tracker.metadata['mb'] = tracker.mb.prune(
           meta=tracker.metadata['mb'],
-          threshold=1e-4
+          valid_fn=lambda mb: mb.r > 1e-4,
       )
 
   assert tracker.mb.size == 53
@@ -210,7 +210,7 @@ def test_ukf_tomb():
     if tracker.mb.size > 0:
       tracker.mb, tracker.metadata['mb'] = tracker.mb.prune(
           meta=tracker.metadata['mb'],
-          threshold=1e-4
+          valid_fn=lambda mb: mb.r > 1e-4,
       )
 
   assert tracker.mb.size == 54

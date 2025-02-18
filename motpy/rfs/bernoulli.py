@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import numpy as np
 
@@ -60,17 +60,17 @@ class MultiBernoulli():
     return predicted_mb
 
   def prune(self: MultiBernoulli,
-            threshold: float = 1e-4,
+            valid_fn: Callable[[MultiBernoulli], np.ndarray],
             meta: Optional[Dict[str, Any]] = None
             ) -> Tuple[MultiBernoulli, Optional[Dict[str, Any]]]:
-    pruned = copy.deepcopy(self)
-
-    valid = self.r > threshold
-    pruned = pruned[valid]
-
+    valid = valid_fn(self)
+    new_mb = MultiBernoulli(
+        state=copy.deepcopy(self.state[valid]),
+        r=self.r[valid],
+    )
     if meta is None:
       new_meta = None
     else:
       new_meta = [meta[i] for i in range(len(meta)) if valid[i]]
 
-    return pruned, new_meta
+    return new_mb, new_meta
