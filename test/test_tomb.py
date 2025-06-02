@@ -9,6 +9,7 @@ from motpy.estimators.kalman.sigma_points import (merwe_scaled_sigma_points,
 from motpy.estimators.kalman.ukf import UnscentedKalmanFilter
 from motpy.models.measurement import LinearMeasurementModel
 from motpy.models.transition import ConstantVelocity
+from motpy.rfs.poisson import Poisson
 from motpy.rfs.tomb import TOMBP
 
 
@@ -16,20 +17,25 @@ def make_data(dt, lambda_c, pd, n_steps):
   seed = 0
   np.random.seed(seed)
 
-  noisy = False
+  noise = False
   # Object trajectories
   paths = [[np.array([-90, 1, -90, 1])], [np.array([-90, 1, 90, -1])]]
   cv = ConstantVelocity(state_dim=4,
                         w=0.01,
                         position_inds=[0, 2],
                         velocity_inds=[1, 3],
-                        seed=seed)
+                        )
   linear = LinearMeasurementModel(
-      state_dim=4, covar=np.eye(2), measured_dims=[0, 2], seed=seed)
+      state_dim=4,
+      covar=np.eye(2),
+      measured_dims=[0, 2],
+  )
 
   for i in range(n_steps):
     for path in paths:
-      path.append(cv(path[-1], dt=dt, noise=noisy))
+      path.append(
+          cv(path[-1], dt=dt, noise=noise, rng=np.random.RandomState(seed))
+      )
 
   # Measurements
   Z = []
@@ -39,7 +45,7 @@ def make_data(dt, lambda_c, pd, n_steps):
     # Object measurements
     for path in paths:
       if np.random.uniform() < pd(path[k]):
-        zk.append(linear(path[k], noise=noisy))
+        zk.append(linear(path[k], noise=noise))
 
     # Clutter measurements
     for _ in range(np.random.poisson(lambda_c)):
@@ -71,34 +77,38 @@ def test_scenario_prune():
       dt=dt, lambda_c=lambda_c, pd=pd, n_steps=n_steps)
 
   # Initialize TOMB filter
-  birth_dist = Gaussian(
+  birth_distribution = Gaussian(
       mean=np.array([0, 0, 0, 0])[None, :],
       covar=np.diag([100, 1, 100, 1])[None, :]**2,
       weight=np.array([0.05]),
   )
-  init_dist = Gaussian(
-      mean=birth_dist.mean,
-      covar=birth_dist.covar,
+  undetected_state = Gaussian(
+      mean=birth_distribution.mean,
+      covar=birth_distribution.covar,
       weight=np.array([10.0])
   )
-  tracker = TOMBP(birth_state=birth_dist, undetected_state=init_dist)
+  tracker = TOMBP(
+      poisson=Poisson(state=undetected_state),
+      mb=None,
+      birth_distribution=birth_distribution,
+  )
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 
   for k in range(n_steps):
-    tracker.mb, tracker.poisson, tracker.meta = tracker.predict(
+    tracker = tracker.predict(
         state_estimator=kf, dt=dt, ps_model=ps
     )
     tracker.poisson, _ = tracker.poisson.prune(threshold=1e-4)
 
-    tracker.mb, tracker.poisson, tracker.metadata = tracker.update(
+    tracker = tracker.update(
         measurements=Z[k],
         pd_model=pd,
         state_estimator=kf,
         lambda_fa=lambda_c/volume
     )
     if tracker.mb.size > 0:
-      tracker.mb, tracker.metadata['mb'] = tracker.mb.prune(
-          meta=tracker.metadata['mb'],
+      tracker.mb, tracker.mb_metadata = tracker.mb.prune(
+          meta=tracker.mb_metadata,
           valid_fn=lambda mb: mb.r > 1e-4,
       )
 
@@ -124,37 +134,39 @@ def test_scenario_gate():
   )
 
   # Initialize TOMB filter
-  birth_dist = Gaussian(
+  birth_distribution = Gaussian(
       mean=np.array([0, 0, 0, 0])[None, :],
       covar=np.diag([100, 1, 100, 1])[None, :]**2,
       weight=np.array([0.05]),
   )
-  init_dist = Gaussian(
-      mean=birth_dist.mean,
-      covar=birth_dist.covar,
+  undetected_state = Gaussian(
+      mean=birth_distribution.mean,
+      covar=birth_distribution.covar,
       weight=np.array([10.0])
   )
   tracker = TOMBP(
-      birth_state=birth_dist, undetected_state=init_dist, pg=0.999
+      poisson=Poisson(state=undetected_state),
+      mb=None,
+      birth_distribution=birth_distribution,
   )
 
   kf = KalmanFilter(transition_model=cv, measurement_model=linear)
 
   for k in range(n_steps):
-    tracker.mb, tracker.poisson, tracker.meta = tracker.predict(
-        state_estimator=kf, dt=dt, ps_model=ps)
+    tracker = tracker.predict(state_estimator=kf, dt=dt, ps_model=ps)
     tracker.poisson.state = static_reduce(tracker.poisson.state)
 
-    tracker.mb, tracker.poisson, tracker.metadata = tracker.update(
+    tracker = tracker.update(
         measurements=Z[k],
         pd_model=pd,
         state_estimator=kf,
-        lambda_fa=lambda_c/volume
+        lambda_fa=lambda_c/volume,
+        pg=0.999,
     )
     if tracker.mb.size > 0:
-      tracker.mb, tracker.metadata['mb'] = tracker.mb.prune(
-          meta=tracker.metadata['mb'],
+      tracker.mb, tracker.mb_metadata = tracker.mb.prune(
           valid_fn=lambda mb: mb.r > 1e-4,
+          meta=tracker.mb_metadata,
       )
 
   assert tracker.mb.size == 53
@@ -178,38 +190,42 @@ def test_ukf_tomb():
       dt=dt, lambda_c=lambda_c, pd=pd, n_steps=n_steps)
 
   # Initialize TOMB filter
-  birth_state = Gaussian(
+  birth_distribution = Gaussian(
       mean=np.array([0, 0, 0, 0])[None, :],
       covar=np.diag([100, 1, 100, 1])[None, :]**2,
       weight=np.array([0.05])
   )
 
   undetected_state = Gaussian(
-      mean=birth_state.mean,
-      covar=birth_state.covar,
+      mean=birth_distribution.mean,
+      covar=birth_distribution.covar,
       weight=np.array([10.0])
   )
 
   ukf = UnscentedKalmanFilter(transition_model=cv, measurement_model=linear)
-  tracker = TOMBP(birth_state=birth_state, undetected_state=undetected_state)
+  tracker = TOMBP(
+      poisson=Poisson(state=undetected_state),
+      mb=None,
+      birth_distribution=birth_distribution,
+  )
 
   for k in range(n_steps):
-    tracker.mb, tracker.poisson, tracker.metadata = tracker.predict(
+    tracker = tracker.predict(
         state_estimator=ukf,
         dt=dt,
         ps_model=ps,
     )
     tracker.poisson, _ = tracker.poisson.prune(threshold=1e-4)
 
-    tracker.mb, tracker.poisson, tracker.metadata = tracker.update(
+    tracker = tracker.update(
         measurements=Z[k],
         pd_model=pd,
         state_estimator=ukf,
-        lambda_fa=lambda_c / volume
+        lambda_fa=lambda_c / volume,
     )
     if tracker.mb.size > 0:
-      tracker.mb, tracker.metadata['mb'] = tracker.mb.prune(
-          meta=tracker.metadata['mb'],
+      tracker.mb, tracker.mb_metadata = tracker.mb.prune(
+          meta=tracker.mb_metadata,
           valid_fn=lambda mb: mb.r > 1e-4,
       )
 
@@ -220,7 +236,7 @@ def test_ukf_tomb():
 
 
 if __name__ == '__main__':
-  
+
   # test_scenario_prune()
   # test_scenario_prune()
   # test_scenario_gate()

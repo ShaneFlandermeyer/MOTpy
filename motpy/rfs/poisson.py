@@ -13,16 +13,14 @@ class Poisson:
   """
 
   def __init__(
-      self,
-      birth_distribution: Distribution,
-      state: Optional[Distribution] = None,
+      self, state: Optional[Distribution] = None,
   ):
-    self.birth_distribution = birth_distribution
     self.state = state
 
   def __repr__(self):
-    return f"""Poisson(birth_distribution={self.birth_distribution},
-  distribution={self.state})"""
+    return f"""Poisson(
+  distribution={self.state}
+  )"""
 
   @property
   def shape(self) -> Tuple[int]:
@@ -32,8 +30,12 @@ class Poisson:
   def size(self) -> int:
     return self.state.size
 
+  def __len__(self) -> int:
+    return self.state.shape[0] if self.state is not None else 0
+
   def predict(self,
               state_estimator: StateEstimator,
+              birth_distribution: Poisson,
               ps: float,
               dt: float,
               **kwargs
@@ -42,11 +44,8 @@ class Poisson:
         state=self.state, dt=dt, **kwargs
     )
     pred_state.weight = ps * self.state.weight
-    pred_state = pred_state.append(self.birth_distribution)
-    pred_poisson = Poisson(
-        birth_distribution=self.birth_distribution,
-        state=pred_state
-    )
+    pred_state = pred_state.append(birth_distribution)
+    pred_poisson = Poisson(state=pred_state)
 
     return pred_poisson
 
@@ -58,13 +57,12 @@ class Poisson:
     """
     Prune components below weight threshold
     """
-    pruned = copy.deepcopy(self)
-    valid = pruned.state.weight > threshold
-    pruned.state = pruned.state[valid]
+    valid = self.state.weight > threshold
+    new_poisson = Poisson(state=self.state[valid])
 
     if meta is None:
-      pruned_meta = None
+      new_meta = None
     else:
-      pruned_meta = [meta[i] for i in range(len(meta)) if valid[i]]
+      new_meta = [meta[i] for i in range(len(meta)) if valid[i]]
 
-    return pruned, pruned_meta
+    return new_poisson, new_meta

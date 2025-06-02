@@ -16,7 +16,6 @@ class ConstantVelocity(TransitionModel):
                position_inds: Optional[np.ndarray] = None,
                velocity_inds: Optional[np.ndarray] = None,
                noise_type: Literal["continuous", "discrete"] = "continuous",
-               seed: int = np.random.randint(0, 2**32-1),
                ):
     self.state_dim = state_dim
     self.w = w
@@ -29,19 +28,20 @@ class ConstantVelocity(TransitionModel):
     self.position_inds = position_inds
     self.velocity_inds = velocity_inds
 
-    self.np_random = np.random.RandomState(seed)
-
   def __call__(
       self,
       x: np.ndarray,
       dt: float = 0,
       noise: bool = False,
+      rng: Optional[np.random.RandomState] = None,
   ) -> np.ndarray:
     next_x = np.array(x).astype(float)
     next_x[..., self.position_inds] += x[..., self.velocity_inds]*dt
 
     if noise:
-      next_x += self.sample_noise(covar=self.covar(dt=dt), size=x.shape[:-1])
+      next_x += self.sample_noise(
+          covar=self.covar(dt=dt), size=x.shape[:-1], rng=rng
+      )
 
     return next_x
 
@@ -74,7 +74,14 @@ class ConstantVelocity(TransitionModel):
 
     return Q
 
-  def sample_noise(self, covar, size: Tuple[int, ...]) -> np.ndarray:
-    return self.np_random.multivariate_normal(
-        mean=np.zeros(self.state_dim), cov=covar, size=size,
+  def sample_noise(
+      self,
+      covar: np.ndarray,
+      size: Tuple[int, ...],
+      rng: Optional[np.random.RandomState] = None,
+  ) -> np.ndarray:
+    if rng is None:
+      rng = np.random.default_rng()
+    return rng.multivariate_normal(
+        mean=np.zeros(self.state_dim), cov=covar, size=size
     )
