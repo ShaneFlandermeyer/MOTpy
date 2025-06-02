@@ -26,7 +26,7 @@ def test_predict():
   state_dim = state.state_dim
 
   # Motpy UKF
-  cv = ConstantVelocity(state_dim=state_dim, w=w, seed=seed)
+  cv = ConstantVelocity(state_dim=state_dim, w=w)
   ukf = UnscentedKalmanFilter(
       transition_model=cv, measurement_model=None, sigma_params=sigma_params
   )
