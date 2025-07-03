@@ -90,7 +90,7 @@ class TOMBP:
 
     # Update metadata
     predicted_poisson_meta = self.poisson_metadata + [
-        dict() for _ in range(len(predicted_poisson))
+        dict() for _ in range(self.birth_distribution.size)
     ]
 
     return TOMBP(
@@ -98,7 +98,7 @@ class TOMBP:
         mb=predicted_mb,
         birth_distribution=self.birth_distribution,
         # Metadata
-        mb_metadata=self.mb_metadata, # Unchanged
+        mb_metadata=self.mb_metadata,  # Unchanged
         poisson_metadata=predicted_poisson_meta,
     )
 
@@ -138,7 +138,7 @@ class TOMBP:
     if isinstance(pd_poisson, float):
       pd_poisson = np.full(self.poisson.size, pd_poisson)
 
-    new_berns, w_new = self.bernoulli_birth(
+    new_bernoullis, w_new = self.bernoulli_birth(
         state_estimator=state_estimator,
         measurements=measurements,
         pd_poisson=pd_poisson,
@@ -149,6 +149,11 @@ class TOMBP:
 
     poisson_post = Poisson(state=copy.deepcopy(self.poisson.state))
     poisson_post.state.weight *= 1 - pd_poisson
+
+    poisson_meta_post = [
+        dict(self.poisson_metadata[i], pd=pd_poisson[i])
+        for i in range(len(self.poisson))
+    ]
 
     ########################################################
     # MB Update
@@ -182,8 +187,8 @@ class TOMBP:
         p_new=p_new,
         mb_hypotheses=mb_hypotheses,
         hypothesis_mask=hypothesis_mask,
-        new_berns=new_berns,
-        mb_meta=self.mb_metadata,
+        new_bernoullis=new_bernoullis,
+        meta=self.mb_metadata,
     )
 
     return TOMBP(
@@ -192,7 +197,7 @@ class TOMBP:
         birth_distribution=self.birth_distribution,
         # Metadata
         mb_metadata=mb_meta_post,
-        poisson_metadata=self.poisson_metadata, # Unchanged
+        poisson_metadata=poisson_meta_post,
     )
 
   def bernoulli_birth(self,
@@ -387,8 +392,8 @@ class TOMBP:
            p_new: np.ndarray,
            mb_hypotheses: List[MultiBernoulli],
            hypothesis_mask: np.ndarray,
-           new_berns: MultiBernoulli,
-           mb_meta: List[Dict[str, Any]]
+           new_bernoullis: MultiBernoulli,
+           meta: List[Dict[str, Any]]
            ) -> MultiBernoulli:
     """
     Add new Bernoulli components to the filter and marginalize existing components across measurement hypotheses
@@ -414,7 +419,7 @@ class TOMBP:
         The updated MB distribution
     """
     mb = MultiBernoulli()
-    meta = mb_meta.copy()
+    new_meta = meta.copy()
 
     # Marginalize over measurements for existing tracks
     for i in range(len(mb_hypotheses)):
@@ -435,16 +440,15 @@ class TOMBP:
         )
         x, P = x[None, :], P[None, ...]
       mb = mb.append(r=r, state=Gaussian(mean=x, covar=P, weight=None))
-      meta[i] = meta[i].copy()
-      meta[i].update(new=False, updated=updated, in_gate=mask[1:])
+      new_meta[i] = dict(meta[i], new=False, updated=updated)
 
     # Form new tracks
-    n_new = new_berns.size
+    n_new = new_bernoullis.size
     if n_new > 0:
-      mb = mb.append(r=p_new * new_berns.r, state=new_berns.state)
-      meta.extend([dict(new=True) for i in range(n_new)])
+      mb = mb.append(r=p_new * new_bernoullis.r, state=new_bernoullis.state)
+      new_meta.extend([dict(new=True) for _ in range(n_new)])
 
-    return mb, meta
+    return mb, new_meta
 
   @staticmethod
   def spa(w_updated: np.ndarray,

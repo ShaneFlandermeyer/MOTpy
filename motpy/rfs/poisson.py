@@ -1,10 +1,7 @@
 from __future__ import annotations
-import copy
-from typing import Any, Dict, List, Optional, Tuple
-
+from typing import *
 from motpy.estimators import StateEstimator
 from motpy.distributions import Distribution
-import numpy as np
 
 
 class Poisson:
