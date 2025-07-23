@@ -103,19 +103,16 @@ class Gaussian(Distribution):
 def merge_gaussians(
         means: np.ndarray,
         covars: np.ndarray,
-        weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-  mu = means
-  P = covars
-  w = weights
+        weights: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+  w_merged = np.sum(weights, axis=-1)
+  w = weights / w_merged[..., None] + 1e-15
+  mu_merged = np.einsum('...i, ...ij -> ...j', w, means)
 
-  w_merged = np.sum(w, axis=-1)
-  w /= w_merged[..., None] + 1e-15
-  mu_merged = np.einsum('...i, ...ij -> ...j', w, mu)
-
-  y = mu - mu_merged[..., None, :]
+  y = means - mu_merged[..., None, :]
   y_outer = np.einsum('...i, ...j -> ...ij', y, y)
-  P_merged = np.einsum('...i, ...ijk -> ...jk', w, P + y_outer)
-  return w_merged, mu_merged, P_merged
+  P_merged = np.einsum('...i, ...ijk -> ...jk', w, covars + y_outer)
+  return mu_merged, P_merged, w_merged
 
 
 def likelihood(

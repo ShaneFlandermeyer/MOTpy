@@ -283,7 +283,7 @@ class TOMBP:
 
         # Mixture reduction
         if n_valid > 1:
-          _, means[i_m], covars[i_m] = merge_gaussians(
+          means[i_m], covars[i_m], _ = merge_gaussians(
               means=mixture.mean,
               covars=mixture.covar,
               weights=mixture.weight,
@@ -433,7 +433,7 @@ class TOMBP:
         r = pr
       else:
         updated = True
-        r, x, P = merge_gaussians(
+        x, P, r = merge_gaussians(
             means=x,
             covars=P,
             weights=pr,
