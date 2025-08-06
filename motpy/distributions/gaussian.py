@@ -105,13 +105,16 @@ def merge_gaussians(
         covars: np.ndarray,
         weights: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-  w_merged = np.sum(weights, axis=-1)
-  w = weights / w_merged[..., None] + 1e-15
-  mu_merged = np.einsum('...i, ...ij -> ...j', w, means)
+  w_merged = np.sum(weights, axis=-1, keepdims=True)
+  
+  w = weights / (w_merged + 1e-15)
+  mu_merged = np.sum(w[..., None] * means, axis=-2)
 
   y = means - mu_merged[..., None, :]
-  y_outer = np.einsum('...i, ...j -> ...ij', y, y)
-  P_merged = np.einsum('...i, ...ijk -> ...jk', w, covars + y_outer)
+  P_merged = np.sum(
+      w[..., None, None] * (covars + y[..., :, None] @ y[..., None, :]),
+      axis=-3
+  )
   return mu_merged, P_merged, w_merged
 
 

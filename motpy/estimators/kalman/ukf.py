@@ -213,7 +213,7 @@ def unscented_transform(
     subtract_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] = np.subtract,
     average_fn: Optional[
         Callable[[np.ndarray], np.ndarray]
-    ] = None,
+    ] = np.average,
 ) -> Tuple[np.ndarray, np.ndarray]:
   # Mean
   x = average_fn(sigmas, weights=Wm, axis=-2)
