@@ -81,16 +81,25 @@ class Radar2D(MeasurementModel):
     return y
 
   @staticmethod
-  def average_fn(z: np.ndarray, w: np.ndarray) -> np.ndarray:
-    w = np.abs(w) / (np.abs(w).sum() + 1e-15)
+  def average_fn(
+      z: np.ndarray,
+      axis: Optional[int] = None,
+      weights: Optional[np.ndarray] = None
+  ) -> np.ndarray:
+    if weights is None:
+      w = np.full((*z.shape[:-1], 1), 1 / z.shape[axis], dtype=float)
+    else:
+      w = abs(weights)[..., None]
+      w = w / (np.sum(w, axis=axis, keepdims=True) + 1e-15)
+    
     az_mean = np.arctan2(
-        np.sum(w * np.sin(z[..., 1]), axis=-1),
-        np.sum(w * np.cos(z[..., 1]), axis=-1)
+        np.sum(w * np.sin(z[..., 1][..., None]), axis=axis),
+        np.sum(w * np.cos(z[..., 1][..., None]), axis=axis)
     )
-    r_mean = np.sum(w * z[..., 0], axis=-1)
-    v_mean = np.sum(w * z[..., 2], axis=-1)
+    r_mean = np.sum(w * z[..., 0][..., None], axis=axis)
+    v_mean = np.sum(w * z[..., 2][..., None], axis=axis)
 
-    return np.stack([r_mean, az_mean, v_mean], axis=-1)
+    return np.concatenate([r_mean, az_mean, v_mean], axis=-1)
 
 
 if __name__ == '__main__':
@@ -104,6 +113,6 @@ if __name__ == '__main__':
       noise=False,
       rng=None,
   )
-  zm = radar2d.average_fn(z=np.stack([z, z], axis=0), w=np.array([0.5, 0.5]))
+  zm = radar2d.average_fn(z=np.stack(
+      [z, z], axis=0), weights=np.array([0.5, 0.5]))
   print(zm-z)
-  
