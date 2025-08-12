@@ -78,9 +78,8 @@ class Gaussian(Distribution):
     )
 
   def sample(self,
-             num_points: int,
+             num_points: int = 1,
              dims: Optional[Sequence[int]] = None,
-             max_distance: Optional[float] = None,
              rng: np.random.Generator = np.random.default_rng(),
              ) -> np.ndarray:
     """
@@ -94,9 +93,6 @@ class Gaussian(Distribution):
 
     mu = self.mean[..., None, dims]
     std_normal = rng.normal(size=(*self.shape, num_points, mu.shape[-1]))
-    if max_distance is not None:
-      max_val = max_distance / np.sqrt(len(dims))
-      std_normal = std_normal.clip(-max_val, max_val)
     return mu + np.einsum('nij, nmj -> nmi', np.linalg.cholesky(P), std_normal)
 
 
