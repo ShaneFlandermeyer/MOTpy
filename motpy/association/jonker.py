@@ -4,7 +4,7 @@ import numpy as np
 from typing import Tuple
 
 
-def assign2D(
+def assign2d(
     C: np.ndarray,
     maximize: bool = False
 ) -> Tuple[np.ndarray, np.ndarray, float, np.ndarray, np.ndarray]:
