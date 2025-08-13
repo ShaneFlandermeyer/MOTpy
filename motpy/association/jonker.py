@@ -82,6 +82,7 @@ def assign2D(
   if transposed:
     col_assignments, row_assignments = row_assignments, col_assignments
     u, v = v, u
+    
 
   return row_assignments, col_assignments, gain, u, v
 
@@ -115,7 +116,9 @@ def shortest_path(
         shortest_path_costs[j] = reduced_cost
 
     # Select shortest path column or determine infeasibility
-    j = np.argmin(shortest_path_costs[~scanned_cols])
+    unscanned_col_inds = np.where(~scanned_cols)[0]
+    shortest_unscanned_col_ind = np.argmin(shortest_path_costs[~scanned_cols])
+    j = unscanned_col_inds[shortest_unscanned_col_ind]
     if shortest_path_costs[j] == np.inf:
       return None, None, u, v  # Infeasible assignment
 
