@@ -9,7 +9,7 @@ from motpy.distributions import Gaussian
 from motpy.estimators import StateEstimator
 from motpy.estimators.kalman.sigma_points import (merwe_scaled_sigma_points,
                                                   merwe_sigma_weights)
-from motpy.gate import ellipsoidal_gate
+from motpy.association.gate import ellipsoidal_gate
 from motpy.models.measurement import MeasurementModel
 from motpy.models.transition import TransitionModel
 

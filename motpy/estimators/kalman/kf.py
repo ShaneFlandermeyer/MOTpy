@@ -6,7 +6,7 @@ from motpy.models.measurement.base import MeasurementModel
 from motpy.models.transition.base import TransitionModel
 from motpy.distributions.gaussian import Gaussian
 import motpy.distributions.gaussian as gaussian
-from motpy.gate import ellipsoidal_gate
+from motpy.association.gate import ellipsoidal_gate
 from motpy.estimators import StateEstimator
 
 
