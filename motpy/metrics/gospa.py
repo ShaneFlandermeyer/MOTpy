@@ -32,10 +32,11 @@ def gospa(
   """
   nx, ny = len(X), len(Y)
   if nx == 0: # All false 
-    raise NotImplementedError
+    return c**p/2 * ny
   elif ny == 0: # All missed
-    raise NotImplementedError
+    raise c**p/2 * nx
   else:
+    # Data association
     x_to_y = jonker.assign2d(C=d, maximize=False)[0]
     
     # Localization error
@@ -50,8 +51,7 @@ def gospa(
     miss_error = c**p/2 * (nx - n_loc)
     false_error = c**p/2 * (ny - n_loc)
     
-    gospa = (loc_error + miss_error + false_error)**(1/p)
-    return gospa
+    return (loc_error + miss_error + false_error)**(1/p)
 
 
 if __name__ == '__main__':
