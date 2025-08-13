@@ -55,7 +55,7 @@ def assign2D(
     sink, path, u, v = shortest_path(
         irow, u, v, C, row_assignments, col_assignments
     )
-    if sink is None:  # Infeasible
+    if sink == -1:  # Infeasible
       return None, None, -1, u, v
 
     # Augment the previous solution
@@ -101,16 +101,16 @@ def shortest_path(
   scanned_rows = np.zeros(num_row, dtype=bool)
   scanned_cols = np.zeros(num_col, dtype=bool)
   
-  sink = None
+  sink = -1
   min_val = 0
   i = row_index
-  while sink is None:
+  while sink == -1:
     # Update scanned row set
     scanned_rows[i] = True
 
     # Update path and shortest path costs
     for j in np.arange(num_col)[~scanned_cols]:
-      reduced_cost = min_val + C[i, j] - u[j] - v[i]
+      reduced_cost = min_val + C[i, j] - u[i] - v[j]
       if reduced_cost < shortest_path_costs[j]:
         path[j] = i
         shortest_path_costs[j] = reduced_cost
