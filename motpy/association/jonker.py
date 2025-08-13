@@ -1,4 +1,5 @@
 
+from time import time
 import numpy as np
 from typing import Tuple
 
@@ -35,7 +36,7 @@ def assign2D(
   num_row, num_col = C.shape
 
   transposed = False
-  if num_col > num_row:
+  if num_row > num_col:
     C = C.T
     transposed = True
     num_row, num_col = num_col, num_row
@@ -82,7 +83,6 @@ def assign2D(
   if transposed:
     col_assignments, row_assignments = row_assignments, col_assignments
     u, v = v, u
-    
 
   return row_assignments, col_assignments, gain, u, v
 
@@ -100,7 +100,7 @@ def shortest_path(
   shortest_path_costs = np.full(num_col, np.inf)
   scanned_rows = np.zeros(num_row, dtype=bool)
   scanned_cols = np.zeros(num_col, dtype=bool)
-  
+
   sink = -1
   min_val = 0
   i = row_index
@@ -109,11 +109,14 @@ def shortest_path(
     scanned_rows[i] = True
 
     # Update path and shortest path costs
-    for j in np.arange(num_col)[~scanned_cols]:
-      reduced_cost = min_val + C[i, j] - u[i] - v[j]
-      if reduced_cost < shortest_path_costs[j]:
-        path[j] = i
-        shortest_path_costs[j] = reduced_cost
+    reduced_cost = min_val + C[i, ~scanned_cols] - u[i] - v[~scanned_cols]
+    path[~scanned_cols] = np.where(
+        reduced_cost < shortest_path_costs[~scanned_cols],
+        i, path[~scanned_cols]
+    )
+    shortest_path_costs[~scanned_cols] = np.minimum(
+        shortest_path_costs[~scanned_cols], reduced_cost
+    )
 
     # Select shortest path column or determine infeasibility
     unscanned_col_inds = np.where(~scanned_cols)[0]
@@ -138,12 +141,17 @@ def shortest_path(
   mask[row_index] = False
   u[mask] += min_val - shortest_path_costs[row_assignments[mask]]
   v[scanned_cols] += -min_val + shortest_path_costs[scanned_cols]
-  
+
   return sink, path, u, v
 
 
 if __name__ == '__main__':
-  C = np.array([[np.inf, 1, np.inf],
-               [2, np.inf, np.inf],
-               [np.inf, np.inf, 3]])
-  print(assign2D(C, maximize=False))
+  import time
+
+  start = time.time()
+  N = 10
+  for i in range(N):
+    print(i)
+    C = np.random.uniform(0, 1, (200, 200))
+    assign2D(C, maximize=False)
+  print('Time:', 1/N*(time.time() - start))
