@@ -102,7 +102,7 @@ def merge_gaussians(
         weights: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
   w_merged = np.sum(weights, axis=-1, keepdims=True)
-  
+
   w = weights / (w_merged + 1e-15)
   mu_merged = np.sum(w[..., None] * means, axis=-2)
 
@@ -171,3 +171,33 @@ def mahalanobis(x: np.ndarray,
       )
   )
   return dist
+
+
+def static_merge_mixture(
+    distribution: Gaussian,
+    source_inds: np.ndarray,
+    target_inds: np.ndarray
+) -> Poisson:
+  # Static merge source components into target components
+  merged_w = (
+      distribution.weight[source_inds] +
+      distribution.weight[target_inds]
+  )
+  merged_means = distribution.mean[target_inds]
+  merged_covars = distribution.covar[target_inds]
+  return Gaussian(mean=merged_means, covar=merged_covars, weight=merged_w)
+
+
+def merge_mixture(
+    distribution: Poisson,
+    source_inds: np.ndarray,
+    target_inds: np.ndarray
+) -> Poisson:
+  mu = distribution.state.mean[[source_inds, target_inds]].swapaxes(0, 1)
+  P = distribution.state.covar[[source_inds, target_inds]].swapaxes(0, 1)
+  w = distribution.state.weight[[source_inds, target_inds]].swapaxes(0, 1)
+  merged_means, merged_covars, merged_w = merge_gaussians(
+      means=mu, covars=P, weights=w
+  )
+
+  return Gaussian(mean=merged_means, covar=merged_covars, weight=merged_w)

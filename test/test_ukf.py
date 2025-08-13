@@ -9,7 +9,7 @@ from motpy.estimators.kalman import UnscentedKalmanFilter
 from motpy.estimators.kalman.sigma_points import (merwe_scaled_sigma_points,
                                                   merwe_sigma_weights)
 from motpy.models.measurement.linear import LinearMeasurementModel
-from motpy.models.measurement.range_bearing import RangeBearingModel
+from motpy.models.measurement.radar import RangeBearingModel
 from motpy.models.transition import ConstantVelocity
 import scipy.stats
 

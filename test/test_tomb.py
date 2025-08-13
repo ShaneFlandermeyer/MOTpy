@@ -1,11 +1,8 @@
 import numpy as np
 import pytest
 
-from motpy.distributions.gaussian import Gaussian
-from motpy.distributions.mixture import static_reduce
+from motpy.distributions.gaussian import Gaussian, static_merge_mixture
 from motpy.estimators.kalman import KalmanFilter, UnscentedKalmanFilter
-from motpy.estimators.kalman.sigma_points import (merwe_scaled_sigma_points,
-                                                  merwe_sigma_weights)
 from motpy.estimators.kalman.ukf import UnscentedKalmanFilter
 from motpy.models.measurement import LinearMeasurementModel
 from motpy.models.transition import ConstantVelocity
@@ -154,7 +151,13 @@ def test_scenario_gate():
 
   for k in range(n_steps):
     tracker = tracker.predict(state_estimator=kf, dt=dt, ps_model=ps)
-    tracker.poisson.state = static_reduce(tracker.poisson.state)
+
+    Nu = len(tracker.poisson.state.mean)
+    tracker.poisson.state = static_merge_mixture(
+        distribution=tracker.poisson.state,
+        source_inds=np.arange(Nu // 2),
+        target_inds=np.arange(Nu // 2, Nu),
+    )
 
     tracker = tracker.update(
         measurements=Z[k],
