@@ -93,7 +93,9 @@ class Gaussian(Distribution):
 
     mu = self.mean[..., None, dims]
     std_normal = rng.normal(size=(*self.shape, num_points, mu.shape[-1]))
-    return mu + np.einsum('nij, nmj -> nmi', np.linalg.cholesky(P), std_normal)
+    
+    x = mu + np.einsum('nij, nmj -> nmi', np.linalg.cholesky(P), std_normal)
+    return x
 
 
 def merge_gaussians(
@@ -201,3 +203,37 @@ def merge_mixture(
   )
 
   return Gaussian(mean=merged_means, covar=merged_covars, weight=merged_w)
+
+
+def uniform_sample_ellipse(
+    n: int,
+    mean: np.ndarray,
+    covar: np.ndarray,
+    rng: np.random.Generator = np.random.default_rng()
+) -> np.ndarray:
+  """
+  Sample points uniformly distributed within an ellipse defined by the mean and covariance matrix.
+
+  Parameters
+  ----------
+  n : int
+      Number of points to sample.
+  mean : np.ndarray
+      Mean of the Gaussian distribution (center of the ellipse).
+  covar : np.ndarray
+      Covariance matrix defining the shape of the ellipse.
+  rng : np.random.Generator, optional
+      Random number generator for reproducibility.
+
+  Returns
+  -------
+  np.ndarray
+      Sampled points within the ellipse.
+  """
+  batch_dims, d = mean.shape[:-1], mean.shape[-1]
+  X = rng.multivariate_normal(np.zeros(d), np.eye(d), size=(*batch_dims, n))
+  u = rng.uniform(0, 1, size=(*batch_dims, n))
+  r = u**(1/d)
+  Z = r[..., None] * X / np.linalg.norm(X, axis=-1, keepdims=True)
+  L = np.linalg.cholesky(covar, upper=False)
+  return mean[..., None, :] + Z @ L.swapaxes(-1, -2)

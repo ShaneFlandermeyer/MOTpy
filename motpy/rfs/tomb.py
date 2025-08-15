@@ -108,6 +108,7 @@ class TOMBP:
              pd_model: Callable,
              lambda_fa: float,
              pg: float = 1.0,
+             min_poisson_pd: float = 0,
              **kwargs
              ) -> Tuple[MultiBernoulli, Poisson]:
     """
@@ -144,6 +145,7 @@ class TOMBP:
         pd_poisson=pd_poisson,
         lambda_fa=lambda_fa,
         pg=pg,
+        min_poisson_pd=min_poisson_pd,
         **kwargs
     )
 
@@ -205,7 +207,8 @@ class TOMBP:
                       measurements: np.ndarray,
                       pd_poisson: np.ndarray,
                       lambda_fa: float,
-                      pg: float = 1.0,
+                      pg: float,
+                      min_poisson_pd: float,
                       **kwargs
                       ) -> Tuple[MultiBernoulli, np.ndarray]:
     """
@@ -240,7 +243,7 @@ class TOMBP:
     covars = np.zeros((m, state_dim, state_dim))
     if m > 0:
       in_gate = np.zeros((n_u, m), dtype=bool)
-      detectable = pd_poisson > 0
+      detectable = pd_poisson > min_poisson_pd
       if pg is None or pg == 1:
         in_gate[detectable] = True
       else:
