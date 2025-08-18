@@ -83,23 +83,23 @@ class Radar2D(MeasurementModel):
   @staticmethod
   def average_fn(
       z: np.ndarray,
-      weights: Optional[np.ndarray],
+      weights: np.ndarray,
       axis: Optional[int] = None,
   ) -> np.ndarray:
-    r, az, v = z[..., 0], z[..., 1], z[..., 2]
-     
+    r, az, v = z[..., 0][..., None], z[..., 1][..., None], z[..., 2][..., None]
     
-    w = weights[..., None]
-    w = abs(w) / (abs(w).sum(axis=axis, keepdims=True) + 1e-15)
+    w = (abs(weights) / abs(weights).sum())[..., None]
+    
     az_mean = np.arctan2(
-        np.sum(w * np.sin(az[..., None]), axis=axis),
-        np.sum(w * np.cos(az[..., None]), axis=axis)
-    )    
-    r_mean = np.sum(w * r[..., None], axis=axis)
-    v_mean = np.sum(w * v[..., None], axis=axis)
+        np.sum(w * np.sin(az), axis=axis),
+        np.sum(w * np.cos(az), axis=axis)
+    )
+    r_mean = np.sum(w * r, axis=axis)
+    v_mean = np.sum(w * v, axis=axis)
 
     return np.concatenate([r_mean, az_mean, v_mean], axis=-1)
-  
+
+
 class RangeBearingModel():
   def __init__(self,
                covar,
@@ -131,7 +131,6 @@ class RangeBearingModel():
   def sample_noise(self, size: Tuple[int, ...]) -> np.ndarray:
     return self.np_random.multivariate_normal(
         mean=np.zeros(self.measurement_dim), cov=self.noise_covar, size=size)
-
 
 
 if __name__ == '__main__':
