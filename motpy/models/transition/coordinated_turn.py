@@ -1,5 +1,5 @@
 import functools
-from typing import Union, Optional
+from typing import Tuple, Optional
 import numpy as np
 from scipy.linalg import block_diag
 
@@ -19,9 +19,8 @@ class CoordinatedTurn():
                position_inds: Optional[np.ndarray] = None,
                velocity_inds: Optional[np.ndarray] = None,
                turn_rate_ind: Optional[int] = None,
-               seed: int = np.random.randint(0, 2**32-1),
                ):
-    self.ndim_state = 5
+    self.state_dim = 5
     self.w_linear = w_linear
     self.w_turn = w_turn
 
@@ -30,18 +29,18 @@ class CoordinatedTurn():
     if velocity_inds is None:
       velocity_inds = np.array([1, 3])
     if turn_rate_ind is None:
-      turn_rate_ind = 4
+      turn_rate_ind = -1
     self.position_inds = position_inds
     self.velocity_inds = velocity_inds
     self.turn_rate_ind = turn_rate_ind
 
-    self.np_random = np.random.RandomState(seed)
 
   def __call__(
       self,
       x: np.array,
       dt: float,
-      noise: bool = False
+      noise: bool = False,
+      rng: Optional[np.random.RandomState] = None,
   ) -> np.ndarray:
 
     # Extract position, velocity, and turn rate components from current state
@@ -50,7 +49,7 @@ class CoordinatedTurn():
     iw = self.turn_rate_ind
     px, py = x[..., ipx], x[..., ipy]
     vx, vy = x[..., ivx], x[..., ivy]
-    w = x[..., iw]
+    w = x[..., iw] + 1e-10
 
     # Propagate next state - expressing in equation form for readability and state vector ordering flexibility
     next_state = np.zeros_like(x)
@@ -63,21 +62,31 @@ class CoordinatedTurn():
     next_state[..., iw] = w
 
     if noise:
-      n_samples = x.shape[0] if x.ndim > 1 else 1
-      mean = np.zeros(self.ndim_state)
-      covar = self.covar(dt)
-      noise = self.np_random.multivariate_normal(mean, covar, size=n_samples)
-      next_state += noise.reshape(next_state.shape)
-
+      next_state += self.sample_noise(
+          covar=self.covar(dt=dt), size=x.shape[:-1], rng=rng
+      )
+      
     return next_state
 
   @functools.lru_cache()
   def covar(self, dt: float):
     ipos, ivel, iw = self.position_inds, self.velocity_inds, self.turn_rate_ind
-    Q = np.zeros((self.ndim_state, self.ndim_state))
+    Q = np.zeros((self.state_dim, self.state_dim))
     Q[ipos, ipos] = self.w_linear * dt**4 / 4
     Q[ipos, ivel] = self.w_linear * dt**3 / 2
     Q[ivel, ipos] = self.w_linear * dt**3 / 2
     Q[ivel, ivel] = self.w_linear * dt**2
     Q[iw, iw] = self.w_turn
     return Q
+
+  def sample_noise(
+      self,
+      covar: np.ndarray,
+      size: Tuple[int, ...],
+      rng: Optional[np.random.RandomState] = None,
+  ) -> np.ndarray:
+    if rng is None:
+      rng = np.random.default_rng()
+    return rng.multivariate_normal(
+        mean=np.zeros(self.state_dim), cov=covar, size=size
+    )
