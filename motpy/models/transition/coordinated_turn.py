@@ -19,6 +19,7 @@ class CoordinatedTurn():
                position_inds: Optional[np.ndarray] = None,
                velocity_inds: Optional[np.ndarray] = None,
                turn_rate_ind: Optional[int] = None,
+               degrees: bool = False,
                ):
     self.state_dim = 5
     self.w_linear = w_linear
@@ -33,7 +34,7 @@ class CoordinatedTurn():
     self.position_inds = position_inds
     self.velocity_inds = velocity_inds
     self.turn_rate_ind = turn_rate_ind
-
+    self.degrees = degrees
 
   def __call__(
       self,
@@ -50,8 +51,10 @@ class CoordinatedTurn():
     px, py = x[..., ipx], x[..., ipy]
     vx, vy = x[..., ivx], x[..., ivy]
     w = x[..., iw] + 1e-10
-
+    
     # Propagate next state - expressing in equation form for readability and state vector ordering flexibility
+    if self.degrees:
+      w = w * np.pi / 180
     next_state = np.zeros_like(x)
     SWT = np.sin(w * dt)
     CWT = np.cos(w * dt)
@@ -59,13 +62,15 @@ class CoordinatedTurn():
     next_state[..., ivx] = vx * CWT + vy * -SWT
     next_state[..., ipy] = vx * (1-CWT)/w + py + vy * SWT/w
     next_state[..., ivy] = vx * SWT + vy * CWT
+    if self.degrees:
+      w = w * 180 / np.pi
     next_state[..., iw] = w
 
     if noise:
       next_state += self.sample_noise(
           covar=self.covar(dt=dt), size=x.shape[:-1], rng=rng
       )
-      
+
     return next_state
 
   @functools.lru_cache()
