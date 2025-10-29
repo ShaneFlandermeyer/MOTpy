@@ -15,15 +15,15 @@ def gospa(
   Parameters
   ----------
   X : np.ndarray
-      _description_
+      Ground truth states
   Y : np.ndarray
-      _description_
+      State estimates
   d : np.ndarray
-      _description_
+      Pairwise distance between X and Y
   c : float
-      _description_
+      Cut-off distance
   p : int, optional
-      _description_, by default 1
+      GOSPA exponent, by default 1
 
   Returns
   -------
@@ -31,27 +31,36 @@ def gospa(
       _description_
   """
   nx, ny = len(X), len(Y)
-  if nx == 0: # All false 
-    return c**p/2 * ny
-  elif ny == 0: # All missed
-    raise c**p/2 * nx
+  if nx == 0:  # No ground truth
+    loc_error = 0.0
+    miss_error = 0.0
+    false_error = c**p/2 * ny
+  elif ny == 0:  # All missed
+    loc_error = 0.0
+    miss_error = c**p/2 * nx
+    false_error = 0.0
   else:
     # Data association
     x_to_y = jonker.assign2d(C=d, maximize=False)[0]
-    
+
     # Localization error
     assigned_x = np.arange(nx)[x_to_y != -1]
     assigned_y = x_to_y[assigned_x]
     valid_x = assigned_x[d[assigned_x, assigned_y] < c]
     valid_y = assigned_y[d[assigned_x, assigned_y] < c]
     n_loc = len(valid_x)
-    loc_error = np.sum(d[valid_x, valid_y])**p
-    
+    loc_error = np.sum(d[valid_x, valid_y]**p)
+
     # Cardinality error
     miss_error = c**p/2 * (nx - n_loc)
     false_error = c**p/2 * (ny - n_loc)
-    
-    return (loc_error + miss_error + false_error)**(1/p)
+
+  return dict(
+      GOSPA=(loc_error + miss_error + false_error)**(1/p),
+      loc_error=loc_error,
+      miss_error=miss_error,
+      false_error=false_error,
+  )
 
 
 if __name__ == '__main__':
