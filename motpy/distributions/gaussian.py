@@ -78,9 +78,8 @@ class Gaussian(Distribution):
     )
 
   def sample(self,
-             num_points: int,
+             num_points: int = 1,
              dims: Optional[Sequence[int]] = None,
-             max_distance: Optional[float] = None,
              rng: np.random.Generator = np.random.default_rng(),
              ) -> np.ndarray:
     """
@@ -94,28 +93,27 @@ class Gaussian(Distribution):
 
     mu = self.mean[..., None, dims]
     std_normal = rng.normal(size=(*self.shape, num_points, mu.shape[-1]))
-    if max_distance is not None:
-      max_val = max_distance / np.sqrt(len(dims))
-      std_normal = std_normal.clip(-max_val, max_val)
-    return mu + np.einsum('nij, nmj -> nmi', np.linalg.cholesky(P), std_normal)
+    
+    x = mu + np.einsum('nij, nmj -> nmi', np.linalg.cholesky(P), std_normal)
+    return x
 
 
 def merge_gaussians(
         means: np.ndarray,
         covars: np.ndarray,
-        weights: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-  mu = means
-  P = covars
-  w = weights
+        weights: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+  w_merged = np.sum(weights, axis=-1, keepdims=True)
 
-  w_merged = np.sum(w, axis=-1)
-  w /= w_merged[..., None] + 1e-15
-  mu_merged = np.einsum('...i, ...ij -> ...j', w, mu)
+  w = weights / (w_merged + 1e-15)
+  mu_merged = np.sum(w[..., None] * means, axis=-2)
 
-  y = mu - mu_merged[..., None, :]
-  y_outer = np.einsum('...i, ...j -> ...ij', y, y)
-  P_merged = np.einsum('...i, ...ijk -> ...jk', w, P + y_outer)
-  return w_merged, mu_merged, P_merged
+  y = means - mu_merged[..., None, :]
+  P_merged = np.sum(
+      w[..., None, None] * (covars + y[..., :, None] @ y[..., None, :]),
+      axis=-3
+  )
+  return mu_merged, P_merged, w_merged
 
 
 def likelihood(
@@ -175,3 +173,67 @@ def mahalanobis(x: np.ndarray,
       )
   )
   return dist
+
+
+def static_merge_mixture(
+    distribution: Gaussian,
+    source_inds: np.ndarray,
+    target_inds: np.ndarray
+) -> Poisson:
+  # Static merge source components into target components
+  merged_w = (
+      distribution.weight[source_inds] +
+      distribution.weight[target_inds]
+  )
+  merged_means = distribution.mean[target_inds]
+  merged_covars = distribution.covar[target_inds]
+  return Gaussian(mean=merged_means, covar=merged_covars, weight=merged_w)
+
+
+def merge_mixture(
+    distribution: Poisson,
+    source_inds: np.ndarray,
+    target_inds: np.ndarray
+) -> Poisson:
+  mu = distribution.state.mean[[source_inds, target_inds]].swapaxes(0, 1)
+  P = distribution.state.covar[[source_inds, target_inds]].swapaxes(0, 1)
+  w = distribution.state.weight[[source_inds, target_inds]].swapaxes(0, 1)
+  merged_means, merged_covars, merged_w = merge_gaussians(
+      means=mu, covars=P, weights=w
+  )
+
+  return Gaussian(mean=merged_means, covar=merged_covars, weight=merged_w)
+
+
+def uniform_sample_ellipse(
+    n: int,
+    mean: np.ndarray,
+    covar: np.ndarray,
+    rng: np.random.Generator = np.random.default_rng()
+) -> np.ndarray:
+  """
+  Sample points uniformly distributed within an ellipse defined by the mean and covariance matrix.
+
+  Parameters
+  ----------
+  n : int
+      Number of points to sample.
+  mean : np.ndarray
+      Mean of the Gaussian distribution (center of the ellipse).
+  covar : np.ndarray
+      Covariance matrix defining the shape of the ellipse.
+  rng : np.random.Generator, optional
+      Random number generator for reproducibility.
+
+  Returns
+  -------
+  np.ndarray
+      Sampled points within the ellipse.
+  """
+  batch_dims, d = mean.shape[:-1], mean.shape[-1]
+  X = rng.multivariate_normal(np.zeros(d), np.eye(d), size=(*batch_dims, n))
+  u = rng.uniform(0, 1, size=(*batch_dims, n))
+  r = u**(1/d)
+  Z = r[..., None] * X / np.linalg.norm(X, axis=-1, keepdims=True)
+  L = np.linalg.cholesky(covar, upper=False)
+  return mean[..., None, :] + Z @ L.swapaxes(-1, -2)

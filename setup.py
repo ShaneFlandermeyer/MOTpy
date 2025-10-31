@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='mot-py',
+    name='motpy',
     version='0.1.0',    
-    description=' Python implementations of multi-object tracking algorithms ',
+    description=' Python implementations of multi-object tracking algorithms',
     url='https://github.com/ShaneFlandermeyer/MOTpy',
     author='Shane Flandermeyer',
     author_email='shaneflandermeyer@gmail.com',

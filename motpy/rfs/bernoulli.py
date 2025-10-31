@@ -20,7 +20,8 @@ class MultiBernoulli():
   def __repr__(self) -> str:
     return f"""MultiBernoulli(
       r={self.r}
-      state={self.state})"""
+      state={self.state}
+    )"""
 
   @property
   def shape(self) -> Tuple[int]:
@@ -29,6 +30,9 @@ class MultiBernoulli():
   @property
   def size(self) -> int:
     return self.state.size if self.state is not None else 0
+
+  def __len__(self) -> int:
+    return self.state.shape[0] if self.state is not None else 0
 
   def __getitem__(self, idx) -> MultiBernoulli:
     return MultiBernoulli(state=self.state[idx], r=self.r[idx])
@@ -64,10 +68,7 @@ class MultiBernoulli():
             meta: Optional[Dict[str, Any]] = None
             ) -> Tuple[MultiBernoulli, Optional[Dict[str, Any]]]:
     valid = valid_fn(self)
-    new_mb = MultiBernoulli(
-        state=copy.deepcopy(self.state[valid]),
-        r=self.r[valid],
-    )
+    new_mb = MultiBernoulli(state=self.state[valid], r=self.r[valid])
     if meta is None:
       new_meta = None
     else:

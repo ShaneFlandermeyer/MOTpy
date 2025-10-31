@@ -18,7 +18,7 @@ def test_predict():
       covar=np.array([[545, 150], [150, 500]])
   )
   dt = 0.3
-  cv = ConstantVelocity(state_dim=2, w=0.01, seed=0)
+  cv = ConstantVelocity(state_dim=2, w=0.01)
   F = cv.matrix(dt=dt)
   Q = cv.covar(dt=dt)
 

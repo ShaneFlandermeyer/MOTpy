@@ -9,7 +9,7 @@ from motpy.distributions import Gaussian
 from motpy.estimators import StateEstimator
 from motpy.estimators.kalman.sigma_points import (merwe_scaled_sigma_points,
                                                   merwe_sigma_weights)
-from motpy.gate import ellipsoidal_gate
+from motpy.association.gate import ellipsoidal_gate
 from motpy.models.measurement import MeasurementModel
 from motpy.models.transition import TransitionModel
 
@@ -22,24 +22,44 @@ class UnscentedKalmanFilter(StateEstimator):
       state_subtract_fn: Callable[
           [np.ndarray, np.ndarray], np.ndarray
       ] = np.subtract,
-      state_mean_fn: Optional[
-          Callable[[np.ndarray, np.ndarray], np.ndarray]
-      ] = None,
+      state_average_fn: Callable[
+          [np.ndarray, np.ndarray], np.ndarray
+      ] = np.average,
       measurement_subtract_fn: Callable[
           [np.ndarray, np.ndarray], np.ndarray
       ] = np.subtract,
-      measurement_mean_fn: Optional[
-          Callable[[np.ndarray, np.ndarray], np.ndarray]
-      ] = None,
+      measurement_average_fn: Callable[
+          [np.ndarray, np.ndarray], np.ndarray
+      ] = np.average,
       # Sigma point parameters
-      sigma_params: Dict[str, Any] = dict(alpha=0.1, beta=2, kappa=0),
+      sigma_params: Dict[str, Any] = dict(alpha=1e-3, beta=2, kappa=0),
   ):
+    """
+    Unscented Kalman Filter (UKF) with Merwe scaled sigma points.
+
+    Parameters
+    ----------
+    transition_model : TransitionModel
+        _description_
+    measurement_model : MeasurementModel
+          _description_
+    state_subtract_fn : Callable[ [np.ndarray, np.ndarray], np.ndarray ], optional
+          Subtract function for prediction-space sigma points, by default np.subtract
+    state_average_fn : Callable[ [np.ndarray, np.ndarray], np.ndarray ], optional
+          Average function for prediction-space sigma points, by default np.average
+    measurement_subtract_fn : Callable[ [np.ndarray, np.ndarray], np.ndarray ], optional
+          Subtract function from measurement-space sigma points, by default np.subtract
+    measurement_average_fn : Callable[ [np.ndarray, np.ndarray], np.ndarray ], optional
+          Average function for measurement-space sigma points, by default np.average
+    sigma_params : Dict[str, Any], optional
+          Merwe sigma point parameters, by default dict(alpha=1e-3, beta=2, kappa=0)
+    """
     self.transition_model = transition_model
     self.measurement_model = measurement_model
     self.state_subtract_fn = state_subtract_fn
-    self.state_mean_fn = state_mean_fn
+    self.state_average_fn = state_average_fn
     self.measurement_subtract_fn = measurement_subtract_fn
-    self.measurement_mean_fn = measurement_mean_fn
+    self.measurement_average_fn = measurement_average_fn
 
     self.sigma_params = sigma_params
 
@@ -67,7 +87,7 @@ class UnscentedKalmanFilter(StateEstimator):
         Wc=Wc,
         noise_covar=self.transition_model.covar(dt=dt),
         subtract_fn=self.state_subtract_fn,
-        mean_fn=self.state_mean_fn,
+        average_fn=self.state_average_fn,
     )
 
     predicted_state = Gaussian(mean=x_pred, covar=P_pred, weight=state.weight)
@@ -97,7 +117,7 @@ class UnscentedKalmanFilter(StateEstimator):
         Wc=Wc,
         noise_covar=self.measurement_model.covar(),
         subtract_fn=self.measurement_subtract_fn,
-        mean_fn=self.measurement_mean_fn,
+        average_fn=self.measurement_average_fn,
     )
 
     # Standard kalman update
@@ -162,7 +182,7 @@ class UnscentedKalmanFilter(StateEstimator):
         Wc=Wc,
         noise_covar=self.measurement_model.covar(),
         subtract_fn=self.measurement_subtract_fn,
-        mean_fn=self.measurement_mean_fn,
+        average_fn=self.measurement_average_fn,
     )
     return gaussian.likelihood(
         x=measurement,
@@ -191,7 +211,7 @@ class UnscentedKalmanFilter(StateEstimator):
         Wc=Wc,
         noise_covar=self.measurement_model.covar(),
         subtract_fn=self.measurement_subtract_fn,
-        mean_fn=self.measurement_mean_fn,
+        average_fn=self.measurement_average_fn,
     )
     gate_mask, _ = ellipsoidal_gate(
         pg=pg,
@@ -211,15 +231,12 @@ def unscented_transform(
     Wc: np.ndarray,
     noise_covar: np.ndarray,
     subtract_fn: Callable[[np.ndarray, np.ndarray], np.ndarray] = np.subtract,
-    mean_fn: Optional[
+    average_fn: Optional[
         Callable[[np.ndarray], np.ndarray]
-    ] = None,
+    ] = np.average,
 ) -> Tuple[np.ndarray, np.ndarray]:
   # Mean
-  if mean_fn is None:
-    x = np.sum(Wm[..., None] * sigmas, axis=-2)
-  else:
-    x = mean_fn(sigmas, Wm)
+  x = average_fn(sigmas, weights=Wm, axis=-2)
 
   # Covariance
   y = subtract_fn(sigmas, x[..., None, :])

@@ -11,12 +11,10 @@ class LinearMeasurementModel(MeasurementModel):
                state_dim: int,
                covar: np.ndarray,
                measured_dims: Optional[np.ndarray] = None,
-               seed: int = np.random.randint(0, 2**32-1),
                ):
 
     self.state_dim = state_dim
     self.noise_covar = np.array(covar, dtype=float)
-    self.np_random = np.random.RandomState(seed)
 
     if measured_dims is None:
       measured_dims = np.arange(self.noise_covar.shape[0])
@@ -26,12 +24,13 @@ class LinearMeasurementModel(MeasurementModel):
   def __call__(self,
                x: np.ndarray,
                noise: bool = False,
+               rng: Optional[np.random.RandomState] = None,
                **kwargs,
                ) -> List[np.ndarray]:
     out = x[..., self.measured_dims].astype(float)
 
     if noise:
-      out += self.sample_noise(size=out.shape[:-1])
+      out += self.sample_noise(size=out.shape[:-1], rng=rng)
 
     return out
 
@@ -44,7 +43,14 @@ class LinearMeasurementModel(MeasurementModel):
   def covar(self):
     return self.noise_covar
 
-  def sample_noise(self, size: Tuple[int, ...]) -> np.ndarray:
-    noise = self.np_random.multivariate_normal(
-        mean=np.zeros(self.measurement_dim), cov=self.noise_covar, size=size)
+  def sample_noise(
+      self,
+      size: Tuple[int, ...],
+      rng: Optional[np.random.RandomState] = None,
+  ) -> np.ndarray:
+    if rng is None:
+      rng = np.random.default_rng()
+    noise = rng.multivariate_normal(
+        mean=np.zeros(self.measurement_dim), cov=self.noise_covar, size=size
+    )
     return noise
