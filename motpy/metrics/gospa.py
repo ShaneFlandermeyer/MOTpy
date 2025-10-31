@@ -48,18 +48,19 @@ def gospa(
     assigned_y = x_to_y[assigned_x]
     valid_x = assigned_x[d[assigned_x, assigned_y] < c]
     valid_y = assigned_y[d[assigned_x, assigned_y] < c]
-    n_loc = len(valid_x)
+    n_assigned = len(valid_x)
     loc_error = np.sum(d[valid_x, valid_y]**p)
 
     # Cardinality error
-    miss_error = c**p/2 * (nx - n_loc)
-    false_error = c**p/2 * (ny - n_loc)
+    miss_error = c**p/2 * (nx - n_assigned)
+    false_error = c**p/2 * (ny - n_assigned)
 
   return dict(
       GOSPA=(loc_error + miss_error + false_error)**(1/p),
       loc_error=loc_error,
       miss_error=miss_error,
       false_error=false_error,
+      n_assigned=n_assigned,
   )
 
 
