@@ -35,10 +35,12 @@ def gospa(
     loc_error = 0.0
     miss_error = 0.0
     false_error = c**p/2 * ny
+    n_assigned = 0
   elif ny == 0:  # All missed
     loc_error = 0.0
     miss_error = c**p/2 * nx
     false_error = 0.0
+    n_assigned = 0
   else:
     # Data association
     x_to_y = jonker.assign2d(C=d, maximize=False)[0]
