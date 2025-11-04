@@ -31,7 +31,7 @@ def gospa(
       _description_
   """
   nx, ny = len(X), len(Y)
-  if nx == 0:  # No ground truth
+  if nx == 0:  # All false
     loc_error = 0.0
     miss_error = 0.0
     false_error = c**p/2 * ny
@@ -44,16 +44,14 @@ def gospa(
   else:
     # Data association
     x_to_y = jonker.assign2d(C=d, maximize=False)[0]
+    x_assigned = np.arange(nx)[x_to_y != -1]
+    y_assigned = x_to_y[x_assigned]
+    valid = d[x_assigned, y_assigned] < c
+    x_assigned, y_assigned = x_assigned[valid], y_assigned[valid]
 
-    # Localization error
-    assigned_x = np.arange(nx)[x_to_y != -1]
-    assigned_y = x_to_y[assigned_x]
-    valid_x = assigned_x[d[assigned_x, assigned_y] < c]
-    valid_y = assigned_y[d[assigned_x, assigned_y] < c]
-    n_assigned = len(valid_x)
-    loc_error = np.sum(d[valid_x, valid_y]**p)
-
-    # Cardinality error
+    # Errors
+    n_assigned = len(x_assigned)
+    loc_error = np.sum(d[x_assigned, y_assigned]**p)
     miss_error = c**p/2 * (nx - n_assigned)
     false_error = c**p/2 * (ny - n_assigned)
 
