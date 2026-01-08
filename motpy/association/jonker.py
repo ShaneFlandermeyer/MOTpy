@@ -143,15 +143,3 @@ def shortest_path(
   v[scanned_cols] += -min_val + shortest_path_costs[scanned_cols]
 
   return sink, path, u, v
-
-
-if __name__ == '__main__':
-  import time
-
-  start = time.time()
-  N = 10
-  for i in range(N):
-    print(i)
-    C = np.random.uniform(0, 1, (200, 200))
-    assign2D(C, maximize=False)
-  print('Time:', 1/N*(time.time() - start))

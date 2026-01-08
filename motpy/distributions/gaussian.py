@@ -179,7 +179,7 @@ def static_merge_mixture(
     distribution: Gaussian,
     source_inds: np.ndarray,
     target_inds: np.ndarray
-) -> Poisson:
+) -> Gaussian:
   # Static merge source components into target components
   merged_w = (
       distribution.weight[source_inds] +
@@ -191,10 +191,10 @@ def static_merge_mixture(
 
 
 def merge_mixture(
-    distribution: Poisson,
+    distribution: Gaussian,
     source_inds: np.ndarray,
     target_inds: np.ndarray
-) -> Poisson:
+) -> Gaussian:
   mu = distribution.state.mean[[source_inds, target_inds]].swapaxes(0, 1)
   P = distribution.state.covar[[source_inds, target_inds]].swapaxes(0, 1)
   w = distribution.state.weight[[source_inds, target_inds]].swapaxes(0, 1)
